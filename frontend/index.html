@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>image-mate</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
+  <link rel="stylesheet" href="/app/styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="panel">
+      <header class="panel-header">
+        <p class="kicker">Geospatial Intelligence Workbench</p>
+        <h1>GeoAgent</h1>
+      </header>
+
+      <section class="panel-block">
+        <h2>Archive Search</h2>
+        <div class="grid two">
+          <label>Lat<input id="lat" type="number" step="0.0001" value="37.6188" /></label>
+          <label>Lon<input id="lon" type="number" step="0.0001" value="-122.375" /></label>
+        </div>
+        <div class="grid two">
+          <label>Width (km)<input id="widthKm" type="number" step="0.5" value="8" /></label>
+          <label>Cloud ≤<input id="maxCloud" type="number" min="0" max="100" value="40" /></label>
+        </div>
+        <div class="grid two">
+          <label>Start<input id="startDate" type="date" /></label>
+          <label>End<input id="endDate" type="date" /></label>
+        </div>
+        <div class="grid three">
+          <label>Satellite<input id="satelliteName" type="text" placeholder="optional, e.g. SN48" /></label>
+          <label>GSD Min (m)<input id="minGsd" type="number" step="0.01" min="0" placeholder="optional" /></label>
+          <label>GSD Max (m)<input id="maxGsd" type="number" step="0.01" min="0" placeholder="optional" /></label>
+        </div>
+        <div class="grid two">
+          <label>Contract<select id="contractSelect"></select></label>
+          <label>Collection<input id="collection" type="text" value="l1d-sr" /></label>
+        </div>
+        <div class="grid two">
+          <label>Limit<input id="limit" type="number" min="1" max="1000" value="250" /></label>
+          <label>&nbsp;<input disabled value="Satellogic API v2" /></label>
+        </div>
+        <div class="actions">
+          <button id="searchBtn">Search AOI</button>
+          <button id="stackBtn" class="ghost">Discover Stacks</button>
+        </div>
+        <p class="meta">Draw a rectangle on the map to set AOI. If none is drawn, Lat/Lon + Width are used.</p>
+        <p id="searchMeta" class="meta">No search run yet.</p>
+      </section>
+
+      <section class="panel-block">
+        <h2>Time Series</h2>
+        <div class="actions">
+          <button id="playBtn">Play</button>
+          <button id="pauseBtn" class="ghost">Pause</button>
+          <button id="gifBtn" class="ghost">Build GIF</button>
+        </div>
+        <label>Frame<select id="frameSelect" multiple size="5"></select></label>
+        <input id="timeline" type="range" min="0" max="0" value="0" />
+        <img id="framePreview" alt="Frame preview" class="preview" />
+      </section>
+
+      <section class="panel-block">
+        <h2>Image Comparison</h2>
+        <div class="grid two">
+          <label>Before<select id="beforeSelect"></select></label>
+          <label>After<select id="afterSelect"></select></label>
+        </div>
+        <button id="compareBtn">Compare Pair</button>
+        <div class="compare-wrap" id="compareWrap">
+          <img id="afterImg" alt="After image" class="compare-layer" />
+          <div id="beforeClip" class="before-clip"><img id="beforeImg" alt="Before image" class="compare-layer" /></div>
+          <input id="compareSlider" type="range" min="0" max="100" value="50" />
+        </div>
+      </section>
+
+      <section class="panel-block">
+        <h2>GeoAgent Report</h2>
+        <label>Prompt
+          <textarea id="geoPrompt" rows="5" placeholder="Describe what to assess, e.g. activity tempo, runway usage, staging changes..."></textarea>
+        </label>
+        <button id="reportBtn">Generate Intelligence Report</button>
+        <pre id="reportOut" class="report">No report generated.</pre>
+      </section>
+
+      <section class="panel-block">
+        <h2>Annotation</h2>
+        <label>Note<textarea id="annotationNote" rows="3" placeholder="Observation note"></textarea></label>
+        <div class="actions">
+          <button id="saveAnnotationBtn">Save Last Drawn Shape</button>
+          <button id="loadAnnotationBtn" class="ghost">Reload Saved</button>
+        </div>
+      </section>
+    </aside>
+
+    <main class="map-stage">
+      <div id="map"></div>
+      <div id="mapStatus" class="map-status">Zoom -- | Lat -- | Lon --</div>
+      <div id="mapDebugStats" class="map-debug-stats">Search -- | Tiles --</div>
+      <aside class="time-carousel" id="timeCarousel">
+        <div class="time-carousel-header">
+          <div class="time-carousel-title-row">
+            <h3>Search Results</h3>
+            <div class="time-carousel-actions">
+              <button id="lockSelectionBtn" class="ghost tiny icon-only" type="button" title="Lock View" aria-label="Lock View">
+                <span class="lock-icon unlocked" aria-hidden="true"></span>
+              </button>
+              <button id="compareModeBtn" class="ghost tiny icon-only" type="button" title="Compare" aria-label="Compare">
+                <span class="clock-icon" aria-hidden="true"></span>
+              </button>
+              <button id="downloadMenuBtn" class="ghost tiny icon-only" type="button" title="Download" aria-label="Download">
+                <span class="download-icon" aria-hidden="true"></span>
+              </button>
+              <div id="downloadPopover" class="download-popover" role="menu" aria-label="Download menu">
+                <button id="downloadOutcomeCsvBtn" type="button" class="download-menu-item" role="menuitem">Download selected Outcome IDs (CSV + clipboard)</button>
+                <button id="downloadVisibleQuickviewBtn" type="button" class="download-menu-item" role="menuitem">Download visible tiles (L1B Quickview Visual)</button>
+                <button id="downloadVisibleL1dBtn" type="button" class="download-menu-item" role="menuitem">Download visible tiles (L1D-SR Visual)</button>
+              </div>
+              <div id="downloadCopiedTip" class="download-copied-tip" role="status" aria-live="polite">Copied To Clipboard</div>
+            </div>
+          </div>
+          <p id="searchResultsCount">0 Products Found</p>
+          <p id="searchResultsFilterMeta" class="search-results-filter-meta" style="display: none;"></p>
+        </div>
+        <div id="timeCarouselList" class="time-carousel-list"></div>
+      </aside>
+
+      <div id="compareRail" class="compare-rail">
+        <div class="compare-rail-inner">
+          <div class="compare-step-controls">
+            <button id="compareStepUpBtn" class="compare-step-btn" type="button" aria-label="Next compare image" title="Next image">&#9650;</button>
+            <button id="compareStepDownBtn" class="compare-step-btn" type="button" aria-label="Previous compare image" title="Previous image">&#9660;</button>
+          </div>
+          <input id="compareRange" class="compare-range" type="range" min="0" max="0" value="0" step="1" />
+          <div id="compareDateTag" class="compare-date-tag">No image</div>
+        </div>
+      </div>
+
+      <div id="mapContextMenu" class="map-context-menu">
+        <button id="ctxCopyLatLon" class="ctx-coord-btn">Lat/Lon: --, --</button>
+        <button id="ctxCreateAnimation">Create Animation</button>
+        <button id="ctxTaskImage">Task New Image</button>
+      </div>
+
+      <dialog id="animationDialog" class="animation-dialog">
+        <form method="dialog" id="animationForm">
+          <h3>Create Animation</h3>
+          <p class="meta">Drawn AOI is locked. Configure filters and run.</p>
+          <div class="grid two">
+            <label>Start<input id="animStartDate" type="date" required /></label>
+            <label>End<input id="animEndDate" type="date" required /></label>
+          </div>
+          <div class="grid two">
+            <label>Cloud ≤<input id="animMaxCloud" type="number" min="0" max="100" value="40" /></label>
+            <label>Satellite<input id="animSatellite" type="text" placeholder="optional, e.g. SN48" /></label>
+          </div>
+          <div class="grid two">
+            <label>GSD Min (m)<input id="animMinGsd" type="number" step="0.01" min="0" /></label>
+            <label>GSD Max (m)<input id="animMaxGsd" type="number" step="0.01" min="0" /></label>
+          </div>
+          <div class="grid two">
+            <label>Max Captures<input id="animMaxFrames" type="number" min="2" max="50" value="20" /></label>
+            <label>Sec / Frame<input id="animSecPerFrame" type="number" min="0.1" max="5" step="0.1" value="0.8" /></label>
+          </div>
+          <div class="actions">
+            <button id="runAnimationBtn" value="default">Run Animation</button>
+            <button id="cancelAnimationBtn" class="ghost" value="cancel">Cancel</button>
+          </div>
+        </form>
+      </dialog>
+
+      <div id="toast" class="toast"></div>
+    </main>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+  <script type="module" src="/app/app.js"></script>
+</body>
+</html>
