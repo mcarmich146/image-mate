@@ -21,6 +21,8 @@ class Settings:
     satellogic_bearer_token: str = os.getenv("SATELLOGIC_BEARER_TOKEN", "")
     satellogic_key_id: str = os.getenv("SATELLOGIC_KEY_ID", "")
     satellogic_key_secret: str = os.getenv("SATELLOGIC_KEY_SECRET", "")
+    # Supported values: oauth_client_credentials, bearer, key_secret, auto
+    satellogic_auth_mode: str = os.getenv("SATELLOGIC_AUTH_MODE", "oauth_client_credentials")
     satellogic_contract_id: str = os.getenv("SATELLOGIC_CONTRACT_ID", "")
     satellogic_collection_id: str = os.getenv("SATELLOGIC_COLLECTION_ID", "l1d-sr")
     satellogic_stac_url: str = os.getenv("SATELLOGIC_STAC_URL", "https://api.satellogic.com/archive/stac")

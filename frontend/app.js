@@ -33,6 +33,10 @@ const state = {
   carouselQuickviewCount: 0,
   carouselFilterActive: false,
   skipMapRefreshEvents: 0,
+  locationHistory: [],
+  mp4JobId: null,
+  mp4JobTimer: null,
+  mp4JobDownloading: false,
 };
 
 const DETAIL_ZOOM_THRESHOLD = 13;
@@ -46,6 +50,8 @@ const DETAIL_MAX_QUERY_LIMIT = 400;
 const DETAIL_TILE_BUFFER_PAD = 0.12;
 const COMPARE_PREFETCH_NEIGHBORS = 1;
 const COMPARE_PREFETCH_TILES_PER_FRAME = 3;
+const LOCATION_HISTORY_KEY = "imageMate.locationHistory.v1";
+const LOCATION_HISTORY_LIMIT = 80;
 
 const DEBUG_NET = new URLSearchParams(window.location.search).has("debugNet");
 
@@ -60,7 +66,10 @@ L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
   attribution: "&copy; OpenStreetMap contributors",
   maxZoom: 20,
 }).addTo(map);
-window.addEventListener("resize", () => map.invalidateSize());
+window.addEventListener("resize", () => {
+  map.invalidateSize();
+  if (animateSeriesPopoverEl?.classList.contains("open")) positionAnimateSeriesPopover();
+});
 setTimeout(() => map.invalidateSize(), 80);
 
 const drawnItems = new L.FeatureGroup().addTo(map);
@@ -82,7 +91,7 @@ map.addControl(drawControl);
 map.on(L.Draw.Event.CREATED, (evt) => {
   drawnItems.clearLayers();
   drawnItems.addLayer(evt.layer);
-  const geometry = evt.layer.toGeoJSON().geometry;
+  const geometry = normalizeGeometryLongitudes(evt.layer.toGeoJSON().geometry);
   if (state.pendingAnimationDraw) {
     state.animationGeometry = geometry;
     state.pendingAnimationDraw = false;
@@ -99,7 +108,7 @@ map.on(L.Draw.Event.CREATED, (evt) => {
 
 map.on(L.Draw.Event.EDITED, (evt) => {
   evt.layers.eachLayer((layer) => {
-    const geometry = layer.toGeoJSON().geometry;
+    const geometry = normalizeGeometryLongitudes(layer.toGeoJSON().geometry);
     state.currentAoi = geometry;
     state.lastDrawnGeometry = geometry;
     updateSearchFieldsFromGeometry(geometry);
@@ -142,6 +151,11 @@ const searchResultsCountEl = document.getElementById("searchResultsCount");
 const searchResultsFilterMetaEl = document.getElementById("searchResultsFilterMeta");
 const mapStatusEl = document.getElementById("mapStatus");
 const mapDebugStatsEl = document.getElementById("mapDebugStats");
+const mapLocateEl = document.getElementById("mapLocate");
+const mapLocateFormEl = document.getElementById("mapLocateForm");
+const mapLocateInputEl = document.getElementById("mapLocateInput");
+const mapLocateHistoryBtnEl = document.getElementById("mapLocateHistoryBtn");
+const mapLocateHistoryEl = document.getElementById("mapLocateHistory");
 const mapContextMenuEl = document.getElementById("mapContextMenu");
 const ctxCopyLatLonEl = document.getElementById("ctxCopyLatLon");
 const ctxCreateAnimationEl = document.getElementById("ctxCreateAnimation");
@@ -163,6 +177,12 @@ const compareRangeEl = document.getElementById("compareRange");
 const compareDateTagEl = document.getElementById("compareDateTag");
 const compareStepUpBtnEl = document.getElementById("compareStepUpBtn");
 const compareStepDownBtnEl = document.getElementById("compareStepDownBtn");
+const animateSeriesBtnEl = document.getElementById("animateSeriesBtn");
+const animateSeriesPopoverEl = document.getElementById("animateSeriesPopover");
+const animateSeriesSecondsEl = document.getElementById("animateSeriesSeconds");
+const animateSeriesRunBtnEl = document.getElementById("animateSeriesRunBtn");
+const animateSeriesCloseBtnEl = document.getElementById("animateSeriesCloseBtn");
+const animateSeriesStatusEl = document.getElementById("animateSeriesStatus");
 const downloadMenuBtnEl = document.getElementById("downloadMenuBtn");
 const downloadPopoverEl = document.getElementById("downloadPopover");
 const downloadOutcomeCsvBtnEl = document.getElementById("downloadOutcomeCsvBtn");
@@ -208,15 +228,70 @@ function compactObject(input) {
   return out;
 }
 
-function bboxFromCenter(lat, lon, widthKm) {
-  const halfLatDelta = (widthKm / 2) / 111.0;
-  const halfLonDelta = (widthKm / 2) / (111.0 * Math.cos((lat * Math.PI) / 180));
-  const minLat = lat - halfLatDelta;
-  const maxLat = lat + halfLatDelta;
-  const minLon = lon - halfLonDelta;
-  const maxLon = lon + halfLonDelta;
+function normalizeLongitude(lon) {
+  const value = Number(lon);
+  if (!Number.isFinite(value)) return lon;
+  return ((((value + 180) % 360) + 360) % 360) - 180;
+}
 
-  return {
+function clampLatitude(lat) {
+  const value = Number(lat);
+  if (!Number.isFinite(value)) return lat;
+  return Math.max(-90, Math.min(90, value));
+}
+
+function normalizeLngLatPair(pair) {
+  if (!Array.isArray(pair) || pair.length < 2) return pair;
+  return [normalizeLongitude(pair[0]), clampLatitude(pair[1]), ...pair.slice(2)];
+}
+
+function normalizeGeometryLongitudes(geometry) {
+  if (!geometry || typeof geometry !== "object") return geometry;
+  const type = geometry.type;
+  const coords = geometry.coordinates;
+
+  if (type === "Point" && Array.isArray(coords)) {
+    return { ...geometry, coordinates: normalizeLngLatPair(coords) };
+  }
+  if (type === "MultiPoint" || type === "LineString") {
+    if (!Array.isArray(coords)) return geometry;
+    return { ...geometry, coordinates: coords.map((pair) => normalizeLngLatPair(pair)) };
+  }
+  if (type === "MultiLineString" || type === "Polygon") {
+    if (!Array.isArray(coords)) return geometry;
+    return { ...geometry, coordinates: coords.map((line) => (Array.isArray(line) ? line.map((pair) => normalizeLngLatPair(pair)) : line)) };
+  }
+  if (type === "MultiPolygon") {
+    if (!Array.isArray(coords)) return geometry;
+    return {
+      ...geometry,
+      coordinates: coords.map((poly) => (
+        Array.isArray(poly)
+          ? poly.map((line) => (Array.isArray(line) ? line.map((pair) => normalizeLngLatPair(pair)) : line))
+          : poly
+      )),
+    };
+  }
+  if (type === "GeometryCollection" && Array.isArray(geometry.geometries)) {
+    return {
+      ...geometry,
+      geometries: geometry.geometries.map((g) => normalizeGeometryLongitudes(g)),
+    };
+  }
+  return geometry;
+}
+
+function bboxFromCenter(lat, lon, widthKm) {
+  const centerLat = clampLatitude(lat);
+  const centerLon = normalizeLongitude(lon);
+  const halfLatDelta = (widthKm / 2) / 111.0;
+  const halfLonDelta = (widthKm / 2) / (111.0 * Math.cos((centerLat * Math.PI) / 180));
+  const minLat = centerLat - halfLatDelta;
+  const maxLat = centerLat + halfLatDelta;
+  const minLon = centerLon - halfLonDelta;
+  const maxLon = centerLon + halfLonDelta;
+
+  return normalizeGeometryLongitudes({
     type: "Polygon",
     coordinates: [[
       [minLon, minLat],
@@ -225,7 +300,7 @@ function bboxFromCenter(lat, lon, widthKm) {
       [minLon, maxLat],
       [minLon, minLat],
     ]],
-  };
+  });
 }
 
 function geometryFromMapBounds() {
@@ -235,7 +310,7 @@ function geometryFromMapBounds() {
 
 function geometryFromBounds(bounds) {
   const b = bounds || map.getBounds();
-  return {
+  return normalizeGeometryLongitudes({
     type: "Polygon",
     coordinates: [[
       [b.getWest(), b.getSouth()],
@@ -244,7 +319,7 @@ function geometryFromBounds(bounds) {
       [b.getWest(), b.getNorth()],
       [b.getWest(), b.getSouth()],
     ]],
-  };
+  });
 }
 
 function updateSearchFieldsFromGeometry(geometry) {
@@ -256,14 +331,15 @@ function updateSearchFieldsFromGeometry(geometry) {
   const widthDeg = Math.abs(east - west);
   const widthKm = widthDeg * 111.0 * Math.cos((center.lat * Math.PI) / 180);
 
-  latEl.value = center.lat.toFixed(6);
-  lonEl.value = center.lng.toFixed(6);
+  latEl.value = clampLatitude(center.lat).toFixed(6);
+  lonEl.value = normalizeLongitude(center.lng).toFixed(6);
   widthKmEl.value = Math.max(0.1, widthKm).toFixed(2);
 }
 
 function buildSearchPayload(geometry, collectionOverride = null, limitOverride = null) {
+  const normalizedGeometry = normalizeGeometryLongitudes(geometry);
   return compactObject({
-    geometry,
+    geometry: normalizedGeometry,
     start_date: isoDate(startDateEl.value),
     end_date: isoDate(endDateEl.value),
     collection_id: collectionOverride || collectionEl.value.trim() || "l1d-sr",
@@ -329,6 +405,320 @@ function hideDownloadPopover() {
 function toggleDownloadPopover() {
   if (!downloadPopoverEl) return;
   downloadPopoverEl.classList.toggle("open");
+}
+
+function setAnimateSeriesStatus(message, isError = false) {
+  if (!animateSeriesStatusEl) return;
+  animateSeriesStatusEl.textContent = message;
+  animateSeriesStatusEl.style.color = isError ? "#9f2f1e" : "";
+}
+
+function positionAnimateSeriesPopover() {
+  if (!animateSeriesPopoverEl || !animateSeriesBtnEl) return;
+  const host = animateSeriesPopoverEl.offsetParent || animateSeriesBtnEl.offsetParent || animateSeriesBtnEl.parentElement;
+  if (!host) return;
+  const hostRect = host.getBoundingClientRect();
+  const btnRect = animateSeriesBtnEl.getBoundingClientRect();
+  const top = btnRect.bottom - hostRect.top + 6;
+  const desiredRight = hostRect.right - btnRect.right;
+  const maxRight = Math.max(0, host.clientWidth - 16);
+  const clampedRight = Math.max(0, Math.min(maxRight, desiredRight));
+  animateSeriesPopoverEl.style.top = `${Math.max(0, top)}px`;
+  animateSeriesPopoverEl.style.left = "auto";
+  animateSeriesPopoverEl.style.right = `${clampedRight}px`;
+}
+
+function hideAnimateSeriesPopover() {
+  animateSeriesPopoverEl?.classList.remove("open");
+}
+
+function toggleAnimateSeriesPopover() {
+  if (!animateSeriesPopoverEl) return;
+  const willOpen = !animateSeriesPopoverEl.classList.contains("open");
+  animateSeriesPopoverEl.classList.toggle("open");
+  if (willOpen) {
+    setAnimateSeriesStatus("Select 2+ images in the carousel, then render.");
+    positionAnimateSeriesPopover();
+  }
+}
+
+function loadLocationHistory() {
+  try {
+    const raw = window.localStorage.getItem(LOCATION_HISTORY_KEY);
+    if (!raw) {
+      state.locationHistory = [];
+      return;
+    }
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      state.locationHistory = [];
+      return;
+    }
+    state.locationHistory = parsed
+      .map((entry) => ({
+        label: (entry?.label || "").toString(),
+        query: (entry?.query || "").toString(),
+        lat: Number(entry?.lat),
+        lon: Number(entry?.lon),
+      }))
+      .filter((entry) => Number.isFinite(entry.lat) && Number.isFinite(entry.lon))
+      .slice(0, LOCATION_HISTORY_LIMIT);
+  } catch (_) {
+    state.locationHistory = [];
+  }
+}
+
+function saveLocationHistory() {
+  try {
+    window.localStorage.setItem(LOCATION_HISTORY_KEY, JSON.stringify(state.locationHistory.slice(0, LOCATION_HISTORY_LIMIT)));
+  } catch (_) {
+    // Storage is optional; ignore failures (private mode / quota).
+  }
+}
+
+function addLocationHistory(entry) {
+  const lat = clampLatitude(entry?.lat);
+  const lon = normalizeLongitude(entry?.lon);
+  if (!Number.isFinite(Number(lat)) || !Number.isFinite(Number(lon))) return;
+  const label = (entry?.label || "").toString().trim() || `${formatCoord(lat)}, ${formatCoord(lon)}`;
+  const query = (entry?.query || "").toString().trim();
+  const key = `${Number(lat).toFixed(6)},${Number(lon).toFixed(6)}`;
+  const next = [{ label, query, lat: Number(lat), lon: Number(lon) }];
+  state.locationHistory.forEach((item) => {
+    const itemKey = `${Number(item.lat).toFixed(6)},${Number(item.lon).toFixed(6)}`;
+    if (itemKey === key) return;
+    next.push(item);
+  });
+  state.locationHistory = next.slice(0, LOCATION_HISTORY_LIMIT);
+  saveLocationHistory();
+}
+
+function renderLocationHistoryMenu() {
+  if (!mapLocateHistoryEl) return;
+  const filter = (mapLocateInputEl?.value || "").trim().toLowerCase();
+  const rows = state.locationHistory.filter((item) => {
+    if (!filter) return true;
+    const bag = `${item.label || ""} ${item.query || ""}`.toLowerCase();
+    return bag.includes(filter);
+  });
+
+  mapLocateHistoryEl.innerHTML = "";
+  if (!rows.length) {
+    const empty = document.createElement("div");
+    empty.className = "map-locate-history-empty";
+    empty.textContent = "No previous searches.";
+    mapLocateHistoryEl.appendChild(empty);
+    return;
+  }
+
+  rows.forEach((item) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "map-locate-history-item";
+    const primary = document.createElement("span");
+    primary.className = "map-locate-history-primary";
+    primary.textContent = item.label;
+    const secondary = document.createElement("span");
+    secondary.className = "map-locate-history-secondary";
+    secondary.textContent = `${formatCoord(item.lat)}, ${formatCoord(item.lon)}`;
+    button.append(primary, secondary);
+    button.addEventListener("click", () => {
+      hideLocationHistoryMenu();
+      jumpToLocation(item.lat, item.lon, { zoom: Math.max(11, map.getZoom()) });
+      if (mapLocateInputEl) mapLocateInputEl.value = item.query || item.label;
+    });
+    mapLocateHistoryEl.appendChild(button);
+  });
+}
+
+function showLocationHistoryMenu() {
+  if (!mapLocateHistoryEl) return;
+  renderLocationHistoryMenu();
+  mapLocateHistoryEl.classList.add("open");
+  mapLocateHistoryBtnEl?.setAttribute("aria-expanded", "true");
+}
+
+function hideLocationHistoryMenu() {
+  mapLocateHistoryEl?.classList.remove("open");
+  mapLocateHistoryBtnEl?.setAttribute("aria-expanded", "false");
+}
+
+function toggleLocationHistoryMenu() {
+  if (!mapLocateHistoryEl) return;
+  const nextOpen = !mapLocateHistoryEl.classList.contains("open");
+  if (nextOpen) showLocationHistoryMenu();
+  else hideLocationHistoryMenu();
+}
+
+function splitCoordinatePairs(rawText) {
+  const text = rawText.trim();
+  const pairs = [];
+  const commaParts = text.split(/[;,]/).map((x) => x.trim()).filter(Boolean);
+  if (commaParts.length >= 2) pairs.push([commaParts[0], commaParts[1]]);
+
+  const tokens = text.split(/\s+/).filter(Boolean);
+  for (let i = 1; i < tokens.length; i += 1) {
+    const left = tokens.slice(0, i).join(" ");
+    const right = tokens.slice(i).join(" ");
+    if (!left || !right) continue;
+    pairs.push([left, right]);
+  }
+  return pairs;
+}
+
+function parseCoordinatePart(part) {
+  const raw = (part || "").trim();
+  if (!raw) return null;
+  const upper = raw.toUpperCase();
+  const hemisphereMatch = upper.match(/[NSEW]/);
+  const hemisphere = hemisphereMatch ? hemisphereMatch[0] : null;
+
+  const decimalMatch = upper.match(/^([NSEW])?\s*([+-]?\d+(?:\.\d+)?)\s*([NSEW])?$/);
+  if (decimalMatch) {
+    const dir = decimalMatch[1] || decimalMatch[3] || hemisphere;
+    let value = Number(decimalMatch[2]);
+    if (!Number.isFinite(value)) return null;
+    if (dir === "S" || dir === "W") value = -Math.abs(value);
+    if (dir === "N" || dir === "E") value = Math.abs(value);
+    return { value, hemisphere: dir || null };
+  }
+
+  const numeric = upper
+    .replace(/[NSEW]/g, " ")
+    .replace(/[°º]/g, " ")
+    .replace(/[′']/g, " ")
+    .replace(/[″"]/g, " ")
+    .replace(/,/g, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((x) => Number(x))
+    .filter((x) => Number.isFinite(x));
+  if (!numeric.length) return null;
+
+  const sign = numeric[0] < 0 ? -1 : 1;
+  const deg = Math.abs(numeric[0]);
+  const min = Math.abs(numeric[1] || 0);
+  const sec = Math.abs(numeric[2] || 0);
+  let value = sign * (deg + (min / 60) + (sec / 3600));
+  if (hemisphere === "S" || hemisphere === "W") value = -Math.abs(value);
+  if (hemisphere === "N" || hemisphere === "E") value = Math.abs(value);
+  return { value, hemisphere };
+}
+
+function resolveCoordinatePair(first, second) {
+  if (!first || !second) return null;
+  const firstHem = first.hemisphere;
+  const secondHem = second.hemisphere;
+
+  const combine = (lat, lon) => {
+    const normalized = {
+      lat: Number(clampLatitude(lat)),
+      lon: Number(normalizeLongitude(lon)),
+    };
+    if (!Number.isFinite(normalized.lat) || !Number.isFinite(normalized.lon)) return null;
+    if (Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+    return normalized;
+  };
+
+  if ((firstHem === "N" || firstHem === "S") && (secondHem === "E" || secondHem === "W")) {
+    return combine(first.value, second.value);
+  }
+  if ((firstHem === "E" || firstHem === "W") && (secondHem === "N" || secondHem === "S")) {
+    return combine(second.value, first.value);
+  }
+
+  const direct = combine(first.value, second.value);
+  if (direct) return direct;
+  return combine(second.value, first.value);
+}
+
+function parseLatLonInput(rawText) {
+  const raw = (rawText || "").trim();
+  if (!raw) return null;
+  const pairs = splitCoordinatePairs(raw);
+  for (const [left, right] of pairs) {
+    const first = parseCoordinatePart(left);
+    const second = parseCoordinatePart(right);
+    const resolved = resolveCoordinatePair(first, second);
+    if (resolved) return resolved;
+  }
+
+  const numericPair = raw.match(/[-+]?\d+(?:\.\d+)?/g);
+  if (numericPair && numericPair.length === 2 && !/[NSEW]/i.test(raw)) {
+    const lat = Number(numericPair[0]);
+    const lon = Number(numericPair[1]);
+    if (Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180) {
+      return { lat: Number(clampLatitude(lat)), lon: Number(normalizeLongitude(lon)) };
+    }
+  }
+  return null;
+}
+
+function jumpToLocation(lat, lon, options = {}) {
+  const targetLat = Number(clampLatitude(lat));
+  const targetLon = Number(normalizeLongitude(lon));
+  if (!Number.isFinite(targetLat) || !Number.isFinite(targetLon)) {
+    throw new Error("Invalid location");
+  }
+  const zoom = Number.isFinite(Number(options.zoom)) ? Number(options.zoom) : Math.max(11, map.getZoom());
+  map.flyTo([targetLat, targetLon], zoom, {
+    animate: true,
+    duration: 0.65,
+  });
+}
+
+async function geocodeLocation(query) {
+  const endpoint = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(query)}`;
+  const res = await fetch(endpoint, {
+    headers: {
+      "Accept-Language": "en",
+    },
+  });
+  if (!res.ok) throw new Error(`Location search failed (${res.status})`);
+  const rows = await res.json();
+  if (!Array.isArray(rows) || !rows.length) throw new Error("Location not found");
+  const first = rows[0];
+  const lat = Number(first.lat);
+  const lon = Number(first.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) throw new Error("Location result is invalid");
+  return {
+    lat: Number(clampLatitude(lat)),
+    lon: Number(normalizeLongitude(lon)),
+    label: (first.display_name || query).toString(),
+  };
+}
+
+async function runLocationSearch(rawQuery = null) {
+  const query = (rawQuery ?? mapLocateInputEl?.value ?? "").trim();
+  if (!query) {
+    showLocationHistoryMenu();
+    return;
+  }
+
+  const parsed = parseLatLonInput(query);
+  if (parsed) {
+    jumpToLocation(parsed.lat, parsed.lon);
+    addLocationHistory({
+      query,
+      label: `${formatCoord(parsed.lat)}, ${formatCoord(parsed.lon)}`,
+      lat: parsed.lat,
+      lon: parsed.lon,
+    });
+    hideLocationHistoryMenu();
+    toast(`Moved to ${formatCoord(parsed.lat)}, ${formatCoord(parsed.lon)}`);
+    return;
+  }
+
+  const geo = await geocodeLocation(query);
+  jumpToLocation(geo.lat, geo.lon);
+  addLocationHistory({
+    query,
+    label: geo.label,
+    lat: geo.lat,
+    lon: geo.lon,
+  });
+  hideLocationHistoryMenu();
+  toast(`Moved to ${geo.label}`);
 }
 
 function buildVisibleSearchPayload(collectionId) {
@@ -487,17 +877,19 @@ function hideContextMenu() {
 }
 
 function formatCoord(value) {
-  return Number(value).toFixed(6);
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "--";
+  return n.toFixed(6);
 }
 
 function formatLatLon(latlng) {
   if (!latlng) return "--, --";
-  return `${formatCoord(latlng.lat)}, ${formatCoord(latlng.lng)}`;
+  return `${formatCoord(clampLatitude(latlng.lat))}, ${formatCoord(normalizeLongitude(latlng.lng))}`;
 }
 
 function updateMapStatus() {
   const center = map.getCenter();
-  mapStatusEl.textContent = `Zoom ${map.getZoom()} | Lat ${formatCoord(center.lat)} | Lon ${formatCoord(center.lng)}`;
+  mapStatusEl.textContent = `Zoom ${map.getZoom()} | Lat ${formatCoord(clampLatitude(center.lat))} | Lon ${formatCoord(normalizeLongitude(center.lng))}`;
 }
 
 async function updateDebugStats() {
@@ -520,7 +912,10 @@ async function updateDebugStats() {
 
 function showContextMenu(x, y, latlng = null) {
   if (latlng) {
-    state.contextMenuLatLng = latlng;
+    state.contextMenuLatLng = {
+      lat: clampLatitude(latlng.lat),
+      lng: normalizeLongitude(latlng.lng),
+    };
     ctxCopyLatLonEl.textContent = `Lat/Lon: ${formatLatLon(latlng)}`;
   }
   mapContextMenuEl.style.left = `${x}px`;
@@ -952,8 +1347,23 @@ function updateActiveFrameOverlay(item) {
   }).addTo(map);
 }
 
-function drawResults(items, mode = "overview", fitToBounds = false) {
+function drawResults(items, mode = "overview", fitToBounds = false, options = {}) {
   clearMapLayers();
+
+  const selectedOverview = selectedOverviewItems();
+  const selectedIds = new Set(selectedOverview.map((item) => item?.id).filter(Boolean));
+  const selectedOutcomes = new Set(selectedOverview.map((item) => item?.outcome_id).filter(Boolean));
+  const selectedCaptures = new Set(selectedOverview.map((item) => captureKey(item)).filter(Boolean));
+  const selectedDatetimes = new Set(selectedOverview.map((item) => item?.datetime).filter(Boolean));
+  const isSelectedItem = (item) => {
+    if (!item || selectedOverview.length === 0) return false;
+    if (item.id && selectedIds.has(item.id)) return true;
+    if (item.outcome_id && selectedOutcomes.has(item.outcome_id)) return true;
+    const key = captureKey(item);
+    if (key && selectedCaptures.has(key)) return true;
+    if (item.datetime && selectedDatetimes.has(item.datetime)) return true;
+    return false;
+  };
 
   const features = items
     .filter((item) => item.geometry)
@@ -968,19 +1378,30 @@ function drawResults(items, mode = "overview", fitToBounds = false) {
         thumbnail: assetProxyUrl(mode === "detail" ? (previewUrl(item) || thumbnailUrl(item) || detailVisualUrl(item)) : modeSourceUrl(item, mode), { render: false }),
         satellite_name: item.satellite_name || "n/a",
         gsd: item.gsd,
+        selected: isSelectedItem(item),
       },
     }));
-  const showFootprints = mode !== "detail";
 
   state.mapVectorLayer = L.geoJSON(features, {
-    style: {
-      color: showFootprints ? "#f28f3b" : "transparent",
-      weight: showFootprints ? 1 : 0,
-      fillOpacity: showFootprints ? 0.07 : 0,
-      opacity: showFootprints ? 1 : 0,
+    style: (feature) => {
+      const selected = Boolean(feature?.properties?.selected);
+      if (mode === "detail" && !selected) {
+        return {
+          color: "transparent",
+          weight: 0,
+          fillOpacity: 0,
+          opacity: 0,
+        };
+      }
+      const baseColor = selected ? "#2d6bff" : "#f28f3b";
+      return {
+        color: baseColor,
+        weight: mode === "detail" ? 2.1 : 1.2,
+        fillOpacity: mode === "detail" ? 0.0 : (selected ? 0.1 : 0.07),
+        opacity: 1,
+      };
     },
     onEachFeature: (feature, layer) => {
-      if (!showFootprints) return;
       const props = feature.properties || {};
       const thumb = props.thumbnail
         ? `<img src="${props.thumbnail}" alt="thumbnail" />`
@@ -1003,7 +1424,8 @@ function drawResults(items, mode = "overview", fitToBounds = false) {
   state.mapThumbOverlayLayer = L.layerGroup().addTo(map);
   state.mapThumbMarkerLayer = L.layerGroup().addTo(map);
 
-  const withThumbnailsRaw = items.filter((item) => item.geometry && (mode === "detail" ? (previewUrl(item) || detailVisualUrl(item)) : modeSourceUrl(item, mode)));
+  const overlaySourceItems = Array.isArray(options.overlayItems) ? options.overlayItems : items;
+  const withThumbnailsRaw = overlaySourceItems.filter((item) => item.geometry && (mode === "detail" ? (previewUrl(item) || detailVisualUrl(item)) : modeSourceUrl(item, mode)));
   const withThumbnails = mode === "detail"
     ? [...withThumbnailsRaw].sort((a, b) => (a.datetime || "").localeCompare(b.datetime || ""))
     : withThumbnailsRaw;
@@ -1100,6 +1522,8 @@ function drawResults(items, mode = "overview", fitToBounds = false) {
     `);
     marker.addTo(state.mapThumbMarkerLayer);
   });
+
+  if (state.mapVectorLayer) state.mapVectorLayer.bringToFront();
 
   if (fitToBounds && features.length > 0) {
     map.fitBounds(state.mapVectorLayer.getBounds(), { maxZoom: 13 });
@@ -1222,8 +1646,11 @@ function queuePrefetchUrl(url) {
 function latLngToTileXY(lat, lon, zoom) {
   const z = Math.max(0, Math.floor(zoom));
   const n = 2 ** z;
-  const x = Math.floor(((lon + 180) / 360) * n);
-  const latRad = (lat * Math.PI) / 180;
+  const wrappedLon = normalizeLongitude(lon);
+  const mercatorLat = Math.max(-85.05112878, Math.min(85.05112878, clampLatitude(lat)));
+  let x = Math.floor(((wrappedLon + 180) / 360) * n);
+  x = ((x % n) + n) % n;
+  const latRad = (mercatorLat * Math.PI) / 180;
   const y = Math.floor(((1 - Math.log(Math.tan(latRad) + (1 / Math.cos(latRad))) / Math.PI) / 2) * n);
   return { z, x, y };
 }
@@ -1408,6 +1835,40 @@ function topCaptureOnly(items) {
   return sorted.filter((item) => item.datetime === topDt);
 }
 
+function stripAreaKey(item) {
+  const candidate = [item?.id, item?.outcome_id]
+    .filter((v) => typeof v === "string" && v.length > 0)
+    .join(" ");
+  const areaMatch = candidate.match(/(\d+[NS]_\d+_\d+)(?=[^0-9]|$)/i);
+  if (areaMatch) return areaMatch[1].toUpperCase();
+  const bounds = boundsFromGeometry(item?.geometry);
+  if (bounds) {
+    const center = bounds.getCenter();
+    const spanLat = Math.abs(bounds.getNorth() - bounds.getSouth());
+    const spanLon = Math.abs(bounds.getEast() - bounds.getWest());
+    return `${center.lat.toFixed(4)}_${center.lng.toFixed(4)}_${spanLat.toFixed(4)}_${spanLon.toFixed(4)}`;
+  }
+  return (item?.id || item?.outcome_id || "").toString();
+}
+
+function latestStripPerArea(items) {
+  if (!Array.isArray(items) || !items.length) return [];
+  const chosen = new Map();
+  items.forEach((item) => {
+    const key = stripAreaKey(item);
+    if (!key) return;
+    const prior = chosen.get(key);
+    if (!prior) {
+      chosen.set(key, item);
+      return;
+    }
+    const prevDt = prior.datetime || "";
+    const nextDt = item.datetime || "";
+    if (nextDt > prevDt) chosen.set(key, item);
+  });
+  return [...chosen.values()].sort((a, b) => (b.datetime || "").localeCompare(a.datetime || ""));
+}
+
 async function refreshMapMode(force = false) {
   if (!state.searchParams) return;
   const viewportBounds = map.getBounds();
@@ -1448,19 +1909,22 @@ async function refreshMapMode(force = false) {
     }
 
     state.mapMode = "detail";
-    const baseDetail = state.detailItems.length ? state.detailItems : latestCaptureTiles(state.items);
-    const detailSelected = selectedDetailItems(baseDetail);
-    const displayItems = orderedOverviewDisplayItems();
-    let detailCandidates = detailTilesForOverviewItems(displayItems, detailSelected);
-    if (!detailCandidates.length) {
-      const fallbackVisible = filterItemsToViewport(detailSelected, viewportBounds);
-      detailCandidates = topCaptureOnly(fallbackVisible);
+    let detailCandidates = dedupeById(state.detailItems.length ? state.detailItems : state.items);
+    if (!detailCandidates.length) detailCandidates = latestCaptureTiles(state.items);
+    let detailVisible = filterItemsToViewport(detailCandidates, viewportBounds);
+    if (!detailVisible.length) {
+      detailVisible = filterItemsToViewport(detailCandidates, viewportBounds.pad(DETAIL_TILE_BUFFER_PAD));
     }
-    const detailVisible = filterItemsToViewport(detailCandidates, viewportBounds);
-    const detail = detailVisible;
-    drawResults(detail, "detail", false);
+    let overlayItems = latestStripPerArea(detailVisible);
+    const selectedOverviews = selectedOverviewItems();
+    if (selectedOverviews.length) {
+      const selectedTiles = detailTilesForOverviewItems(selectedOverviews, detailCandidates);
+      const selectedVisible = filterItemsToViewport(dedupeById(selectedTiles), viewportBounds);
+      if (selectedVisible.length) overlayItems = selectedVisible;
+    }
+    drawResults(detailVisible, "detail", false, { overlayItems });
     const sel = state.selectedCarouselIds.size;
-    searchMetaEl.textContent = `Mode: detail (zoom ${map.getZoom()}) • visible tiles: ${detail.length}${sel ? ` • selected: ${sel}` : ""}`;
+    searchMetaEl.textContent = `Mode: detail (zoom ${map.getZoom()}) • strips: ${detailVisible.length} • overlays: ${overlayItems.length}${sel ? ` • selected: ${sel}` : ""}`;
     syncCarouselCheckboxes();
     updateCompareModeState();
     return;
@@ -1550,10 +2014,8 @@ function stepCompareBy(delta) {
 }
 
 async function searchArchive() {
-  const lat = Number(latEl.value);
-  const lon = Number(lonEl.value);
-  const widthKm = Number(widthKmEl.value);
-  const geometry = state.currentAoi || bboxFromCenter(lat, lon, widthKm);
+  const geometry = normalizeGeometryLongitudes(geometryFromBounds(map.getBounds()));
+  updateSearchFieldsFromGeometry(geometry);
   state.currentAoi = geometry;
 
   state.searchParams = buildSearchPayload(geometry);
@@ -1606,11 +2068,11 @@ async function searchArchive() {
 }
 
 async function discoverStacks() {
-  if (!state.currentAoi) {
-    state.currentAoi = bboxFromCenter(Number(latEl.value), Number(lonEl.value), Number(widthKmEl.value));
-  }
+  const geometry = normalizeGeometryLongitudes(geometryFromBounds(map.getBounds()));
+  updateSearchFieldsFromGeometry(geometry);
+  state.currentAoi = geometry;
 
-  const payload = buildSearchPayload(state.currentAoi);
+  const payload = buildSearchPayload(geometry);
 
   const res = await fetch(`${apiBase}/api/archive/stacks`, {
     method: "POST",
@@ -1651,6 +2113,159 @@ async function buildGif() {
   }
 }
 
+function clearMp4JobPolling() {
+  if (state.mp4JobTimer) {
+    clearInterval(state.mp4JobTimer);
+    state.mp4JobTimer = null;
+  }
+}
+
+function buildSelectedMp4AnimationPayload() {
+  const selectedFrames = sortNewestFirst(selectedOverviewItems()).reverse();
+  if (selectedFrames.length < 2) {
+    throw new Error("Select at least two images in the carousel.");
+  }
+
+  const viewportBounds = map.getBounds();
+  const viewportGeometry = normalizeGeometryLongitudes(geometryFromBounds(viewportBounds));
+  const sourceTiles = dedupeById([...(state.detailItems || []), ...state.items]);
+
+  const frames = [];
+  selectedFrames.forEach((overviewItem) => {
+    let tiles = tilesForOverviewItem(sourceTiles, overviewItem, false);
+    if (!tiles.length) tiles = tilesForOverviewItem(sourceTiles, overviewItem, true);
+    if (!tiles.length) return;
+
+    const visibleTiles = filterItemsToViewport(tiles, viewportBounds);
+    if (!visibleTiles.length) return;
+
+    const frameTiles = dedupeById(visibleTiles)
+      .map((tile) => ({
+        item_id: tile.id || null,
+        geometry: normalizeGeometryLongitudes(tile.geometry),
+        url: fullVisualAssetUrl(tile) || detailVisualUrl(tile),
+      }))
+      .filter((tile) => tile.geometry && tile.url);
+
+    if (!frameTiles.length) return;
+    frames.push({
+      frame_id: overviewItem.id || overviewItem.outcome_id || null,
+      datetime: overviewItem.datetime || null,
+      tiles: frameTiles,
+    });
+  });
+
+  if (frames.length < 2) {
+    throw new Error("Need 2+ selected images with visible full-resolution coverage in the current map view.");
+  }
+
+  const inputValue = Number(animateSeriesSecondsEl?.value || 0.8);
+  const secondsPerFrame = Number.isFinite(inputValue) ? Math.min(10, Math.max(0.1, inputValue)) : 0.8;
+  if (animateSeriesSecondsEl) animateSeriesSecondsEl.value = secondsPerFrame.toFixed(1);
+
+  return {
+    viewport_geometry: viewportGeometry,
+    contract_id: selectedContractId(),
+    seconds_per_frame: secondsPerFrame,
+    filename_prefix: "selected_extent_animation",
+    frames,
+  };
+}
+
+async function pollMp4AnimationJob(jobId) {
+  const res = await fetch(`${apiBase}/api/archive/animate/mp4/jobs/${encodeURIComponent(jobId)}`, { cache: "no-store" });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || "MP4 animation job status failed");
+
+  const progress = `${Number(data.progress_current || 0)}/${Number(data.progress_total || 0)}`;
+  const status = (data.status || "").toLowerCase();
+  if (status === "queued") {
+    setAnimateSeriesStatus(data.message || `Queued (${progress})`);
+    return data;
+  }
+  if (status === "running") {
+    setAnimateSeriesStatus(data.message || `Rendering ${progress}...`);
+    return data;
+  }
+  if (status === "failed") {
+    clearMp4JobPolling();
+    state.mp4JobId = null;
+    const reason = data.error || data.message || "MP4 render failed";
+    setAnimateSeriesStatus(reason, true);
+    throw new Error(reason);
+  }
+  if (status === "completed") {
+    clearMp4JobPolling();
+    setAnimateSeriesStatus(`MP4 ready (${Number(data.frame_count || 0)} frames). Downloading...`);
+    return data;
+  }
+  return data;
+}
+
+async function downloadMp4AnimationJob(jobId, fileName = "") {
+  const res = await fetch(`${apiBase}/api/archive/animate/mp4/jobs/${encodeURIComponent(jobId)}/download`);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail || "MP4 download failed");
+  }
+  const blob = await res.blob();
+  const fallback = `selected_extent_animation_${timestampTag()}.mp4`;
+  triggerBlobDownload(blob, fileName || fallback);
+}
+
+async function startSelectedMp4Animation() {
+  const payload = buildSelectedMp4AnimationPayload();
+  setAnimateSeriesStatus(`Submitting ${payload.frames.length} frames...`);
+  hideDownloadPopover();
+
+  const res = await fetch(`${apiBase}/api/archive/animate/mp4/jobs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.detail || "Failed to queue MP4 animation");
+  }
+
+  state.mp4JobId = data.job_id;
+  state.mp4JobDownloading = false;
+  clearMp4JobPolling();
+  setAnimateSeriesStatus(data.message || "Queued for rendering...");
+
+  state.mp4JobTimer = window.setInterval(async () => {
+    if (!state.mp4JobId) return;
+    try {
+      const job = await pollMp4AnimationJob(state.mp4JobId);
+      if ((job.status || "").toLowerCase() === "completed" && !state.mp4JobDownloading) {
+        state.mp4JobDownloading = true;
+        await downloadMp4AnimationJob(state.mp4JobId, job.file_name || "");
+        state.mp4JobId = null;
+        setAnimateSeriesStatus("MP4 downloaded.");
+        toast("Selected animation MP4 ready");
+      }
+    } catch (err) {
+      clearMp4JobPolling();
+      state.mp4JobId = null;
+      state.mp4JobDownloading = false;
+      setAnimateSeriesStatus(err.message || "MP4 animation failed", true);
+      toast(err.message || "MP4 animation failed");
+    }
+  }, 1800);
+
+  const first = await pollMp4AnimationJob(state.mp4JobId);
+  if ((first.status || "").toLowerCase() === "completed" && !state.mp4JobDownloading) {
+    state.mp4JobDownloading = true;
+    await downloadMp4AnimationJob(state.mp4JobId, first.file_name || "");
+    clearMp4JobPolling();
+    state.mp4JobId = null;
+    setAnimateSeriesStatus("MP4 downloaded.");
+    toast("Selected animation MP4 ready");
+  } else {
+    toast("MP4 render started in background");
+  }
+}
+
 async function compareSelection() {
   const payload = {
     before_item_id: beforeSelectEl.value,
@@ -1676,6 +2291,7 @@ async function generateReport() {
   if (!state.currentAoi) {
     state.currentAoi = bboxFromCenter(Number(latEl.value), Number(lonEl.value), Number(widthKmEl.value));
   }
+  state.currentAoi = normalizeGeometryLongitudes(state.currentAoi);
 
   const payload = {
     geometry: state.currentAoi,
@@ -1712,6 +2328,7 @@ async function runSearchAnimation() {
   if (!state.animationGeometry) {
     throw new Error("Animation AOI missing. Draw a rectangle first.");
   }
+  state.animationGeometry = normalizeGeometryLongitudes(state.animationGeometry);
 
   const payload = compactObject({
     geometry: state.animationGeometry,
@@ -1759,7 +2376,7 @@ async function saveAnnotation() {
 
   const payload = {
     note,
-    geometry,
+    geometry: normalizeGeometryLongitudes(geometry),
     label: "analyst-note",
     aoi_name: "default",
   };
@@ -1820,6 +2437,87 @@ async function loadContracts() {
     toast(`Contracts unavailable: ${err.message}`);
   }
 }
+
+async function loadCollections() {
+  const previous = (collectionEl.value || "").trim();
+  collectionEl.innerHTML = "";
+  try {
+    const params = new URLSearchParams();
+    const contractId = selectedContractId();
+    if (contractId) params.set("contract_id", contractId);
+    const suffix = params.toString() ? `?${params.toString()}` : "";
+    const res = await fetch(`${apiBase}/api/collections${suffix}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Failed to load collections");
+
+    const collections = Array.isArray(data.collections) ? data.collections : [];
+    collections.forEach((collection) => {
+      const opt = document.createElement("option");
+      opt.value = collection.id;
+      const title = (collection.title || "").trim();
+      opt.textContent = title && title !== collection.id ? `${title} (${collection.id})` : collection.id;
+      collectionEl.appendChild(opt);
+    });
+
+    const fallbackId = data.default_collection_id || "l1d-sr";
+    const candidate = previous || fallbackId;
+    const hasCandidate = collections.some((c) => c.id === candidate);
+    if (hasCandidate) collectionEl.value = candidate;
+    else if (collections.length) collectionEl.value = collections[0].id;
+    else {
+      const opt = document.createElement("option");
+      opt.value = fallbackId;
+      opt.textContent = fallbackId;
+      collectionEl.appendChild(opt);
+      collectionEl.value = fallbackId;
+    }
+  } catch (err) {
+    const fallbackId = previous || "l1d-sr";
+    const opt = document.createElement("option");
+    opt.value = fallbackId;
+    opt.textContent = fallbackId;
+    collectionEl.appendChild(opt);
+    collectionEl.value = fallbackId;
+    toast(`Collections unavailable: ${err.message}`);
+  }
+}
+
+mapLocateFormEl?.addEventListener("submit", async (evt) => {
+  evt.preventDefault();
+  try {
+    await runLocationSearch();
+  } catch (err) {
+    toast(err.message || "Location search failed");
+  }
+});
+
+mapLocateHistoryBtnEl?.addEventListener("click", (evt) => {
+  evt.stopPropagation();
+  toggleLocationHistoryMenu();
+});
+
+mapLocateInputEl?.addEventListener("input", () => {
+  if (!mapLocateHistoryEl?.classList.contains("open")) return;
+  renderLocationHistoryMenu();
+});
+
+mapLocateInputEl?.addEventListener("focus", () => {
+  if ((mapLocateInputEl.value || "").trim()) return;
+  showLocationHistoryMenu();
+});
+
+mapLocateInputEl?.addEventListener("keydown", (evt) => {
+  if (evt.key === "ArrowDown") {
+    evt.preventDefault();
+    showLocationHistoryMenu();
+    const first = mapLocateHistoryEl?.querySelector(".map-locate-history-item");
+    if (first instanceof HTMLElement) first.focus();
+  }
+});
+
+mapLocateHistoryEl?.addEventListener("click", (evt) => {
+  evt.stopPropagation();
+});
 
 document.getElementById("searchBtn").addEventListener("click", async () => {
   try {
@@ -1956,8 +2654,34 @@ compareModeBtnEl.addEventListener("click", () => {
   setCompareMode(!state.compareMode);
 });
 
+animateSeriesBtnEl?.addEventListener("click", (evt) => {
+  evt.stopPropagation();
+  hideDownloadPopover();
+  toggleAnimateSeriesPopover();
+});
+
+animateSeriesRunBtnEl?.addEventListener("click", async (evt) => {
+  evt.stopPropagation();
+  try {
+    await startSelectedMp4Animation();
+  } catch (err) {
+    setAnimateSeriesStatus(err.message || "MP4 animation failed", true);
+    toast(err.message || "MP4 animation failed");
+  }
+});
+
+animateSeriesCloseBtnEl?.addEventListener("click", (evt) => {
+  evt.stopPropagation();
+  hideAnimateSeriesPopover();
+});
+
+animateSeriesPopoverEl?.addEventListener("click", (evt) => {
+  evt.stopPropagation();
+});
+
 downloadMenuBtnEl?.addEventListener("click", (evt) => {
   evt.stopPropagation();
+  hideAnimateSeriesPopover();
   toggleDownloadPopover();
 });
 
@@ -2001,11 +2725,18 @@ map.on("contextmenu", (evt) => {
 
 map.on("click", () => {
   hideContextMenu();
+  hideLocationHistoryMenu();
+  hideAnimateSeriesPopover();
   hideDownloadPopover();
 });
 
 document.addEventListener("click", (evt) => {
+  if (mapLocateEl && !mapLocateEl.contains(evt.target)) hideLocationHistoryMenu();
   if (!mapContextMenuEl.contains(evt.target)) hideContextMenu();
+  if (animateSeriesPopoverEl && animateSeriesBtnEl) {
+    const target = evt.target;
+    if (!animateSeriesPopoverEl.contains(target) && !animateSeriesBtnEl.contains(target)) hideAnimateSeriesPopover();
+  }
   if (downloadPopoverEl && downloadMenuBtnEl) {
     const target = evt.target;
     if (!downloadPopoverEl.contains(target) && !downloadMenuBtnEl.contains(target)) hideDownloadPopover();
@@ -2013,7 +2744,11 @@ document.addEventListener("click", (evt) => {
 });
 
 document.addEventListener("keydown", (evt) => {
-  if (evt.key === "Escape") hideDownloadPopover();
+  if (evt.key === "Escape") {
+    hideLocationHistoryMenu();
+    hideAnimateSeriesPopover();
+    hideDownloadPopover();
+  }
 });
 
 ctxCreateAnimationEl.addEventListener("click", () => {
@@ -2053,6 +2788,7 @@ animationFormEl.addEventListener("submit", async (evt) => {
 });
 
 contractSelectEl.addEventListener("change", () => {
+  loadCollections().catch((err) => toast(err.message));
   if (!state.searchParams) return;
   state.lastDetailRequestKey = null;
   state.lastDetailCoverageBounds = null;
@@ -2066,6 +2802,7 @@ contractSelectEl.addEventListener("change", () => {
 
 updateLockButtonState();
 updateMapStatus();
+loadLocationHistory();
 if (DEBUG_NET) {
   if (mapDebugStatsEl) mapDebugStatsEl.style.display = "block";
   updateDebugStats();
@@ -2075,4 +2812,8 @@ if (DEBUG_NET) {
 } else if (mapDebugStatsEl) {
   mapDebugStatsEl.style.display = "none";
 }
-loadContracts();
+
+(async () => {
+  await loadContracts();
+  await loadCollections();
+})();

@@ -12,6 +12,64 @@ from .config import settings
 logger = logging.getLogger(__name__)
 
 
+def _normalize_longitude(value: Any) -> Any:
+    try:
+        lon = float(value)
+    except (TypeError, ValueError):
+        return value
+    return ((lon + 180.0) % 360.0) - 180.0
+
+
+def _normalize_geometry_longitudes(geometry: Any) -> Any:
+    if not isinstance(geometry, dict):
+        return geometry
+
+    geometry_type = geometry.get("type")
+    coordinates = geometry.get("coordinates")
+
+    def normalize_pair(pair: Any) -> Any:
+        if not isinstance(pair, list) or len(pair) < 2:
+            return pair
+        out = list(pair)
+        out[0] = _normalize_longitude(out[0])
+        return out
+
+    if geometry_type == "Point" and isinstance(coordinates, list):
+        return {**geometry, "coordinates": normalize_pair(coordinates)}
+
+    if geometry_type in {"MultiPoint", "LineString"} and isinstance(coordinates, list):
+        return {**geometry, "coordinates": [normalize_pair(pair) for pair in coordinates]}
+
+    if geometry_type in {"MultiLineString", "Polygon"} and isinstance(coordinates, list):
+        return {
+            **geometry,
+            "coordinates": [
+                [normalize_pair(pair) for pair in line] if isinstance(line, list) else line
+                for line in coordinates
+            ],
+        }
+
+    if geometry_type == "MultiPolygon" and isinstance(coordinates, list):
+        return {
+            **geometry,
+            "coordinates": [
+                [
+                    [normalize_pair(pair) for pair in line] if isinstance(line, list) else line
+                    for line in poly
+                ] if isinstance(poly, list) else poly
+                for poly in coordinates
+            ],
+        }
+
+    if geometry_type == "GeometryCollection" and isinstance(geometry.get("geometries"), list):
+        return {
+            **geometry,
+            "geometries": [_normalize_geometry_longitudes(g) for g in geometry["geometries"]],
+        }
+
+    return geometry
+
+
 class SatellogicClient:
     def __init__(self):
         self.stac_url = settings.satellogic_stac_url.rstrip("/")
@@ -19,6 +77,7 @@ class SatellogicClient:
         self.bearer_token = settings.satellogic_bearer_token
         self.key_id = settings.satellogic_key_id
         self.key_secret = settings.satellogic_key_secret
+        self.auth_mode = (settings.satellogic_auth_mode or "oauth_client_credentials").strip().lower()
         self.contract_id = settings.satellogic_contract_id
 
         self._access_token: str | None = None
@@ -50,11 +109,27 @@ class SatellogicClient:
         self._access_token_expiry = datetime.now(timezone.utc) + timedelta(seconds=max(60, expires_in - 60))
         return token
 
-    def auth_headers(self, contract_id: str | None = None, include_contract: bool = True) -> dict[str, str]:
+    def auth_headers(
+        self,
+        contract_id: str | None = None,
+        include_contract: bool = True,
+        prefer_key_secret: bool = False,
+        prefer_oauth: bool = False,
+        ignore_static_bearer: bool = False,
+    ) -> dict[str, str]:
         headers: dict[str, str] = {}
-        if self.bearer_token:
+        mode = self.auth_mode
+        if prefer_key_secret:
+            mode = "key_secret"
+        elif prefer_oauth:
+            mode = "oauth_client_credentials"
+
+        if mode in {"key_secret", "client_credentials_plain"}:
+            if self.key_id and self.key_secret:
+                headers["authorizationToken"] = f"Key,Secret {self.key_id},{self.key_secret}"
+        elif mode in {"bearer", "static_bearer"} and self.bearer_token and not ignore_static_bearer:
             headers["authorizationToken"] = f"Bearer {self.bearer_token}"
-        else:
+        elif mode in {"oauth", "oauth_client_credentials"}:
             token = None
             try:
                 token = self._get_access_token()
@@ -65,12 +140,42 @@ class SatellogicClient:
                 headers["authorizationToken"] = f"Bearer {token}"
             elif self.key_id and self.key_secret:
                 headers["authorizationToken"] = f"Key,Secret {self.key_id},{self.key_secret}"
+        elif mode == "auto":
+            if self.bearer_token and not ignore_static_bearer:
+                headers["authorizationToken"] = f"Bearer {self.bearer_token}"
+            else:
+                token = None
+                try:
+                    token = self._get_access_token()
+                except Exception as exc:
+                    logger.warning("OAuth token fetch failed; trying key/secret auth fallback: %s", exc)
+                if token:
+                    headers["authorizationToken"] = f"Bearer {token}"
+                elif self.key_id and self.key_secret:
+                    headers["authorizationToken"] = f"Key,Secret {self.key_id},{self.key_secret}"
+        else:
+            logger.warning("Unknown SATELLOGIC_AUTH_MODE '%s'; defaulting to oauth_client_credentials", mode)
+            token = None
+            try:
+                token = self._get_access_token()
+            except Exception as exc:
+                logger.warning("OAuth token fetch failed; trying key/secret auth fallback: %s", exc)
+            if token:
+                headers["authorizationToken"] = f"Bearer {token}"
+            elif self.key_id and self.key_secret:
+                headers["authorizationToken"] = f"Key,Secret {self.key_id},{self.key_secret}"
 
         effective_contract_id = contract_id if contract_id is not None else self.contract_id
         if include_contract and effective_contract_id:
             headers["X-Satellogic-Contract-Id"] = effective_contract_id
 
         return headers
+
+    def refresh_access_token(self) -> tuple[bool, datetime | None]:
+        self._access_token = None
+        self._access_token_expiry = None
+        token = self._get_access_token()
+        return bool(token), self._access_token_expiry
 
     def list_contracts(self) -> list[dict[str, Any]]:
         """
@@ -87,6 +192,25 @@ class SatellogicClient:
             return payload["results"]
         return []
 
+    def list_collections(self, contract_id: str | None = None) -> list[dict[str, Any]]:
+        """
+        Return STAC collections available to the authenticated account.
+        """
+        url = f"{self.stac_url}/collections"
+        response = requests.get(url, headers=self.auth_headers(contract_id=contract_id), timeout=60)
+        response.raise_for_status()
+        payload = response.json()
+        if isinstance(payload, dict):
+            collections = payload.get("collections")
+            if isinstance(collections, list):
+                return collections
+            results = payload.get("results")
+            if isinstance(results, list):
+                return results
+        if isinstance(payload, list):
+            return payload
+        return []
+
     def search(
         self,
         geometry: dict[str, Any],
@@ -101,9 +225,10 @@ class SatellogicClient:
         max_gsd: float | None = None,
     ) -> list[dict[str, Any]]:
         url = f"{self.stac_url}/search"
+        normalized_geometry = _normalize_geometry_longitudes(geometry)
         body: dict[str, Any] = {
             "collections": [collection_id],
-            "intersects": geometry,
+            "intersects": normalized_geometry,
             "datetime": f"{start_date}/{end_date}",
             "limit": limit,
             "sortby": [{"field": "datetime", "direction": "desc"}],

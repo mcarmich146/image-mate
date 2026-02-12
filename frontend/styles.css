@@ -141,9 +141,108 @@ button.ghost {
   height: 100%;
 }
 
-.map-status {
+.map-locate {
   position: absolute;
   top: 10px;
+  right: 300px;
+  z-index: 835;
+  width: min(390px, calc(100% - 320px));
+}
+
+.map-locate-form {
+  display: grid;
+  grid-template-columns: 1fr 36px;
+  gap: 0;
+}
+
+.map-locate-form input {
+  margin: 0;
+  border-radius: 8px 0 0 8px;
+  border-right: none;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.72rem;
+  background: rgba(255, 251, 243, 0.96);
+}
+
+.map-locate-history-btn {
+  margin: 0;
+  border-radius: 0 8px 8px 0;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 251, 243, 0.96);
+}
+
+.map-locate-history-btn:hover {
+  transform: none;
+}
+
+.caret-icon {
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 7px solid currentColor;
+}
+
+.map-locate-history {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 100%;
+  max-height: 240px;
+  overflow-y: auto;
+  background: #fffdf7;
+  border: 1px solid #ccbca4;
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(27, 44, 35, 0.22);
+  padding: 0.25rem;
+  display: none;
+}
+
+.map-locate-history.open {
+  display: block;
+}
+
+.map-locate-history-item {
+  width: 100%;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #1f2c25;
+  text-align: left;
+  padding: 0.42rem 0.5rem;
+  display: grid;
+  gap: 0.14rem;
+}
+
+.map-locate-history-item:hover {
+  background: #eef6f2;
+  transform: none;
+}
+
+.map-locate-history-primary {
+  font-size: 0.7rem;
+  line-height: 1.25;
+}
+
+.map-locate-history-secondary {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.63rem;
+  color: #5b6f65;
+}
+
+.map-locate-history-empty {
+  padding: 0.42rem 0.5rem;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.66rem;
+  color: #5b6f65;
+}
+
+.map-status {
+  position: absolute;
+  bottom: 10px;
   right: 300px;
   z-index: 820;
   padding: 0.35rem 0.5rem;
@@ -159,7 +258,7 @@ button.ghost {
 
 .map-debug-stats {
   position: absolute;
-  top: 44px;
+  bottom: 42px;
   right: 300px;
   z-index: 820;
   padding: 0.3rem 0.45rem;
@@ -314,6 +413,36 @@ button.icon-only {
   transform: translate(-50%, -100%) rotate(55deg);
 }
 
+.movie-icon {
+  width: 14px;
+  height: 10px;
+  display: inline-block;
+  border: 1.8px solid currentColor;
+  border-radius: 2px;
+  position: relative;
+  vertical-align: -1px;
+}
+
+.movie-icon::before,
+.movie-icon::after {
+  content: "";
+  position: absolute;
+  top: 1px;
+  width: 0;
+  height: 0;
+  border-top: 3px solid transparent;
+  border-bottom: 3px solid transparent;
+  border-left: 4px solid currentColor;
+}
+
+.movie-icon::before {
+  right: -6px;
+}
+
+.movie-icon::after {
+  right: -10px;
+}
+
 .download-icon {
   width: 12px;
   height: 12px;
@@ -348,6 +477,56 @@ button.icon-only {
 
 .download-icon span {
   display: none;
+}
+
+.animate-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  min-width: 220px;
+  background: #fffdf7;
+  border: 1px solid #ccbca4;
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(27, 44, 35, 0.22);
+  padding: 0.5rem;
+  display: none;
+  z-index: 925;
+}
+
+.animate-popover.open {
+  display: block;
+}
+
+.animate-popover h4 {
+  margin: 0 0 0.4rem;
+  font-size: 0.78rem;
+  color: #1f2c25;
+}
+
+.animate-popover label {
+  display: grid;
+  gap: 0.2rem;
+  font-size: 0.7rem;
+}
+
+.animate-popover input {
+  width: 100%;
+}
+
+.animate-popover-actions {
+  display: flex;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+}
+
+.animate-popover-actions button {
+  flex: 1;
+  margin-top: 0;
+}
+
+.animate-popover .meta {
+  margin: 0.45rem 0 0;
+  font-size: 0.66rem;
+  line-height: 1.3;
 }
 
 .download-popover {
@@ -724,6 +903,17 @@ button.icon-only {
 
   .map-status {
     right: 10px;
+    bottom: calc(44% + 8px);
+  }
+
+  .map-debug-stats {
+    right: 10px;
+    bottom: calc(44% + 40px);
+  }
+
+  .map-locate {
+    right: 10px;
+    width: min(400px, calc(100% - 20px));
   }
 
   .compare-rail {

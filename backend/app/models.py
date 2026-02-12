@@ -96,6 +96,26 @@ class AnimationSearchRequest(BaseModel):
     seconds_per_frame: float = Field(default=0.8, gt=0, le=10)
 
 
+class Mp4AnimationTile(BaseModel):
+    url: str
+    geometry: dict[str, Any]
+    item_id: str | None = None
+
+
+class Mp4AnimationFrame(BaseModel):
+    frame_id: str | None = None
+    datetime: str | None = None
+    tiles: list[Mp4AnimationTile] = Field(default_factory=list)
+
+
+class Mp4AnimationJobRequest(BaseModel):
+    frames: list[Mp4AnimationFrame] = Field(default_factory=list)
+    viewport_geometry: dict[str, Any]
+    contract_id: str | None = None
+    seconds_per_frame: float = Field(default=0.8, gt=0, le=10)
+    filename_prefix: str = Field(default="selected_extent_animation", max_length=80)
+
+
 class DownloadAssetEntry(BaseModel):
     url: str
     filename: str | None = None

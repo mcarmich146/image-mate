@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 import logging
 import time
 import base64
 import re
+import threading
+import uuid
 import zipfile
 from urllib.parse import urlparse
 from io import BytesIO
@@ -29,6 +32,7 @@ from .models import (
     GeoAgentRequest,
     GeoAgentResponse,
     HealthResponse,
+    Mp4AnimationJobRequest,
     SearchRequest,
     SearchResponse,
     SearchResultItem,
@@ -40,6 +44,7 @@ from .services import (
     list_annotations,
     make_animation_gif,
     make_capture_mosaic_animation,
+    make_selected_extent_mp4,
     save_annotation,
 )
 
@@ -66,12 +71,181 @@ app.state.asset_cache = {}
 app.state.asset_cache_stats = {"hits": 0, "misses": 0}
 app.state.tile_cache_stats = {"hits": 0, "misses": 0}
 app.state.archive_search_stats = {"total": 0, "by_collection": {}}
+app.state.mp4_jobs = {}
+app.state.mp4_jobs_lock = threading.Lock()
 
 
 @app.on_event("startup")
 def startup_event():
     settings.output_dir.mkdir(parents=True, exist_ok=True)
     settings.annotations_file.parent.mkdir(parents=True, exist_ok=True)
+    auth_mode = getattr(client, "auth_mode", "unknown")
+    uses_oauth = auth_mode in {"oauth", "oauth_client_credentials", "auto"}
+    has_client_credentials = bool(getattr(client, "key_id", "") and getattr(client, "key_secret", ""))
+    if uses_oauth and has_client_credentials:
+        try:
+            refreshed, expiry = client.refresh_access_token()
+            if refreshed:
+                logger.info(
+                    "startup token refresh ok auth_mode=%s expires_at=%s",
+                    auth_mode,
+                    expiry.isoformat() if expiry else "unknown",
+                )
+            else:
+                logger.warning("startup token refresh returned no token auth_mode=%s", auth_mode)
+        except Exception as exc:
+            logger.warning("startup token refresh failed auth_mode=%s error=%s", auth_mode, exc)
+
+
+def _utc_now_iso() -> str:
+    return datetime.utcnow().isoformat() + "Z"
+
+
+def _mp4_job_public(job: dict[str, Any]) -> dict[str, Any]:
+    out = {
+        "job_id": job.get("job_id"),
+        "status": job.get("status"),
+        "created_at": job.get("created_at"),
+        "updated_at": job.get("updated_at"),
+        "started_at": job.get("started_at"),
+        "finished_at": job.get("finished_at"),
+        "progress_current": int(job.get("progress_current", 0)),
+        "progress_total": int(job.get("progress_total", 0)),
+        "frame_count": int(job.get("frame_count", 0)),
+        "message": job.get("message"),
+        "error": job.get("error"),
+        "seconds_per_frame": job.get("seconds_per_frame"),
+        "file_name": job.get("file_name"),
+        "file_size_bytes": job.get("file_size_bytes"),
+    }
+    if out["status"] == "completed":
+        out["download_url"] = f"/api/archive/animate/mp4/jobs/{job.get('job_id')}/download"
+    return out
+
+
+def _set_mp4_job(job_id: str, **updates):
+    with app.state.mp4_jobs_lock:
+        job = app.state.mp4_jobs.get(job_id)
+        if not job:
+            return
+        prev_status = str(job.get("status") or "")
+        job.update(updates)
+        job["updated_at"] = _utc_now_iso()
+        next_status = str(job.get("status") or "")
+        if next_status and next_status != prev_status:
+            logger.info(
+                "mp4_job_status job_id=%s status=%s message=%s",
+                job_id,
+                next_status,
+                job.get("message") or "",
+            )
+        elif updates.get("error"):
+            logger.error(
+                "mp4_job_error job_id=%s status=%s error=%s",
+                job_id,
+                next_status or prev_status,
+                updates.get("error"),
+            )
+
+
+def _prune_mp4_jobs(max_jobs: int = 40):
+    with app.state.mp4_jobs_lock:
+        jobs = app.state.mp4_jobs
+        if len(jobs) <= max_jobs:
+            return
+        removable = [
+            j for j in jobs.values()
+            if j.get("status") in {"completed", "failed"}
+        ]
+        removable.sort(key=lambda j: j.get("created_at") or "")
+        overflow = max(0, len(jobs) - max_jobs)
+        for old in removable[:overflow]:
+            job_id = old.get("job_id")
+            if not job_id:
+                continue
+            file_path = old.get("file")
+            if file_path:
+                try:
+                    path = Path(file_path)
+                    if path.exists():
+                        path.unlink()
+                except Exception:
+                    pass
+            jobs.pop(job_id, None)
+
+
+def _run_mp4_animation_job(job_id: str, payload: dict[str, Any]):
+    try:
+        _set_mp4_job(
+            job_id,
+            status="running",
+            started_at=_utc_now_iso(),
+            message="Preparing selected full-resolution frames...",
+        )
+
+        contract_id = payload.get("contract_id")
+
+        def progress(current: int, total: int, frame_datetime: str | None):
+            label = frame_datetime or "unknown datetime"
+            _set_mp4_job(
+                job_id,
+                progress_current=int(current),
+                progress_total=int(total),
+                message=f"Rendering frame {current}/{total} ({label})",
+            )
+
+        result = make_selected_extent_mp4(
+            frames=payload.get("frames", []),
+            viewport_geometry=payload.get("viewport_geometry"),
+            downloader=lambda url: client.download_bytes(url, contract_id=contract_id),
+            seconds_per_frame=float(payload.get("seconds_per_frame") or 0.8),
+            output_dir=settings.output_dir,
+            filename_prefix=payload.get("filename_prefix") or "selected_extent_animation",
+            progress_callback=progress,
+        )
+
+        if not result.get("created"):
+            reason = result.get("reason") or "MP4 render failed"
+            logger.error("mp4 animation job result failed job_id=%s reason=%s", job_id, reason)
+            _set_mp4_job(
+                job_id,
+                status="failed",
+                finished_at=_utc_now_iso(),
+                error=reason,
+                message=reason,
+            )
+            return
+
+        file_path = Path(str(result.get("file") or ""))
+        file_size = file_path.stat().st_size if file_path.exists() else 0
+        _set_mp4_job(
+            job_id,
+            status="completed",
+            finished_at=_utc_now_iso(),
+            message=f"MP4 ready ({result.get('frame_count', 0)} frames)",
+            frame_count=int(result.get("frame_count", 0)),
+            progress_current=int(result.get("frame_count", 0)),
+            progress_total=int(result.get("frame_count", 0)),
+            file=str(file_path),
+            file_name=file_path.name,
+            file_size_bytes=int(file_size),
+        )
+        logger.info(
+            "mp4 animation job completed job_id=%s frames=%s file=%s bytes=%s",
+            job_id,
+            result.get("frame_count", 0),
+            file_path.name,
+            file_size,
+        )
+    except Exception as exc:
+        logger.exception("mp4 animation job failed job_id=%s", job_id)
+        _set_mp4_job(
+            job_id,
+            status="failed",
+            finished_at=_utc_now_iso(),
+            error=str(exc),
+            message="MP4 render failed",
+        )
 
 
 def _asset_cache_key(url: str, contract_id: str | None, render: bool) -> str:
@@ -230,6 +404,36 @@ def contracts():
         return {"count": len(contracts_list), "default_contract_id": default_contract_id, "contracts": contracts_list}
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Contract discovery failed: {exc}") from exc
+
+
+@app.get("/api/collections")
+def collections(contract_id: str | None = Query(default=None)):
+    try:
+        raw_collections = client.list_collections(contract_id=contract_id)
+        collection_list = []
+        for record in raw_collections:
+            if not isinstance(record, dict):
+                continue
+            collection_id = record.get("id")
+            if not collection_id:
+                continue
+            title = record.get("title") or collection_id
+            description = record.get("description")
+            collection_list.append({
+                "id": str(collection_id),
+                "title": str(title),
+                "description": str(description) if description else None,
+            })
+
+        collection_list.sort(key=lambda item: item["id"])
+        default_collection_id = settings.satellogic_collection_id or (collection_list[0]["id"] if collection_list else None)
+        return {
+            "count": len(collection_list),
+            "default_collection_id": default_collection_id,
+            "collections": collection_list,
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Collection discovery failed: {exc}") from exc
 
 
 @app.post("/api/download/zip")
@@ -465,9 +669,19 @@ def raster_cog_tile_proxy(
         for band in bidx:
             params.append(("bidx", str(band)))
 
+        auth_mode = "oauth_client_credentials"
+        request_headers = client.auth_headers(
+            contract_id=contract_id,
+            prefer_oauth=True,
+            ignore_static_bearer=True,
+        )
+        auth_header = (request_headers.get("authorizationToken") or "")
+        if not auth_header.startswith("Bearer "):
+            raise HTTPException(status_code=503, detail="OAuth client-credentials token is unavailable")
+
         upstream = requests.get(
             upstream_url,
-            headers=client.auth_headers(contract_id=contract_id),
+            headers=request_headers,
             params=params,
             timeout=90,
         )
@@ -490,6 +704,16 @@ def raster_cog_tile_proxy(
                 },
             )
         if upstream.status_code >= 400:
+            detail = (upstream.text or "").strip().replace("\n", " ")[:220]
+            logger.warning(
+                "tile_proxy upstream_error auth=%s zxy=%s/%s/%s status=%s detail=%s",
+                auth_mode,
+                z,
+                x,
+                y,
+                upstream.status_code,
+                detail,
+            )
             raise HTTPException(status_code=upstream.status_code, detail=f"Tile fetch failed upstream: {upstream.status_code}")
 
         media_type = upstream.headers.get("Content-Type", "image/png")
@@ -504,7 +728,8 @@ def raster_cog_tile_proxy(
 
         elapsed_ms = int((time.perf_counter() - started) * 1000)
         logger.info(
-            "tile_proxy cache=miss zxy=%s/%s/%s bytes=%s ms=%s",
+            "tile_proxy cache=miss auth=%s zxy=%s/%s/%s bytes=%s ms=%s",
+            auth_mode,
             z,
             x,
             y,
@@ -682,6 +907,98 @@ def archive_animate_search(request: AnimationSearchRequest):
         raise HTTPException(status_code=400, detail=f"Search animation failed: {exc}") from exc
 
 
+@app.post("/api/archive/animate/mp4/jobs")
+def archive_animate_mp4_create_job(request: Mp4AnimationJobRequest):
+    frames = [frame.model_dump() for frame in request.frames if frame.tiles]
+    if len(frames) < 2:
+        raise HTTPException(status_code=400, detail="Select at least two images with visible full-resolution tiles")
+    if len(frames) > 120:
+        raise HTTPException(status_code=400, detail="Too many selected frames (max 120)")
+
+    total_tiles = sum(len(frame.get("tiles", [])) for frame in frames)
+    if total_tiles > 2400:
+        raise HTTPException(status_code=400, detail="Too many selected tiles (max 2400)")
+
+    job_id = str(uuid.uuid4())
+    created_at = _utc_now_iso()
+    job = {
+        "job_id": job_id,
+        "status": "queued",
+        "created_at": created_at,
+        "updated_at": created_at,
+        "started_at": None,
+        "finished_at": None,
+        "progress_current": 0,
+        "progress_total": len(frames),
+        "frame_count": 0,
+        "message": "Queued for background render",
+        "error": None,
+        "seconds_per_frame": request.seconds_per_frame,
+        "file": None,
+        "file_name": None,
+        "file_size_bytes": None,
+    }
+
+    with app.state.mp4_jobs_lock:
+        app.state.mp4_jobs[job_id] = job
+    _prune_mp4_jobs()
+    logger.info(
+        "mp4 animation job queued job_id=%s frames=%s total_tiles=%s seconds_per_frame=%.3f contract_id=%s",
+        job_id,
+        len(frames),
+        total_tiles,
+        float(request.seconds_per_frame),
+        request.contract_id or "",
+    )
+
+    payload = {
+        "frames": frames,
+        "viewport_geometry": request.viewport_geometry,
+        "contract_id": request.contract_id,
+        "seconds_per_frame": request.seconds_per_frame,
+        "filename_prefix": request.filename_prefix,
+    }
+    worker = threading.Thread(target=_run_mp4_animation_job, args=(job_id, payload), daemon=True)
+    worker.start()
+
+    return _mp4_job_public(job)
+
+
+@app.get("/api/archive/animate/mp4/jobs/{job_id}")
+def archive_animate_mp4_job_status(job_id: str):
+    with app.state.mp4_jobs_lock:
+        job = app.state.mp4_jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="MP4 animation job not found")
+    return _mp4_job_public(job)
+
+
+@app.get("/api/archive/animate/mp4/jobs/{job_id}/download")
+def archive_animate_mp4_job_download(job_id: str):
+    with app.state.mp4_jobs_lock:
+        job = app.state.mp4_jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="MP4 animation job not found")
+
+    status = job.get("status")
+    if status != "completed":
+        raise HTTPException(status_code=409, detail=f"MP4 job is not ready (status={status})")
+
+    raw_file = job.get("file")
+    if not raw_file:
+        raise HTTPException(status_code=410, detail="MP4 output file is unavailable")
+
+    output_path = Path(raw_file).resolve()
+    output_root = settings.output_dir.resolve()
+    if output_root not in output_path.parents and output_path != output_root:
+        raise HTTPException(status_code=400, detail="Invalid job output path")
+    if not output_path.exists():
+        raise HTTPException(status_code=410, detail="MP4 output file no longer exists")
+
+    filename = job.get("file_name") or output_path.name
+    return FileResponse(path=output_path, media_type="video/mp4", filename=filename)
+
+
 @app.post("/api/archive/compare")
 def archive_compare(request: CompareRequest):
     before_item = _resolve_item(request.before_item_id, contract_id=request.contract_id)
@@ -766,8 +1083,27 @@ def geoagent_report(request: GeoAgentRequest):
 def runtime_info():
     return {
         "timestamp": datetime.utcnow().isoformat() + "Z",
+        "auth_mode": getattr(client, "auth_mode", "unknown"),
         "has_satl_credentials": bool(settings.satellogic_key_id and settings.satellogic_key_secret),
         "has_contract_id": bool(settings.satellogic_contract_id),
+        "has_bearer_token": bool(settings.satellogic_bearer_token),
         "has_openai_key": bool(settings.openai_api_key),
         "collection_default": settings.satellogic_collection_id,
     }
+
+
+@app.post("/api/auth/refresh-token")
+def refresh_auth_token():
+    try:
+        refreshed, expiry = client.refresh_access_token()
+        if not refreshed:
+            raise HTTPException(status_code=503, detail="Token refresh returned empty token")
+        return {
+            "refreshed": True,
+            "auth_mode": getattr(client, "auth_mode", "unknown"),
+            "expires_at": expiry.isoformat() if expiry else None,
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Token refresh failed: {exc}") from exc

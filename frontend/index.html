@@ -40,17 +40,17 @@
         </div>
         <div class="grid two">
           <label>Contract<select id="contractSelect"></select></label>
-          <label>Collection<input id="collection" type="text" value="l1d-sr" /></label>
+          <label>Collection<select id="collection"></select></label>
         </div>
         <div class="grid two">
           <label>Limit<input id="limit" type="number" min="1" max="1000" value="250" /></label>
           <label>&nbsp;<input disabled value="Satellogic API v2" /></label>
         </div>
         <div class="actions">
-          <button id="searchBtn">Search AOI</button>
+          <button id="searchBtn">Search View Extent</button>
           <button id="stackBtn" class="ghost">Discover Stacks</button>
         </div>
-        <p class="meta">Draw a rectangle on the map to set AOI. If none is drawn, Lat/Lon + Width are used.</p>
+        <p class="meta">Search uses the current map viewport extent at the moment you click.</p>
         <p id="searchMeta" class="meta">No search run yet.</p>
       </section>
 
@@ -101,6 +101,20 @@
 
     <main class="map-stage">
       <div id="map"></div>
+      <div id="mapLocate" class="map-locate">
+        <form id="mapLocateForm" class="map-locate-form" autocomplete="off">
+          <input
+            id="mapLocateInput"
+            type="text"
+            placeholder="Search place or lat/lon (DD or DMS)"
+            aria-label="Search location"
+          />
+          <button id="mapLocateHistoryBtn" type="button" class="map-locate-history-btn" aria-label="Open location history" aria-expanded="false" title="Search history">
+            <span class="caret-icon" aria-hidden="true"></span>
+          </button>
+        </form>
+        <div id="mapLocateHistory" class="map-locate-history" role="listbox" aria-label="Previously searched locations"></div>
+      </div>
       <div id="mapStatus" class="map-status">Zoom -- | Lat -- | Lon --</div>
       <div id="mapDebugStats" class="map-debug-stats">Search -- | Tiles --</div>
       <aside class="time-carousel" id="timeCarousel">
@@ -114,6 +128,18 @@
               <button id="compareModeBtn" class="ghost tiny icon-only" type="button" title="Compare" aria-label="Compare">
                 <span class="clock-icon" aria-hidden="true"></span>
               </button>
+              <button id="animateSeriesBtn" class="ghost tiny icon-only" type="button" title="Animate Selected" aria-label="Animate Selected">
+                <span class="movie-icon" aria-hidden="true"></span>
+              </button>
+              <div id="animateSeriesPopover" class="animate-popover" role="dialog" aria-label="Animate selected timeline">
+                <h4>Animate Selected</h4>
+                <label>Seconds / frame<input id="animateSeriesSeconds" type="number" min="0.1" max="10" step="0.1" value="0.8" /></label>
+                <div class="animate-popover-actions">
+                  <button id="animateSeriesRunBtn" type="button">Render MP4</button>
+                  <button id="animateSeriesCloseBtn" type="button" class="ghost tiny">Close</button>
+                </div>
+                <p id="animateSeriesStatus" class="meta">Select 2+ images in the carousel, then render.</p>
+              </div>
               <button id="downloadMenuBtn" class="ghost tiny icon-only" type="button" title="Download" aria-label="Download">
                 <span class="download-icon" aria-hidden="true"></span>
               </button>
