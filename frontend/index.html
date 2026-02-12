@@ -18,7 +18,14 @@
         <p class="kicker">Geospatial Intelligence Workbench</p>
         <h1>GeoAgent</h1>
       </header>
+      <nav class="workbench-tabs" id="workbenchTabs">
+        <button type="button" class="tab-btn active" data-tab="explore">Explore</button>
+        <button type="button" class="tab-btn" data-tab="workflows">Workflows</button>
+        <button type="button" class="tab-btn" data-tab="schedules">Schedules</button>
+        <button type="button" class="tab-btn" data-tab="runs">Runs</button>
+      </nav>
 
+      <div id="leftExploreView" class="left-view active">
       <section class="panel-block">
         <h2>Archive Search</h2>
         <div class="grid two">
@@ -97,6 +104,144 @@
           <button id="loadAnnotationBtn" class="ghost">Reload Saved</button>
         </div>
       </section>
+      </div>
+
+      <div id="leftWorkflowsView" class="left-view">
+        <section class="panel-block">
+          <h2>Workflow Presets</h2>
+          <label>Workflow<select id="workflowSelect"></select></label>
+          <label><input id="workflowUseViewport" type="checkbox" checked /> Use current viewport ROI</label>
+          <label><input id="workflowUseSelected" type="checkbox" checked /> Use selected scenes from carousel</label>
+          <label>POI Set<select id="workflowPoiSetSelect"><option value="">None</option></select></label>
+          <label>Power JSON Params<textarea id="workflowParamsJson" rows="6" placeholder='{"max_scenes": 24}'></textarea></label>
+          <div class="actions">
+            <button id="workflowRunBtn">Run Workflow</button>
+            <button id="workflowRefreshBtn" class="ghost">Refresh</button>
+          </div>
+          <p id="workflowMeta" class="meta">Run a preset using viewport, selected scenes, or POI set.</p>
+        </section>
+
+        <section class="panel-block">
+          <div class="workflow-builder-head">
+            <h2>Graph Builder (Beta)</h2>
+            <div class="workflow-builder-window-actions">
+              <button id="workflowBuilderPopoutBtn" type="button" class="ghost tiny">Open Workspace</button>
+              <button id="workflowBuilderDockBtn" type="button" class="ghost tiny" disabled>Dock Back</button>
+            </div>
+          </div>
+          <div id="workflowBuilderHost" class="workflow-builder-host">
+            <div id="workflowBuilderDock" class="workflow-builder-dock">
+              <div class="workflow-builder-topbar">
+                <div class="grid two">
+                  <label>Workflow ID<input id="workflowBuilderId" type="text" placeholder="airbase_time_series_analyst" /></label>
+                  <label>Version<input id="workflowBuilderVersion" type="text" placeholder="1.1.0" /></label>
+                </div>
+                <label>Default Params JSON<textarea id="workflowBuilderDefaults" rows="4" placeholder='{"profile":"airbase","provider_id":"thirdparty.mock"}'></textarea></label>
+                <div class="actions workflow-builder-primary-actions">
+                  <button id="workflowBuilderLoadSelectedBtn" class="ghost" type="button">Load Selected Workflow</button>
+                  <button id="workflowBuilderSaveBtn" type="button">Save Workflow Version</button>
+                </div>
+              </div>
+
+              <div class="workflow-builder-layout">
+                <aside class="workflow-builder-sidebar">
+                  <h3>Node Tools</h3>
+                  <label>Add Skill<select id="workflowBuilderSkillSelect"></select></label>
+                  <label>Node ID<input id="workflowBuilderNodeId" type="text" placeholder="analytics_b" /></label>
+                  <div class="actions">
+                    <button id="workflowBuilderAddNodeBtn" type="button">Add Node</button>
+                    <button id="workflowBuilderRemoveNodeBtn" class="ghost" type="button">Remove Selected</button>
+                  </div>
+
+                  <h3>Edge Tools</h3>
+                  <label>Edge From<select id="workflowBuilderEdgeFrom"></select></label>
+                  <label>Edge To<select id="workflowBuilderEdgeTo"></select></label>
+                  <div class="actions">
+                    <button id="workflowBuilderAddEdgeBtn" type="button">Add Edge</button>
+                    <button id="workflowBuilderRemoveEdgeBtn" class="ghost" type="button">Remove Edge</button>
+                  </div>
+
+                  <h3>Selected Node</h3>
+                  <label>Node ID<input id="workflowBuilderSelectedNodeId" type="text" placeholder="select a node" /></label>
+                  <label>Skill<select id="workflowBuilderSelectedNodeSkill"></select></label>
+                  <button id="workflowBuilderApplyNodeBtn" type="button" class="ghost">Apply Selected Node Edit</button>
+                </aside>
+
+                <div class="workflow-builder-canvas-area">
+                  <div class="workflow-builder-canvas-actions">
+                    <button id="workflowBuilderAutoLayoutBtn" class="ghost tiny" type="button">Auto Layout</button>
+                    <button id="workflowBuilderApplyJsonBtn" class="ghost tiny" type="button">Apply JSON</button>
+                  </div>
+                  <div id="workflowBuilderCanvasWrap" class="workflow-builder-wrap">
+                    <svg id="workflowBuilderEdges" class="workflow-builder-edges" aria-hidden="true"></svg>
+                    <div id="workflowBuilderCanvas" class="workflow-builder-canvas"></div>
+                  </div>
+                  <label>Graph JSON<textarea id="workflowBuilderJson" rows="8"></textarea></label>
+                </div>
+              </div>
+            </div>
+            <div id="workflowBuilderDetachedHint" class="workflow-builder-detached-hint">
+              Workflow workspace is open in a separate window.
+            </div>
+          </div>
+          <p id="workflowBuilderMeta" class="meta">Drag nodes to position them. Graph must remain a DAG.</p>
+        </section>
+      </div>
+
+      <div id="leftSchedulesView" class="left-view">
+        <section class="panel-block">
+          <h2>Create Schedule</h2>
+          <label>Trigger Type
+            <select id="scheduleType">
+              <option value="CRON">Periodic (Cron)</option>
+              <option value="IMAGERY_ARRIVAL">On Imagery Arrival</option>
+              <option value="STACK_ARRIVAL">On Stack Arrival</option>
+            </select>
+          </label>
+          <label>Workflow<select id="scheduleWorkflowSelect"></select></label>
+          <label>Cron (for CRON)<input id="scheduleCron" type="text" value="*/15 * * * *" /></label>
+          <label>Interval Seconds<input id="scheduleIntervalSeconds" type="number" min="0" value="0" /></label>
+          <label>Subscription<select id="scheduleSubscriptionSelect"><option value="">None</option></select></label>
+          <label>Max Scenes / Run<input id="scheduleMaxScenes" type="number" min="1" max="500" value="24" /></label>
+          <div class="actions">
+            <button id="scheduleCreateBtn">Create Schedule</button>
+            <button id="scheduleRefreshBtn" class="ghost">Refresh</button>
+          </div>
+          <label>Schedules<select id="scheduleSelect" size="5"></select></label>
+          <div class="actions">
+            <button id="scheduleEnableBtn">Enable</button>
+            <button id="scheduleDisableBtn" class="ghost">Disable</button>
+          </div>
+          <pre id="scheduleListOut" class="report compact">No schedules loaded.</pre>
+        </section>
+
+        <section class="panel-block">
+          <h2>POI Sets & Subscriptions</h2>
+          <label>POI Set Name<input id="poiSetName" type="text" placeholder="e.g. forest-watch-north" /></label>
+          <label>POI GeoJSON / Geometry<textarea id="poiSetGeoJson" rows="4" placeholder='{"type":"Polygon","coordinates":[...]}'></textarea></label>
+          <div class="actions">
+            <button id="poiSetCreateBtn">Create POI Set</button>
+          </div>
+          <label>Subscription POI Set<select id="subscriptionPoiSetSelect"><option value="">None</option></select></label>
+          <label>Subscription Geometry (optional)<textarea id="subscriptionGeometry" rows="3" placeholder='{"type":"Polygon","coordinates":[...]}'></textarea></label>
+          <div class="actions">
+            <button id="subscriptionCreateBtn">Create Subscription</button>
+          </div>
+        </section>
+      </div>
+
+      <div id="leftRunsView" class="left-view">
+        <section class="panel-block">
+          <h2>Run Inspector</h2>
+          <div class="actions">
+            <button id="runsRefreshBtn">Refresh Runs</button>
+          </div>
+          <label>Runs<select id="runsSelect" size="8"></select></label>
+          <pre id="runInspectorOut" class="report compact">Select a run to inspect.</pre>
+          <h2>Event Feed</h2>
+          <pre id="runEventsOut" class="report compact">No events.</pre>
+        </section>
+      </div>
     </aside>
 
     <main class="map-stage">
@@ -115,12 +260,24 @@
         </form>
         <div id="mapLocateHistory" class="map-locate-history" role="listbox" aria-label="Previously searched locations"></div>
       </div>
+      <div id="layerEditorPopover" class="layer-popover" role="dialog" aria-label="Layer editor">
+        <h4>Layer Editor</h4>
+        <label>Display Layer
+          <select id="layerEditorSelect">
+            <option value="natural">Natural Colour</option>
+            <option value="false_color">False Colour</option>
+            <option value="ndvi">NDVI</option>
+            <option value="cloud_mask">Cloud Mask</option>
+          </select>
+        </label>
+        <p class="meta">Computed from multispectral imagery and cloud-mask assets when available.</p>
+      </div>
       <div id="mapStatus" class="map-status">Zoom -- | Lat -- | Lon --</div>
       <div id="mapDebugStats" class="map-debug-stats">Search -- | Tiles --</div>
       <aside class="time-carousel" id="timeCarousel">
         <div class="time-carousel-header">
           <div class="time-carousel-title-row">
-            <h3>Search Results</h3>
+            <h3 id="rightPanelTitle">Search Results</h3>
             <div class="time-carousel-actions">
               <button id="lockSelectionBtn" class="ghost tiny icon-only" type="button" title="Lock View" aria-label="Lock View">
                 <span class="lock-icon unlocked" aria-hidden="true"></span>

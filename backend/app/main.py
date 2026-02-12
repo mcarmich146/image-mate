@@ -33,9 +33,15 @@ from .models import (
     GeoAgentResponse,
     HealthResponse,
     Mp4AnimationJobRequest,
+    PoiSetCreateRequest,
+    RunCreateRequest,
+    ScheduleCreateRequest,
+    SchedulePatchRequest,
     SearchRequest,
     SearchResponse,
     SearchResultItem,
+    SubscriptionCreateRequest,
+    WorkflowDefinitionPayload,
 )
 from .satellogic_client import SatellogicClient, normalize_item
 from .services import (
@@ -47,6 +53,7 @@ from .services import (
     make_selected_extent_mp4,
     save_annotation,
 )
+from .workbench import GeoWorkbenchEngine
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("image_mate")
@@ -73,6 +80,8 @@ app.state.tile_cache_stats = {"hits": 0, "misses": 0}
 app.state.archive_search_stats = {"total": 0, "by_collection": {}}
 app.state.mp4_jobs = {}
 app.state.mp4_jobs_lock = threading.Lock()
+app.state.workbench = None
+app.state.workbench_lock = threading.Lock()
 
 
 @app.on_event("startup")
@@ -95,6 +104,20 @@ def startup_event():
                 logger.warning("startup token refresh returned no token auth_mode=%s", auth_mode)
         except Exception as exc:
             logger.warning("startup token refresh failed auth_mode=%s error=%s", auth_mode, exc)
+    try:
+        _ensure_workbench()
+    except Exception as exc:
+        logger.warning("workbench startup failed: %s", exc)
+
+
+@app.on_event("shutdown")
+def shutdown_event():
+    wb = app.state.workbench
+    if wb:
+        try:
+            wb.stop()
+        except Exception:
+            pass
 
 
 def _utc_now_iso() -> str:
@@ -259,9 +282,12 @@ def _tile_cache_key(
     source_url: str,
     contract_id: str | None,
     scale: int,
+    buffer: int,
     tile_matrix_set_id: str,
     image_format: str,
     bidx: list[int],
+    render_layer: str,
+    cloud_mask_url: str | None,
 ) -> str:
     return "|".join([
         contract_id or "",
@@ -269,9 +295,12 @@ def _tile_cache_key(
         str(x),
         str(y),
         str(scale),
+        str(buffer),
         tile_matrix_set_id,
         image_format,
         ",".join(str(v) for v in sorted(bidx)),
+        render_layer,
+        cloud_mask_url or "",
         source_url,
     ])
 
@@ -604,6 +633,289 @@ def asset_proxy(
         raise HTTPException(status_code=400, detail=f"Asset proxy failed: {exc}") from exc
 
 
+_RENDER_LAYERS = {"raw", "natural", "false_color", "ndvi", "cloud_mask"}
+
+
+def _cog_upstream_request(
+    *,
+    z: int,
+    x: int,
+    y: int,
+    source_url: str,
+    contract_id: str | None,
+    scale: int,
+    buffer: int,
+    tile_matrix_set_id: str,
+    image_format: str,
+    bidx: list[int],
+) -> tuple[requests.Response, str]:
+    upstream_url = f"https://api.satellogic.com/raster/cog/tiles/{z}/{x}/{y}"
+    params: list[tuple[str, str]] = [
+        ("scale", str(scale)),
+        ("buffer", str(max(0, buffer))),
+        ("tileMatrixSetId", tile_matrix_set_id),
+        ("url", source_url),
+        ("format", image_format),
+    ]
+    for band in bidx:
+        params.append(("bidx", str(band)))
+
+    auth_mode = "oauth_client_credentials"
+    request_headers = client.auth_headers(
+        contract_id=contract_id,
+        prefer_oauth=True,
+        ignore_static_bearer=True,
+    )
+    auth_header = (request_headers.get("authorizationToken") or "")
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=503, detail="OAuth client-credentials token is unavailable")
+
+    upstream = requests.get(
+        upstream_url,
+        headers=request_headers,
+        params=params,
+        timeout=90,
+    )
+    if upstream.status_code == 400 and buffer > 0:
+        retry_params = [entry for entry in params if entry[0] != "buffer"]
+        upstream = requests.get(
+            upstream_url,
+            headers=request_headers,
+            params=retry_params,
+            timeout=90,
+        )
+    return upstream, auth_mode
+
+
+def _as_luma_png(content: bytes) -> Image.Image:
+    with Image.open(BytesIO(content)) as img:
+        return img.convert("L")
+
+
+def _as_rgba_png(content: bytes) -> Image.Image:
+    with Image.open(BytesIO(content)) as img:
+        return img.convert("RGBA")
+
+
+def _png_bytes(img: Image.Image) -> bytes:
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def _compose_rgb_from_luma(red_l: Image.Image, green_l: Image.Image, blue_l: Image.Image) -> Image.Image:
+    return Image.merge("RGB", (red_l.convert("L"), green_l.convert("L"), blue_l.convert("L"))).convert("RGBA")
+
+
+def _cloud_presence_mask(mask_l: Image.Image) -> Image.Image:
+    lo, hi = mask_l.getextrema()
+    if hi <= 1:
+        threshold = 1
+    elif hi <= 100:
+        threshold = 50
+    elif hi <= 200:
+        threshold = 100
+    else:
+        threshold = 160
+    return mask_l.point(lambda v: 255 if v >= threshold else 0, mode="L")
+
+
+def _apply_cloud_alpha(base_rgba: Image.Image, mask_l: Image.Image) -> Image.Image:
+    out = base_rgba.copy().convert("RGBA")
+    cloud = _cloud_presence_mask(mask_l)
+    clear_alpha = cloud.point(lambda v: 0 if v > 0 else 255, mode="L")
+    out.putalpha(clear_alpha)
+    return out
+
+
+def _render_cloud_mask_rgba(mask_l: Image.Image) -> Image.Image:
+    cloud = _cloud_presence_mask(mask_l)
+    alpha = cloud.point(lambda v: 185 if v > 0 else 0, mode="L")
+    out = Image.new("RGBA", mask_l.size, (255, 255, 255, 0))
+    out.putalpha(alpha)
+    return out
+
+
+def _render_ndvi_rgba(red_l: Image.Image, nir_l: Image.Image, cloud_mask_l: Image.Image | None = None) -> Image.Image:
+    red = list(red_l.getdata())
+    nir = list(nir_l.getdata())
+    cloud = list(_cloud_presence_mask(cloud_mask_l).getdata()) if cloud_mask_l else None
+    out = bytearray()
+
+    def ndvi_color(value: float) -> tuple[int, int, int]:
+        if value < 0.0:
+            return (158, 126, 97)
+        if value < 0.15:
+            return (189, 171, 112)
+        if value < 0.3:
+            return (159, 184, 106)
+        if value < 0.45:
+            return (120, 171, 92)
+        if value < 0.6:
+            return (72, 145, 74)
+        return (34, 112, 58)
+
+    for idx, (r, n) in enumerate(zip(red, nir)):
+        denom = int(n) + int(r)
+        ndvi = (float(n) - float(r)) / float(denom) if denom > 0 else -1.0
+        rgb = ndvi_color(ndvi)
+        alpha = 255
+        if cloud and cloud[idx] > 0:
+            alpha = 0
+        out.extend((rgb[0], rgb[1], rgb[2], alpha))
+    return Image.frombytes("RGBA", red_l.size, bytes(out))
+
+
+def _render_thematic_tile(
+    *,
+    z: int,
+    x: int,
+    y: int,
+    source_url: str,
+    cloud_mask_url: str | None,
+    contract_id: str | None,
+    scale: int,
+    buffer: int,
+    tile_matrix_set_id: str,
+    render_layer: str,
+) -> tuple[bytes, str]:
+    def fetch_natural_rgba() -> tuple[Image.Image | None, str]:
+        upstream, auth_mode = _cog_upstream_request(
+            z=z,
+            x=x,
+            y=y,
+            source_url=source_url,
+            contract_id=contract_id,
+            scale=scale,
+            buffer=buffer,
+            tile_matrix_set_id=tile_matrix_set_id,
+            image_format="png",
+            bidx=[1, 2, 3],
+        )
+        if upstream.status_code == 404:
+            return None, auth_mode
+        if upstream.status_code >= 400:
+            detail = (upstream.text or "").strip().replace("\n", " ")[:220]
+            raise HTTPException(status_code=upstream.status_code, detail=f"Natural tile failed upstream: {detail or upstream.status_code}")
+        return _as_rgba_png(upstream.content), auth_mode
+
+    def fetch_band_luma(band: int) -> tuple[Image.Image | None, str]:
+        upstream, auth_mode = _cog_upstream_request(
+            z=z,
+            x=x,
+            y=y,
+            source_url=source_url,
+            contract_id=contract_id,
+            scale=scale,
+            buffer=buffer,
+            tile_matrix_set_id=tile_matrix_set_id,
+            image_format="png",
+            bidx=[band],
+        )
+        if upstream.status_code == 404:
+            return None, auth_mode
+        if upstream.status_code >= 400:
+            detail = (upstream.text or "").strip().replace("\n", " ")[:220]
+            raise HTTPException(status_code=upstream.status_code, detail=f"Band {band} fetch failed upstream: {detail or upstream.status_code}")
+        return _as_luma_png(upstream.content), auth_mode
+
+    if render_layer == "cloud_mask":
+        mask_source = cloud_mask_url or source_url
+        upstream, auth_mode = _cog_upstream_request(
+            z=z,
+            x=x,
+            y=y,
+            source_url=mask_source,
+            contract_id=contract_id,
+            scale=scale,
+            buffer=buffer,
+            tile_matrix_set_id=tile_matrix_set_id,
+            image_format="png",
+            bidx=[1],
+        )
+        if upstream.status_code == 404:
+            return TRANSPARENT_PNG_1X1, auth_mode
+        if upstream.status_code >= 400:
+            detail = (upstream.text or "").strip().replace("\n", " ")[:220]
+            raise HTTPException(status_code=upstream.status_code, detail=f"Cloud-mask tile failed upstream: {detail or upstream.status_code}")
+        mask = _as_luma_png(upstream.content)
+        return _png_bytes(_render_cloud_mask_rgba(mask)), auth_mode
+
+    if render_layer == "ndvi":
+        red_l, auth_mode = fetch_band_luma(3)
+        if red_l is None:
+            return TRANSPARENT_PNG_1X1, auth_mode
+        nir_l, _ = fetch_band_luma(4)
+        if nir_l is None:
+            return TRANSPARENT_PNG_1X1, auth_mode
+
+        cloud_mask = None
+        if cloud_mask_url:
+            mask_upstream, _ = _cog_upstream_request(
+                z=z,
+                x=x,
+                y=y,
+                source_url=cloud_mask_url,
+                contract_id=contract_id,
+                scale=scale,
+                buffer=buffer,
+                tile_matrix_set_id=tile_matrix_set_id,
+                image_format="png",
+                bidx=[1],
+            )
+            if mask_upstream.status_code < 400:
+                cloud_mask = _as_luma_png(mask_upstream.content)
+
+        return _png_bytes(_render_ndvi_rgba(red_l, nir_l, cloud_mask)), auth_mode
+
+    if render_layer == "natural":
+        base, auth_mode = fetch_natural_rgba()
+        if base is None:
+            return TRANSPARENT_PNG_1X1, auth_mode
+    else:
+        bands = (4, 1, 2)
+        try:
+            red_l, auth_mode = fetch_band_luma(bands[0])
+            if red_l is None:
+                return TRANSPARENT_PNG_1X1, auth_mode
+            green_l, _ = fetch_band_luma(bands[1])
+            if green_l is None:
+                return TRANSPARENT_PNG_1X1, auth_mode
+            blue_l, _ = fetch_band_luma(bands[2])
+            if blue_l is None:
+                return TRANSPARENT_PNG_1X1, auth_mode
+            base = _compose_rgb_from_luma(red_l, green_l, blue_l)
+        except HTTPException as exc:
+            if exc.status_code not in {400, 404}:
+                raise
+            logger.info(
+                "tile_proxy false_color fallback_to_natural zxy=%s/%s/%s reason=%s",
+                z,
+                x,
+                y,
+                exc.status_code,
+            )
+            base, auth_mode = fetch_natural_rgba()
+            if base is None:
+                return TRANSPARENT_PNG_1X1, auth_mode
+    if cloud_mask_url:
+        mask_upstream, _ = _cog_upstream_request(
+            z=z,
+            x=x,
+            y=y,
+            source_url=cloud_mask_url,
+            contract_id=contract_id,
+            scale=scale,
+            buffer=buffer,
+            tile_matrix_set_id=tile_matrix_set_id,
+            image_format="png",
+            bidx=[1],
+        )
+        if mask_upstream.status_code < 400:
+            base = _apply_cloud_alpha(base, _as_luma_png(mask_upstream.content))
+    return _png_bytes(base), auth_mode
+
+
 @app.get("/api/raster/cog/tiles/{z}/{x}/{y}")
 def raster_cog_tile_proxy(
     z: int,
@@ -612,9 +924,12 @@ def raster_cog_tile_proxy(
     url: str = Query(..., alias="url"),
     contract_id: str | None = Query(default=None),
     scale: int = Query(default=2),
+    buffer: int = Query(default=0),
     tileMatrixSetId: str = Query(default="WebMercatorQuad"),
     format: str = Query(default="png"),
     bidx: list[int] = Query(default=[1, 2, 3]),
+    render_layer: str = Query(default="raw"),
+    cloud_mask_url: str | None = Query(default=None),
 ):
     try:
         if z < 0 or x < 0 or y < 0:
@@ -624,6 +939,16 @@ def raster_cog_tile_proxy(
             raise HTTPException(status_code=400, detail="COG source URL must include scheme")
         if parsed.scheme not in ("s3", "http", "https"):
             raise HTTPException(status_code=400, detail="COG source scheme not supported")
+        if cloud_mask_url:
+            parsed_mask = urlparse(cloud_mask_url)
+            if not parsed_mask.scheme:
+                raise HTTPException(status_code=400, detail="Cloud mask URL must include scheme")
+            if parsed_mask.scheme not in ("s3", "http", "https"):
+                raise HTTPException(status_code=400, detail="Cloud mask URL scheme not supported")
+
+        layer = (render_layer or "raw").strip().lower()
+        if layer not in _RENDER_LAYERS:
+            raise HTTPException(status_code=400, detail=f"Unsupported render_layer '{render_layer}'")
 
         started = time.perf_counter()
         cache_key = _tile_cache_key(
@@ -633,9 +958,12 @@ def raster_cog_tile_proxy(
             source_url=url,
             contract_id=contract_id,
             scale=scale,
+            buffer=buffer,
             tile_matrix_set_id=tileMatrixSetId,
             image_format=format,
             bidx=bidx,
+            render_layer=layer,
+            cloud_mask_url=cloud_mask_url,
         )
         cache_entry = app.state.asset_cache.get(cache_key)
         now = time.time()
@@ -659,65 +987,67 @@ def raster_cog_tile_proxy(
             app.state.asset_cache.pop(cache_key, None)
 
         app.state.tile_cache_stats["misses"] += 1
-        upstream_url = f"https://api.satellogic.com/raster/cog/tiles/{z}/{x}/{y}"
-        params: list[tuple[str, str]] = [
-            ("scale", str(scale)),
-            ("tileMatrixSetId", tileMatrixSetId),
-            ("url", url),
-            ("format", format),
-        ]
-        for band in bidx:
-            params.append(("bidx", str(band)))
-
-        auth_mode = "oauth_client_credentials"
-        request_headers = client.auth_headers(
-            contract_id=contract_id,
-            prefer_oauth=True,
-            ignore_static_bearer=True,
-        )
-        auth_header = (request_headers.get("authorizationToken") or "")
-        if not auth_header.startswith("Bearer "):
-            raise HTTPException(status_code=503, detail="OAuth client-credentials token is unavailable")
-
-        upstream = requests.get(
-            upstream_url,
-            headers=request_headers,
-            params=params,
-            timeout=90,
-        )
-        if upstream.status_code == 404:
-            elapsed_ms = int((time.perf_counter() - started) * 1000)
-            logger.info(
-                "tile_proxy empty zxy=%s/%s/%s ms=%s",
-                z,
-                x,
-                y,
-                elapsed_ms,
+        media_type = "image/png"
+        if layer == "raw":
+            upstream, auth_mode = _cog_upstream_request(
+                z=z,
+                x=x,
+                y=y,
+                source_url=url,
+                contract_id=contract_id,
+                scale=scale,
+                buffer=buffer,
+                tile_matrix_set_id=tileMatrixSetId,
+                image_format=format,
+                bidx=bidx,
             )
-            return Response(
-                content=TRANSPARENT_PNG_1X1,
-                media_type="image/png",
-                headers={
-                    "Cache-Control": "public, max-age=60",
-                    "X-Proxy-Cache": "miss",
-                    "X-Tile-Empty": "1",
-                },
-            )
-        if upstream.status_code >= 400:
-            detail = (upstream.text or "").strip().replace("\n", " ")[:220]
-            logger.warning(
-                "tile_proxy upstream_error auth=%s zxy=%s/%s/%s status=%s detail=%s",
-                auth_mode,
-                z,
-                x,
-                y,
-                upstream.status_code,
-                detail,
-            )
-            raise HTTPException(status_code=upstream.status_code, detail=f"Tile fetch failed upstream: {upstream.status_code}")
+            if upstream.status_code == 404:
+                elapsed_ms = int((time.perf_counter() - started) * 1000)
+                logger.info(
+                    "tile_proxy empty zxy=%s/%s/%s ms=%s",
+                    z,
+                    x,
+                    y,
+                    elapsed_ms,
+                )
+                return Response(
+                    content=TRANSPARENT_PNG_1X1,
+                    media_type="image/png",
+                    headers={
+                        "Cache-Control": "public, max-age=60",
+                        "X-Proxy-Cache": "miss",
+                        "X-Tile-Empty": "1",
+                    },
+                )
+            if upstream.status_code >= 400:
+                detail = (upstream.text or "").strip().replace("\n", " ")[:220]
+                logger.warning(
+                    "tile_proxy upstream_error auth=%s zxy=%s/%s/%s status=%s detail=%s",
+                    auth_mode,
+                    z,
+                    x,
+                    y,
+                    upstream.status_code,
+                    detail,
+                )
+                raise HTTPException(status_code=upstream.status_code, detail=f"Tile fetch failed upstream: {upstream.status_code}")
 
-        media_type = upstream.headers.get("Content-Type", "image/png")
-        content = upstream.content
+            media_type = upstream.headers.get("Content-Type", "image/png")
+            content = upstream.content
+        else:
+            content, auth_mode = _render_thematic_tile(
+                z=z,
+                x=x,
+                y=y,
+                source_url=url,
+                cloud_mask_url=cloud_mask_url,
+                contract_id=contract_id,
+                scale=scale,
+                buffer=buffer,
+                tile_matrix_set_id=tileMatrixSetId,
+                render_layer=layer,
+            )
+
         if len(content) <= 2_000_000:
             app.state.asset_cache[cache_key] = {
                 "content": content,
@@ -728,8 +1058,9 @@ def raster_cog_tile_proxy(
 
         elapsed_ms = int((time.perf_counter() - started) * 1000)
         logger.info(
-            "tile_proxy cache=miss auth=%s zxy=%s/%s/%s bytes=%s ms=%s",
+            "tile_proxy cache=miss auth=%s layer=%s zxy=%s/%s/%s bytes=%s ms=%s",
             auth_mode,
+            layer,
             z,
             x,
             y,
@@ -764,6 +1095,42 @@ def _resolve_item(item_id: str, contract_id: str | None = None) -> dict[str, Any
     normalized = normalize_item(item)
     _cache_items([normalized])
     return normalized
+
+
+def _workbench_search_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    features = client.search(
+        geometry=payload.get("geometry"),
+        start_date=payload.get("start_date"),
+        end_date=payload.get("end_date"),
+        collection_id=payload.get("collection_id") or "l1d-sr",
+        contract_id=payload.get("contract_id"),
+        limit=int(payload.get("limit") or 300),
+        max_cloud_cover=payload.get("max_cloud_cover"),
+        satellite_name=payload.get("satellite_name"),
+        min_gsd=payload.get("min_gsd"),
+        max_gsd=payload.get("max_gsd"),
+    )
+    items = [normalize_item(feature) for feature in features]
+    _cache_items(items)
+    return items
+
+
+def _ensure_workbench() -> GeoWorkbenchEngine:
+    existing = app.state.workbench
+    if existing:
+        return existing
+    with app.state.workbench_lock:
+        existing = app.state.workbench
+        if existing:
+            return existing
+        engine = GeoWorkbenchEngine(
+            root_dir=settings.output_dir,
+            search_items_fn=_workbench_search_items,
+            resolve_item_fn=_resolve_item,
+        )
+        engine.start()
+        app.state.workbench = engine
+        return engine
 
 
 @app.post("/api/archive/search", response_model=SearchResponse)
@@ -1107,3 +1474,160 @@ def refresh_auth_token():
         raise
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Token refresh failed: {exc}") from exc
+
+
+@app.get("/api/workflows")
+def workflows_list():
+    wb = _ensure_workbench()
+    rows = wb.list_workflows()
+    return {
+        "count": len(rows),
+        "workflows": rows,
+        "skills": wb.list_skills(),
+        "providers": wb.list_providers(),
+    }
+
+
+@app.post("/api/workflows")
+def workflows_create_or_update(payload: WorkflowDefinitionPayload):
+    wb = _ensure_workbench()
+    try:
+        row = wb.create_or_update_workflow(payload.model_dump())
+        return row
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Workflow create/update failed: {exc}") from exc
+
+
+@app.post("/api/runs")
+def runs_create(payload: RunCreateRequest):
+    wb = _ensure_workbench()
+    try:
+        run = wb.create_run(
+            workflow_id=payload.workflow_id,
+            workflow_version=payload.workflow_version,
+            inputs_payload=payload.inputs_payload,
+            trigger_id=payload.trigger_id,
+            idempotency_key=payload.idempotency_key,
+        )
+        return run
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Run create failed: {exc}") from exc
+
+
+@app.get("/api/runs")
+def runs_list(
+    limit: int = Query(default=100, ge=1, le=500),
+    status: str | None = Query(default=None),
+    workflow_id: str | None = Query(default=None),
+):
+    wb = _ensure_workbench()
+    rows = wb.list_runs(limit=limit, status=status, workflow_id=workflow_id)
+    return {"count": len(rows), "runs": rows}
+
+
+@app.get("/api/runs/{run_id}")
+def runs_get(run_id: str):
+    wb = _ensure_workbench()
+    row = wb.get_run(run_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return row
+
+
+@app.get("/api/runs/{run_id}/artifacts")
+def runs_artifacts(run_id: str):
+    wb = _ensure_workbench()
+    row = wb.get_run(run_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Run not found")
+    artifacts = wb.run_artifacts(run_id)
+    return {"count": len(artifacts), "artifacts": artifacts}
+
+
+@app.get("/api/runs/{run_id}/artifacts/{artifact_id}/download")
+def runs_artifact_download(run_id: str, artifact_id: str):
+    wb = _ensure_workbench()
+    row = wb.get_run(run_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Run not found")
+    artifacts = row.get("artifacts") or []
+    target = next((a for a in artifacts if a.get("artifact_id") == artifact_id), None)
+    if not target:
+        raise HTTPException(status_code=404, detail="Artifact not found")
+    artifact_path = Path(str(target.get("uri") or "")).resolve()
+    workbench_root = (settings.output_dir / "workbench").resolve()
+    if workbench_root not in artifact_path.parents:
+        raise HTTPException(status_code=400, detail="Invalid artifact path")
+    if not artifact_path.exists() or not artifact_path.is_file():
+        raise HTTPException(status_code=410, detail="Artifact file not found")
+    return FileResponse(path=artifact_path, filename=artifact_path.name)
+
+
+@app.post("/api/schedules")
+def schedules_create(payload: ScheduleCreateRequest):
+    wb = _ensure_workbench()
+    try:
+        row = wb.create_schedule(payload.model_dump())
+        return row
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Schedule create failed: {exc}") from exc
+
+
+@app.get("/api/schedules")
+def schedules_list():
+    wb = _ensure_workbench()
+    rows = wb.list_schedules()
+    return {"count": len(rows), "schedules": rows}
+
+
+@app.patch("/api/schedules/{schedule_id}")
+def schedules_patch(schedule_id: str, payload: SchedulePatchRequest):
+    wb = _ensure_workbench()
+    try:
+        row = wb.patch_schedule(schedule_id, payload.model_dump(exclude_none=True))
+        return row
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Schedule update failed: {exc}") from exc
+
+
+@app.post("/api/poi_sets")
+def poi_sets_create(payload: PoiSetCreateRequest):
+    wb = _ensure_workbench()
+    try:
+        row = wb.create_poi_set(payload.model_dump())
+        return row
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"POI set create failed: {exc}") from exc
+
+
+@app.get("/api/poi_sets")
+def poi_sets_list():
+    wb = _ensure_workbench()
+    rows = wb.list_poi_sets()
+    return {"count": len(rows), "poi_sets": rows}
+
+
+@app.post("/api/subscriptions")
+def subscriptions_create(payload: SubscriptionCreateRequest):
+    wb = _ensure_workbench()
+    try:
+        row = wb.create_subscription(payload.model_dump())
+        return row
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Subscription create failed: {exc}") from exc
+
+
+@app.get("/api/subscriptions")
+def subscriptions_list():
+    wb = _ensure_workbench()
+    rows = wb.list_subscriptions()
+    return {"count": len(rows), "subscriptions": rows}
+
+
+@app.get("/api/events")
+def events_feed(limit: int = Query(default=100, ge=1, le=1000)):
+    wb = _ensure_workbench()
+    rows = wb.events[-limit:]
+    return {"count": len(rows), "events": rows}

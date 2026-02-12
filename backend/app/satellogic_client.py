@@ -326,6 +326,20 @@ def normalize_item(feature: dict[str, Any]) -> dict[str, Any]:
                 return href
         return None
 
+    def asset_url_by_key_regex(pattern: str) -> str | None:
+        rx = re.compile(pattern, flags=re.IGNORECASE)
+        for key, asset in assets.items():
+            href = asset.get("href") if isinstance(asset, dict) else None
+            if not href:
+                continue
+            key_s = (key or "").strip()
+            title_s = ""
+            if isinstance(asset, dict):
+                title_s = (asset.get("title") or "").strip()
+            if rx.search(key_s) or (title_s and rx.search(title_s)):
+                return href
+        return None
+
     outcome = props.get("satl:outcome_id") or props.get("outcome_id") or feature.get("id")
     gsd = _extract_gsd(props)
     satellite_name = _extract_satellite_name(props, feature.get("id", ""))
@@ -345,6 +359,11 @@ def normalize_item(feature: dict[str, Any]) -> dict[str, Any]:
             "analytic": asset_url("analytic", "visual", "preview", "thumbnail") or "",
             "preview": asset_url("preview", "thumbnail", "visual", "analytic") or "",
             "thumbnail": asset_url("thumbnail", "preview", "visual", "analytic") or "",
+            "cloud_mask": (
+                asset_url("cloud_mask", "cloudmask", "cloud-mask", "cmask", "clm")
+                or asset_url_by_key_regex(r"(cloud.*mask|mask.*cloud|cmask|cloudmask|clm)")
+                or ""
+            ),
         },
         "raw": feature,
     }

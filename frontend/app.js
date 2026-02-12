@@ -30,17 +30,44 @@ const state = {
   prefetchTileUrlSeen: new Set(),
   useCogTileProxy: true,
   tileProxyWarned: false,
+  detailLayerMode: "natural",
   carouselQuickviewCount: 0,
   carouselFilterActive: false,
+  carouselRenderItems: [],
+  carouselRenderNextIndex: 0,
   skipMapRefreshEvents: 0,
   locationHistory: [],
   mp4JobId: null,
   mp4JobTimer: null,
   mp4JobDownloading: false,
+  activeTab: "explore",
+  workflows: [],
+  skills: [],
+  providers: [],
+  runs: [],
+  schedules: [],
+  poiSets: [],
+  subscriptions: [],
+  events: [],
+  selectedRunId: null,
+  selectedScheduleId: null,
+  workflowGraph: {
+    nodes: [],
+    selectedNodeId: null,
+    dragNodeId: null,
+    dragOffsetX: 0,
+    dragOffsetY: 0,
+    dirty: false,
+  },
+  workflowBuilder: {
+    popoutWindow: null,
+    isDetached: false,
+  },
 };
 
 const DETAIL_ZOOM_THRESHOLD = 13;
 const DETAIL_COG_HIGHRES_ZOOM = 16;
+const DETAIL_COG_TILE_BUFFER = 2;
 const DETAIL_FETCH_DEBOUNCE_MS = 700;
 const DETAIL_FETCH_COOLDOWN_MS = 1800;
 const DETAIL_MAX_VECTOR_TILES = 120;
@@ -48,10 +75,19 @@ const DETAIL_FULLRES_VISIBLE_LIMIT = 1;
 const DETAIL_FETCH_PADDING = 0.35;
 const DETAIL_MAX_QUERY_LIMIT = 400;
 const DETAIL_TILE_BUFFER_PAD = 0.12;
+const DETAIL_VISIBLE_MOSAIC_MAX_TILE_CELLS = 900;
 const COMPARE_PREFETCH_NEIGHBORS = 1;
 const COMPARE_PREFETCH_TILES_PER_FRAME = 3;
+const CAROUSEL_BATCH_SIZE = 24;
+const CAROUSEL_SCROLL_THRESHOLD_PX = 240;
 const LOCATION_HISTORY_KEY = "imageMate.locationHistory.v1";
 const LOCATION_HISTORY_LIMIT = 80;
+const DETAIL_LAYER_LABELS = {
+  natural: "Natural Colour",
+  false_color: "False Colour",
+  ndvi: "NDVI",
+  cloud_mask: "Cloud Mask",
+};
 
 const DEBUG_NET = new URLSearchParams(window.location.search).has("debugNet");
 
@@ -66,9 +102,15 @@ L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
   attribution: "&copy; OpenStreetMap contributors",
   maxZoom: 20,
 }).addTo(map);
+if (L?.drawLocal?.edit?.toolbar?.buttons) {
+  L.drawLocal.edit.toolbar.buttons.edit = "Select Layers";
+  L.drawLocal.edit.toolbar.buttons.editDisabled = "Select Layers";
+}
 window.addEventListener("resize", () => {
   map.invalidateSize();
+  ensureLayerEditorControlAnchor();
   if (animateSeriesPopoverEl?.classList.contains("open")) positionAnimateSeriesPopover();
+  if (layerEditorPopoverEl?.classList.contains("open")) positionLayerEditorPopover();
 });
 setTimeout(() => map.invalidateSize(), 80);
 
@@ -172,6 +214,9 @@ const animMaxFramesEl = document.getElementById("animMaxFrames");
 const animSecPerFrameEl = document.getElementById("animSecPerFrame");
 const lockSelectionBtnEl = document.getElementById("lockSelectionBtn");
 const compareModeBtnEl = document.getElementById("compareModeBtn");
+let layerEditorBtnEl = null;
+const layerEditorPopoverEl = document.getElementById("layerEditorPopover");
+const layerEditorSelectEl = document.getElementById("layerEditorSelect");
 const compareRailEl = document.getElementById("compareRail");
 const compareRangeEl = document.getElementById("compareRange");
 const compareDateTagEl = document.getElementById("compareDateTag");
@@ -190,6 +235,69 @@ const downloadVisibleQuickviewBtnEl = document.getElementById("downloadVisibleQu
 const downloadVisibleL1dBtnEl = document.getElementById("downloadVisibleL1dBtn");
 const downloadCopiedTipEl = document.getElementById("downloadCopiedTip");
 const lockIconEl = lockSelectionBtnEl?.querySelector(".lock-icon");
+const rightPanelTitleEl = document.getElementById("rightPanelTitle");
+const workbenchTabsEl = document.getElementById("workbenchTabs");
+const leftExploreViewEl = document.getElementById("leftExploreView");
+const leftWorkflowsViewEl = document.getElementById("leftWorkflowsView");
+const leftSchedulesViewEl = document.getElementById("leftSchedulesView");
+const leftRunsViewEl = document.getElementById("leftRunsView");
+const workflowSelectEl = document.getElementById("workflowSelect");
+const workflowUseViewportEl = document.getElementById("workflowUseViewport");
+const workflowUseSelectedEl = document.getElementById("workflowUseSelected");
+const workflowPoiSetSelectEl = document.getElementById("workflowPoiSetSelect");
+const workflowParamsJsonEl = document.getElementById("workflowParamsJson");
+const workflowRunBtnEl = document.getElementById("workflowRunBtn");
+const workflowRefreshBtnEl = document.getElementById("workflowRefreshBtn");
+const workflowMetaEl = document.getElementById("workflowMeta");
+const workflowBuilderHostEl = document.getElementById("workflowBuilderHost");
+const workflowBuilderDockEl = document.getElementById("workflowBuilderDock");
+const workflowBuilderPopoutBtnEl = document.getElementById("workflowBuilderPopoutBtn");
+const workflowBuilderDockBtnEl = document.getElementById("workflowBuilderDockBtn");
+const workflowBuilderIdEl = document.getElementById("workflowBuilderId");
+const workflowBuilderVersionEl = document.getElementById("workflowBuilderVersion");
+const workflowBuilderDefaultsEl = document.getElementById("workflowBuilderDefaults");
+const workflowBuilderSkillSelectEl = document.getElementById("workflowBuilderSkillSelect");
+const workflowBuilderNodeIdEl = document.getElementById("workflowBuilderNodeId");
+const workflowBuilderAddNodeBtnEl = document.getElementById("workflowBuilderAddNodeBtn");
+const workflowBuilderAutoLayoutBtnEl = document.getElementById("workflowBuilderAutoLayoutBtn");
+const workflowBuilderRemoveNodeBtnEl = document.getElementById("workflowBuilderRemoveNodeBtn");
+const workflowBuilderEdgeFromEl = document.getElementById("workflowBuilderEdgeFrom");
+const workflowBuilderEdgeToEl = document.getElementById("workflowBuilderEdgeTo");
+const workflowBuilderAddEdgeBtnEl = document.getElementById("workflowBuilderAddEdgeBtn");
+const workflowBuilderRemoveEdgeBtnEl = document.getElementById("workflowBuilderRemoveEdgeBtn");
+const workflowBuilderCanvasWrapEl = document.getElementById("workflowBuilderCanvasWrap");
+const workflowBuilderEdgesEl = document.getElementById("workflowBuilderEdges");
+const workflowBuilderCanvasEl = document.getElementById("workflowBuilderCanvas");
+const workflowBuilderJsonEl = document.getElementById("workflowBuilderJson");
+const workflowBuilderApplyJsonBtnEl = document.getElementById("workflowBuilderApplyJsonBtn");
+const workflowBuilderLoadSelectedBtnEl = document.getElementById("workflowBuilderLoadSelectedBtn");
+const workflowBuilderSaveBtnEl = document.getElementById("workflowBuilderSaveBtn");
+const workflowBuilderMetaEl = document.getElementById("workflowBuilderMeta");
+const workflowBuilderSelectedNodeIdEl = document.getElementById("workflowBuilderSelectedNodeId");
+const workflowBuilderSelectedNodeSkillEl = document.getElementById("workflowBuilderSelectedNodeSkill");
+const workflowBuilderApplyNodeBtnEl = document.getElementById("workflowBuilderApplyNodeBtn");
+const scheduleTypeEl = document.getElementById("scheduleType");
+const scheduleWorkflowSelectEl = document.getElementById("scheduleWorkflowSelect");
+const scheduleCronEl = document.getElementById("scheduleCron");
+const scheduleIntervalSecondsEl = document.getElementById("scheduleIntervalSeconds");
+const scheduleSubscriptionSelectEl = document.getElementById("scheduleSubscriptionSelect");
+const scheduleMaxScenesEl = document.getElementById("scheduleMaxScenes");
+const scheduleCreateBtnEl = document.getElementById("scheduleCreateBtn");
+const scheduleRefreshBtnEl = document.getElementById("scheduleRefreshBtn");
+const scheduleSelectEl = document.getElementById("scheduleSelect");
+const scheduleEnableBtnEl = document.getElementById("scheduleEnableBtn");
+const scheduleDisableBtnEl = document.getElementById("scheduleDisableBtn");
+const scheduleListOutEl = document.getElementById("scheduleListOut");
+const poiSetNameEl = document.getElementById("poiSetName");
+const poiSetGeoJsonEl = document.getElementById("poiSetGeoJson");
+const poiSetCreateBtnEl = document.getElementById("poiSetCreateBtn");
+const subscriptionPoiSetSelectEl = document.getElementById("subscriptionPoiSetSelect");
+const subscriptionGeometryEl = document.getElementById("subscriptionGeometry");
+const subscriptionCreateBtnEl = document.getElementById("subscriptionCreateBtn");
+const runsRefreshBtnEl = document.getElementById("runsRefreshBtn");
+const runsSelectEl = document.getElementById("runsSelect");
+const runInspectorOutEl = document.getElementById("runInspectorOut");
+const runEventsOutEl = document.getElementById("runEventsOut");
 
 const today = new Date();
 const sixMonthsAgo = new Date();
@@ -405,6 +513,83 @@ function hideDownloadPopover() {
 function toggleDownloadPopover() {
   if (!downloadPopoverEl) return;
   downloadPopoverEl.classList.toggle("open");
+}
+
+function normalizeDetailLayerMode(value) {
+  const mode = (value || "").toString().trim().toLowerCase();
+  return Object.prototype.hasOwnProperty.call(DETAIL_LAYER_LABELS, mode) ? mode : "natural";
+}
+
+function detailLayerLabel(mode = state.detailLayerMode) {
+  const normalized = normalizeDetailLayerMode(mode);
+  return DETAIL_LAYER_LABELS[normalized] || DETAIL_LAYER_LABELS.natural;
+}
+
+function hideLayerEditorPopover() {
+  layerEditorPopoverEl?.classList.remove("open");
+  layerEditorBtnEl?.classList.remove("active");
+}
+
+function ensureLayerEditorControlAnchor() {
+  const mapEl = map.getContainer();
+  const editBtn = mapEl.querySelector(".leaflet-draw-edit-edit");
+  if (!(editBtn instanceof HTMLElement)) return null;
+  layerEditorBtnEl = editBtn;
+  layerEditorBtnEl.title = "Select Layers";
+  layerEditorBtnEl.setAttribute("aria-label", "Select Layers");
+  layerEditorBtnEl.classList.remove("leaflet-disabled");
+  if (layerEditorBtnEl.dataset.layerEditorBound !== "1") {
+    layerEditorBtnEl.dataset.layerEditorBound = "1";
+    layerEditorBtnEl.addEventListener("click", (evt) => {
+      evt.preventDefault();
+      evt.stopPropagation();
+      if (typeof evt.stopImmediatePropagation === "function") evt.stopImmediatePropagation();
+      hideAnimateSeriesPopover();
+      hideDownloadPopover();
+      toggleLayerEditorPopover();
+    }, true);
+  }
+  return layerEditorBtnEl;
+}
+
+function positionLayerEditorPopover() {
+  const anchorBtn = ensureLayerEditorControlAnchor();
+  if (!layerEditorPopoverEl || !anchorBtn) return;
+  const host = layerEditorPopoverEl.offsetParent || anchorBtn.offsetParent || anchorBtn.parentElement;
+  if (!host) return;
+  const hostRect = host.getBoundingClientRect();
+  const btnRect = anchorBtn.getBoundingClientRect();
+  const top = btnRect.bottom - hostRect.top + 6;
+  const desiredRight = hostRect.right - btnRect.right;
+  const maxRight = Math.max(0, host.clientWidth - 16);
+  const clampedRight = Math.max(0, Math.min(maxRight, desiredRight));
+  layerEditorPopoverEl.style.top = `${Math.max(0, top)}px`;
+  layerEditorPopoverEl.style.bottom = "auto";
+  layerEditorPopoverEl.style.left = "auto";
+  layerEditorPopoverEl.style.right = `${clampedRight}px`;
+}
+
+function toggleLayerEditorPopover() {
+  const anchorBtn = ensureLayerEditorControlAnchor();
+  if (!layerEditorPopoverEl || !anchorBtn) return;
+  const willOpen = !layerEditorPopoverEl.classList.contains("open");
+  layerEditorPopoverEl.classList.toggle("open");
+  anchorBtn.classList.toggle("active", willOpen);
+  if (willOpen) {
+    if (layerEditorSelectEl) layerEditorSelectEl.value = normalizeDetailLayerMode(state.detailLayerMode);
+    positionLayerEditorPopover();
+  }
+}
+
+async function applyDetailLayerMode(nextMode, refresh = true) {
+  const normalized = normalizeDetailLayerMode(nextMode);
+  const changed = normalized !== state.detailLayerMode;
+  state.detailLayerMode = normalized;
+  if (layerEditorSelectEl && layerEditorSelectEl.value !== normalized) {
+    layerEditorSelectEl.value = normalized;
+  }
+  if (!refresh || !changed || !state.searchParams) return;
+  await refreshMapMode(false);
 }
 
 function setAnimateSeriesStatus(message, isError = false) {
@@ -979,7 +1164,103 @@ function updateSearchResultsHeader(visibleCount) {
   searchResultsFilterMetaEl.style.display = "block";
 }
 
+function resetCarouselLazyState() {
+  state.carouselRenderItems = [];
+  state.carouselRenderNextIndex = 0;
+}
+
+function makeCarouselCard(item, idx) {
+  const thumb = assetProxyUrl(thumbnailUrl(item), { render: false });
+  const card = document.createElement("button");
+  card.className = "carousel-card";
+  card.type = "button";
+  card.dataset.itemId = item.id;
+  card.innerHTML = `
+    <div class="carousel-card-head">
+      <label class="check-wrap">
+        <input type="checkbox" data-select-id="${item.id}" />
+        show
+      </label>
+    </div>
+    <img data-src="${thumb}" loading="lazy" alt="thumbnail ${idx + 1}" />
+    <div class="card-date">${formatCarouselMeta(item)}</div>
+  `;
+  card.addEventListener("click", (evt) => {
+    const target = evt.target;
+    if (target instanceof HTMLInputElement) return;
+    state.selectedCarouselIds.add(item.id);
+    setActiveCarouselCard(item.id);
+    syncCarouselCheckboxes();
+    if (state.compareMode) updateCompareModeState(item.id);
+    focusFromCarousel(item).catch((err) => toast(err.message));
+  });
+
+  const checkbox = card.querySelector('input[type="checkbox"]');
+  if (checkbox) {
+    checkbox.checked = state.selectedCarouselIds.has(item.id);
+    checkbox.addEventListener("click", (evt) => evt.stopPropagation());
+    checkbox.addEventListener("change", async (evt) => {
+      const checked = evt.target.checked;
+      if (checked) {
+        state.selectedCarouselIds.add(item.id);
+        setActiveCarouselCard(item.id);
+      } else {
+        state.selectedCarouselIds.delete(item.id);
+        if (state.selectedCarouselId === item.id) {
+          const next = mostRecentSelectedOverviewItem();
+          state.selectedCarouselId = next ? next.id : null;
+        }
+      }
+      syncCarouselCheckboxes();
+      if (state.compareMode) updateCompareModeState(item.id);
+      await refreshMapMode(false);
+    });
+  }
+  const img = card.querySelector("img[data-src]");
+  if (img) lazyLoadCarouselImage(img);
+  return card;
+}
+
+function appendCarouselBatch() {
+  if (!timeCarouselListEl || state.activeTab !== "explore") return;
+  const items = state.carouselRenderItems || [];
+  if (!items.length || state.carouselRenderNextIndex >= items.length) return;
+  const start = state.carouselRenderNextIndex;
+  const end = Math.min(items.length, start + CAROUSEL_BATCH_SIZE);
+  for (let idx = start; idx < end; idx += 1) {
+    const card = makeCarouselCard(items[idx], idx);
+    timeCarouselListEl.appendChild(card);
+  }
+  state.carouselRenderNextIndex = end;
+  syncCarouselCheckboxes();
+}
+
+function fillCarouselViewport() {
+  if (!timeCarouselListEl || state.activeTab !== "explore") return;
+  let safety = 0;
+  while (
+    state.carouselRenderNextIndex < (state.carouselRenderItems || []).length
+    && timeCarouselListEl.scrollHeight <= (timeCarouselListEl.clientHeight + 8)
+    && safety < 25
+  ) {
+    appendCarouselBatch();
+    safety += 1;
+  }
+}
+
+function maybeLoadMoreCarouselOnScroll() {
+  if (!timeCarouselListEl || state.activeTab !== "explore") return;
+  let remaining = timeCarouselListEl.scrollHeight - (timeCarouselListEl.scrollTop + timeCarouselListEl.clientHeight);
+  let guard = 0;
+  while (remaining <= CAROUSEL_SCROLL_THRESHOLD_PX && state.carouselRenderNextIndex < (state.carouselRenderItems || []).length && guard < 8) {
+    appendCarouselBatch();
+    remaining = timeCarouselListEl.scrollHeight - (timeCarouselListEl.scrollTop + timeCarouselListEl.clientHeight);
+    guard += 1;
+  }
+}
+
 function renderTimeCarousel(items) {
+  resetCarouselLazyState();
   timeCarouselListEl.innerHTML = "";
   if (!items.length) {
     updateSearchResultsHeader(0);
@@ -990,58 +1271,10 @@ function renderTimeCarousel(items) {
 
   const sorted = [...items].sort((a, b) => (b.datetime || "").localeCompare(a.datetime || ""));
   updateSearchResultsHeader(sorted.length);
-  sorted.forEach((item, idx) => {
-    const thumb = assetProxyUrl(thumbnailUrl(item), { render: false });
-    const card = document.createElement("button");
-    card.className = "carousel-card";
-    card.type = "button";
-    card.dataset.itemId = item.id;
-    card.innerHTML = `
-      <div class="carousel-card-head">
-        <label class="check-wrap">
-          <input type="checkbox" data-select-id="${item.id}" />
-          show
-        </label>
-      </div>
-      <img data-src="${thumb}" loading="lazy" alt="thumbnail ${idx + 1}" />
-      <div class="card-date">${formatCarouselMeta(item)}</div>
-    `;
-    card.addEventListener("click", (evt) => {
-      const target = evt.target;
-      if (target instanceof HTMLInputElement) return;
-      state.selectedCarouselIds.add(item.id);
-      setActiveCarouselCard(item.id);
-      syncCarouselCheckboxes();
-      if (state.compareMode) updateCompareModeState(item.id);
-      focusFromCarousel(item).catch((err) => toast(err.message));
-    });
-
-    const checkbox = card.querySelector('input[type="checkbox"]');
-    if (checkbox) {
-      checkbox.checked = state.selectedCarouselIds.has(item.id);
-      checkbox.addEventListener("click", (evt) => evt.stopPropagation());
-      checkbox.addEventListener("change", async (evt) => {
-        const checked = evt.target.checked;
-        if (checked) {
-          state.selectedCarouselIds.add(item.id);
-          setActiveCarouselCard(item.id);
-        } else {
-          state.selectedCarouselIds.delete(item.id);
-          if (state.selectedCarouselId === item.id) {
-            const next = mostRecentSelectedOverviewItem();
-            state.selectedCarouselId = next ? next.id : null;
-          }
-        }
-        syncCarouselCheckboxes();
-        if (state.compareMode) updateCompareModeState(item.id);
-        await refreshMapMode(false);
-      });
-    }
-    timeCarouselListEl.appendChild(card);
-    const img = card.querySelector("img[data-src]");
-    if (img) lazyLoadCarouselImage(img);
-  });
-  syncCarouselCheckboxes();
+  state.carouselRenderItems = sorted;
+  state.carouselRenderNextIndex = 0;
+  appendCarouselBatch();
+  fillCarouselViewport();
 }
 
 const carouselImageObserver = typeof IntersectionObserver === "function"
@@ -1071,8 +1304,20 @@ function lazyLoadCarouselImage(imgEl) {
   carouselImageObserver.observe(imgEl);
 }
 
+function findRenderedCarouselCard(itemId) {
+  if (!timeCarouselListEl) return null;
+  return Array.from(timeCarouselListEl.querySelectorAll(".carousel-card")).find((card) => card.dataset.itemId === itemId) || null;
+}
+
 function setActiveCarouselCard(itemId) {
   state.selectedCarouselId = itemId;
+  if (state.activeTab === "explore" && itemId && !findRenderedCarouselCard(itemId)) {
+    let guard = 0;
+    while (!findRenderedCarouselCard(itemId) && state.carouselRenderNextIndex < (state.carouselRenderItems || []).length && guard < 80) {
+      appendCarouselBatch();
+      guard += 1;
+    }
+  }
   const cards = Array.from(timeCarouselListEl.querySelectorAll(".carousel-card"));
   cards.forEach((card) => {
     const selected = state.selectedCarouselIds.has(card.dataset.itemId);
@@ -1250,11 +1495,19 @@ function previewUrl(item) {
 }
 
 function detailVisualUrl(item) {
-  return item.assets?.visual || item.assets?.analytic || item.assets?.preview || item.assets?.thumbnail || "";
+  return item.assets?.visual || item.assets?.preview || item.assets?.thumbnail || "";
 }
 
-function detailCogAssetUrl(item) {
-  return item.assets?.visual || item.assets?.analytic || item.assets?.preview || item.assets?.thumbnail || "";
+function detailCloudMaskUrl(item) {
+  return item.assets?.cloud_mask || "";
+}
+
+function detailCogAssetUrl(item, mode = state.detailLayerMode) {
+  const layerMode = normalizeDetailLayerMode(mode);
+  if (layerMode === "cloud_mask") {
+    return detailCloudMaskUrl(item) || item.assets?.visual || "";
+  }
+  return item.assets?.visual || "";
 }
 
 function extractCogSourceUrl(rawUrl) {
@@ -1271,7 +1524,8 @@ function extractCogSourceUrl(rawUrl) {
 }
 
 function detailTileTemplateUrl(item, zoomLevel = map.getZoom()) {
-  const raw = detailCogAssetUrl(item);
+  const layerMode = normalizeDetailLayerMode(state.detailLayerMode);
+  const raw = detailCogAssetUrl(item, layerMode);
   const source = extractCogSourceUrl(raw);
   if (!source) return "";
   const params = new URLSearchParams();
@@ -1280,11 +1534,21 @@ function detailTileTemplateUrl(item, zoomLevel = map.getZoom()) {
   if (contractId) params.set("contract_id", contractId);
   const scale = Number(zoomLevel) >= DETAIL_COG_HIGHRES_ZOOM ? 2 : 1;
   params.set("scale", String(scale));
+  if (DETAIL_COG_TILE_BUFFER > 0) params.set("buffer", String(DETAIL_COG_TILE_BUFFER));
+  params.set("render_layer", layerMode === "natural" ? "raw" : layerMode);
+  const cloudMaskRaw = detailCloudMaskUrl(item);
+  const cloudMaskSource = extractCogSourceUrl(cloudMaskRaw);
+  if (cloudMaskSource) params.set("cloud_mask_url", cloudMaskSource);
   params.set("tileMatrixSetId", "WebMercatorQuad");
   params.set("format", "png");
-  params.append("bidx", "1");
-  params.append("bidx", "2");
-  params.append("bidx", "3");
+  const modeBands = {
+    natural: [1, 2, 3],
+    false_color: [4, 1, 2],
+    ndvi: [3, 4],
+    cloud_mask: [1],
+  };
+  const bands = modeBands[layerMode] || [1, 2, 3];
+  bands.forEach((band) => params.append("bidx", String(band)));
   return `${apiBase}/api/raster/cog/tiles/{z}/{x}/{y}?${params.toString()}`;
 }
 
@@ -1383,48 +1647,23 @@ function drawResults(items, mode = "overview", fitToBounds = false, options = {}
     }));
 
   state.mapVectorLayer = L.geoJSON(features, {
-    style: (feature) => {
-      const selected = Boolean(feature?.properties?.selected);
-      if (mode === "detail" && !selected) {
-        return {
-          color: "transparent",
-          weight: 0,
-          fillOpacity: 0,
-          opacity: 0,
-        };
-      }
-      const baseColor = selected ? "#2d6bff" : "#f28f3b";
-      return {
-        color: baseColor,
-        weight: mode === "detail" ? 2.1 : 1.2,
-        fillOpacity: mode === "detail" ? 0.0 : (selected ? 0.1 : 0.07),
-        opacity: 1,
-      };
-    },
-    onEachFeature: (feature, layer) => {
-      const props = feature.properties || {};
-      const thumb = props.thumbnail
-        ? `<img src="${props.thumbnail}" alt="thumbnail" />`
-        : "<div>No thumbnail</div>";
-      layer.bindPopup(`
-        <div class="thumb-popup">
-          ${thumb}
-          <div class="meta">
-            <strong>${props.id}</strong><br/>
-            ${props.datetime || "no datetime"}<br/>
-            cloud: ${props.cloud_cover ?? "n/a"}<br/>
-            sat: ${props.satellite_name}<br/>
-            gsd: ${props.gsd ?? "n/a"}
-          </div>
-        </div>
-      `);
-    },
+    interactive: false,
+    style: () => ({
+      color: "transparent",
+      weight: 0,
+      fillOpacity: 0,
+      opacity: 0,
+    }),
   }).addTo(map);
 
   state.mapThumbOverlayLayer = L.layerGroup().addTo(map);
   state.mapThumbMarkerLayer = L.layerGroup().addTo(map);
 
-  const overlaySourceItems = Array.isArray(options.overlayItems) ? options.overlayItems : items;
+  const overlayItemsProvided = Array.isArray(options.overlayItems);
+  let overlaySourceItems = overlayItemsProvided ? options.overlayItems : items;
+  if (mode === "detail" && !overlayItemsProvided && selectedOverview.length === 0) {
+    overlaySourceItems = latestStripPerArea(overlaySourceItems);
+  }
   const withThumbnailsRaw = overlaySourceItems.filter((item) => item.geometry && (mode === "detail" ? (previewUrl(item) || detailVisualUrl(item)) : modeSourceUrl(item, mode)));
   const withThumbnails = mode === "detail"
     ? [...withThumbnailsRaw].sort((a, b) => (a.datetime || "").localeCompare(b.datetime || ""))
@@ -1465,6 +1704,7 @@ function drawResults(items, mode = "overview", fitToBounds = false, options = {}
           opacity: overlayOpacity,
           bounds,
           tileSize: 256,
+          className: "cog-tile-layer",
           maxZoom: 22,
           updateWhenIdle: true,
           updateWhenZooming: false,
@@ -1835,6 +2075,51 @@ function topCaptureOnly(items) {
   return sorted.filter((item) => item.datetime === topDt);
 }
 
+function latestVisibleStripMosaic(items) {
+  if (!Array.isArray(items) || !items.length) return [];
+
+  const sortedNewest = [...items].sort((a, b) => (b.datetime || "").localeCompare(a.datetime || ""));
+  const prepared = sortedNewest
+    .map((item, idx) => ({
+      item,
+      key: item?.id || item?.outcome_id || `${item?.datetime || "n/a"}-${idx}`,
+      bounds: boundsFromGeometry(item?.geometry),
+    }))
+    .filter((entry) => entry.bounds);
+  if (!prepared.length) return [];
+
+  const pixelBounds = map.getPixelBounds();
+  const tileSize = 256;
+  const minTileX = Math.floor(pixelBounds.min.x / tileSize);
+  const maxTileX = Math.floor((pixelBounds.max.x - 1) / tileSize);
+  const minTileY = Math.floor(pixelBounds.min.y / tileSize);
+  const maxTileY = Math.floor((pixelBounds.max.y - 1) / tileSize);
+  const tileCount = Math.max(0, (maxTileX - minTileX + 1) * (maxTileY - minTileY + 1));
+  if (!tileCount || tileCount > DETAIL_VISIBLE_MOSAIC_MAX_TILE_CELLS) {
+    return latestStripPerArea(prepared.map((entry) => entry.item));
+  }
+
+  const selected = new Set();
+  const zoom = map.getZoom();
+  for (let tx = minTileX; tx <= maxTileX; tx += 1) {
+    for (let ty = minTileY; ty <= maxTileY; ty += 1) {
+      const nw = map.unproject(L.point(tx * tileSize, ty * tileSize), zoom);
+      const se = map.unproject(L.point((tx + 1) * tileSize, (ty + 1) * tileSize), zoom);
+      const tileBounds = L.latLngBounds(nw, se);
+      for (let i = 0; i < prepared.length; i += 1) {
+        const entry = prepared[i];
+        if (entry.bounds.intersects(tileBounds)) {
+          selected.add(entry.key);
+          break;
+        }
+      }
+    }
+  }
+
+  if (!selected.size) return latestStripPerArea(prepared.map((entry) => entry.item));
+  return prepared.filter((entry) => selected.has(entry.key)).map((entry) => entry.item);
+}
+
 function stripAreaKey(item) {
   const candidate = [item?.id, item?.outcome_id]
     .filter((v) => typeof v === "string" && v.length > 0)
@@ -1915,7 +2200,7 @@ async function refreshMapMode(force = false) {
     if (!detailVisible.length) {
       detailVisible = filterItemsToViewport(detailCandidates, viewportBounds.pad(DETAIL_TILE_BUFFER_PAD));
     }
-    let overlayItems = latestStripPerArea(detailVisible);
+    let overlayItems = latestVisibleStripMosaic(detailVisible);
     const selectedOverviews = selectedOverviewItems();
     if (selectedOverviews.length) {
       const selectedTiles = detailTilesForOverviewItems(selectedOverviews, detailCandidates);
@@ -1924,7 +2209,7 @@ async function refreshMapMode(force = false) {
     }
     drawResults(detailVisible, "detail", false, { overlayItems });
     const sel = state.selectedCarouselIds.size;
-    searchMetaEl.textContent = `Mode: detail (zoom ${map.getZoom()}) • strips: ${detailVisible.length} • overlays: ${overlayItems.length}${sel ? ` • selected: ${sel}` : ""}`;
+    searchMetaEl.textContent = `Mode: detail (zoom ${map.getZoom()}) • strips: ${detailVisible.length} • overlays(latest-visible): ${overlayItems.length} • layer: ${detailLayerLabel()}${sel ? ` • selected: ${sel}` : ""}`;
     syncCarouselCheckboxes();
     updateCompareModeState();
     return;
@@ -2482,6 +2767,1222 @@ async function loadCollections() {
   }
 }
 
+async function apiJson(path, options = {}) {
+  const res = await fetch(`${apiBase}${path}`, options);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || `${path} failed`);
+  return data;
+}
+
+function activeSceneIdsForRun() {
+  const selected = selectedOverviewItems().map((item) => item.id).filter(Boolean);
+  if (selected.length) return selected;
+  const active = state.selectedCarouselId;
+  if (active) return [active];
+  return [];
+}
+
+function setRightPanelTitle(value) {
+  if (rightPanelTitleEl) rightPanelTitleEl.textContent = value;
+}
+
+function showLeftView(tab) {
+  const viewByTab = {
+    explore: leftExploreViewEl,
+    workflows: leftWorkflowsViewEl,
+    schedules: leftSchedulesViewEl,
+    runs: leftRunsViewEl,
+  };
+  Object.entries(viewByTab).forEach(([key, el]) => {
+    if (!el) return;
+    el.classList.toggle("active", key === tab);
+  });
+}
+
+function renderRunArtifactsInRightPanel(run) {
+  if (!timeCarouselListEl) return;
+  resetCarouselLazyState();
+  if (!run) {
+    setRightPanelTitle("Run Artifacts");
+    timeCarouselListEl.innerHTML = `<div class="meta">Select a run to view artifacts.</div>`;
+    return;
+  }
+  const artifacts = Array.isArray(run.artifacts) ? run.artifacts : [];
+  setRightPanelTitle(`Run Artifacts (${artifacts.length})`);
+  if (!artifacts.length) {
+    timeCarouselListEl.innerHTML = `<div class="meta">No artifacts yet. Run may still be processing.</div>`;
+    return;
+  }
+  timeCarouselListEl.innerHTML = "";
+  artifacts.forEach((artifact) => {
+    const row = document.createElement("div");
+    row.className = "carousel-card";
+    const shortSha = (artifact.sha256 || "").slice(0, 12);
+    row.innerHTML = `
+      <div class="carousel-card-head"><strong>${artifact.type || "artifact"}</strong></div>
+      <div class="card-date">${artifact.uri || ""}</div>
+      <div class="meta">sha256: ${shortSha}${artifact.sha256 ? "..." : ""}</div>
+    `;
+    row.addEventListener("click", async () => {
+      try {
+        await openRunArtifact(run.run_id, artifact.artifact_id, artifact.type);
+      } catch (err) {
+        toast(err.message);
+      }
+    });
+    timeCarouselListEl.appendChild(row);
+  });
+}
+
+async function openRunArtifact(runId, artifactId, artifactType) {
+  const downloadUrl = `${apiBase}/api/runs/${encodeURIComponent(runId)}/artifacts/${encodeURIComponent(artifactId)}/download`;
+  if (artifactType === "md" || artifactType === "json" || artifactType === "geojson" || artifactType === "txt") {
+    const res = await fetch(downloadUrl);
+    if (!res.ok) throw new Error(`Artifact open failed (${res.status})`);
+    const text = await res.text();
+    if (runInspectorOutEl) runInspectorOutEl.textContent = text;
+    if (artifactType === "json" && text.includes("\"findings\"")) {
+      try {
+        const payload = JSON.parse(text);
+        renderEvidenceJumpList(payload, text);
+      } catch (_) {
+        // ignore malformed json in viewer mode
+      }
+    }
+    return;
+  }
+  window.open(downloadUrl, "_blank", "noopener");
+}
+
+function escapeHtml(value) {
+  return (value || "")
+    .toString()
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
+function renderEvidenceJumpList(reportJson, rawText = "") {
+  if (!runInspectorOutEl || !reportJson || !Array.isArray(reportJson.findings)) return;
+  const findings = reportJson.findings
+    .map((f) => f?.evidence)
+    .filter((ev) => ev && ev.scene_id);
+  if (!findings.length) return;
+  const rows = findings.slice(0, 40).map((ev, idx) => (
+    `<button type="button" class="evidence-jump" data-scene-id="${escapeHtml(ev.scene_id)}">${idx + 1}. ${escapeHtml(ev.scene_id)} @ ${escapeHtml(ev.captured_at || "n/a")}</button>`
+  ));
+  const escapedText = escapeHtml(rawText).replaceAll("\n", "<br>");
+  runInspectorOutEl.innerHTML = `${escapedText}<br><br><strong>Evidence Jump Shortcuts:</strong><br>${rows.join("")}`;
+}
+
+async function jumpToEvidenceScene(sceneId) {
+  const target = (sceneId || "").trim();
+  if (!target) return;
+  const overview = overviewSourceItems().find((item) => item.id === target);
+  if (overview) {
+    await focusFromCarousel(overview);
+    return;
+  }
+  const fromItems = (state.items || []).find((item) => item.id === target);
+  if (fromItems) {
+    const matchedOverview = (state.overviewItems || []).find((o) => (
+      (o.outcome_id && fromItems.outcome_id && o.outcome_id === fromItems.outcome_id)
+      || (o.datetime && fromItems.datetime && o.datetime === fromItems.datetime)
+    ));
+    if (matchedOverview) {
+      await focusFromCarousel(matchedOverview);
+      return;
+    }
+  }
+  toast(`Scene not in current explore context: ${target}`);
+}
+
+function workflowRecordFromRef(refValue) {
+  const ref = (refValue || "").trim();
+  if (!ref) return null;
+  const [workflowId, version] = ref.split("@");
+  return (state.workflows || []).find((wf) => wf.workflow_id === workflowId && wf.version === version) || null;
+}
+
+function defaultWorkflowGraphNodes() {
+  return [
+    { id: "evidence", skill: "evidence_bundle", depends_on: [], position: { x: 20, y: 20 } },
+    { id: "analytics", skill: "analytics_provider", depends_on: ["evidence"], position: { x: 245, y: 20 } },
+    { id: "metrics", skill: "scene_metrics", depends_on: ["analytics"], position: { x: 470, y: 20 } },
+    { id: "change", skill: "change_pol", depends_on: ["metrics"], position: { x: 695, y: 20 } },
+    { id: "report", skill: "report_writer", depends_on: ["evidence", "metrics", "change"], position: { x: 470, y: 130 } },
+  ];
+}
+
+function normalizeGraphNodes(rawNodes) {
+  if (!Array.isArray(rawNodes)) return [];
+  const nodes = [];
+  const seen = new Set();
+  rawNodes.forEach((raw, idx) => {
+    if (!raw || typeof raw !== "object") return;
+    const id = String(raw.id || "").trim();
+    const skill = String(raw.skill || "").trim();
+    if (!id || !skill || seen.has(id)) return;
+    seen.add(id);
+    const depsRaw = Array.isArray(raw.depends_on) ? raw.depends_on : [];
+    const deps = [];
+    const seenDeps = new Set();
+    depsRaw.forEach((dep) => {
+      const depId = String(dep || "").trim();
+      if (!depId || depId === id || seenDeps.has(depId)) return;
+      deps.push(depId);
+      seenDeps.add(depId);
+    });
+    const pos = (raw.position && typeof raw.position === "object") ? raw.position : {};
+    const x = Number.isFinite(Number(pos.x)) ? Number(pos.x) : (Number.isFinite(Number(raw.x)) ? Number(raw.x) : (20 + (idx * 180)));
+    const y = Number.isFinite(Number(pos.y)) ? Number(pos.y) : (Number.isFinite(Number(raw.y)) ? Number(raw.y) : 20);
+    nodes.push({
+      id,
+      skill,
+      depends_on: deps,
+      position: { x, y },
+    });
+  });
+  const nodeIds = new Set(nodes.map((node) => node.id));
+  nodes.forEach((node) => {
+    node.depends_on = node.depends_on.filter((dep) => nodeIds.has(dep) && dep !== node.id);
+  });
+  return nodes;
+}
+
+function graphNodesToPayload() {
+  return (state.workflowGraph.nodes || []).map((node) => ({
+    id: node.id,
+    skill: node.skill,
+    depends_on: Array.isArray(node.depends_on) ? [...node.depends_on] : [],
+    position: {
+      x: Number(node.position?.x || 0),
+      y: Number(node.position?.y || 0),
+    },
+  }));
+}
+
+function setWorkflowBuilderMeta(message, isError = false) {
+  if (!workflowBuilderMetaEl) return;
+  workflowBuilderMetaEl.textContent = message;
+  workflowBuilderMetaEl.style.color = isError ? "#9f2f1e" : "";
+}
+
+function syncSelectedNodeInspector() {
+  const selectedId = (state.workflowGraph.selectedNodeId || "").trim();
+  const selectedNode = (state.workflowGraph.nodes || []).find((node) => node.id === selectedId) || null;
+  if (workflowBuilderSelectedNodeIdEl) {
+    workflowBuilderSelectedNodeIdEl.value = selectedNode ? selectedNode.id : "";
+    workflowBuilderSelectedNodeIdEl.disabled = !selectedNode;
+  }
+  if (workflowBuilderSelectedNodeSkillEl) {
+    workflowBuilderSelectedNodeSkillEl.value = selectedNode ? selectedNode.skill : "";
+    workflowBuilderSelectedNodeSkillEl.disabled = !selectedNode;
+  }
+}
+
+function refreshWorkflowBuilderNodeSelectors() {
+  const priorFrom = workflowBuilderEdgeFromEl?.value || "";
+  const priorTo = workflowBuilderEdgeToEl?.value || "";
+  const nodes = state.workflowGraph.nodes || [];
+  [workflowBuilderEdgeFromEl, workflowBuilderEdgeToEl].forEach((sel) => {
+    if (!sel) return;
+    sel.innerHTML = "";
+    nodes.forEach((node) => {
+      const opt = document.createElement("option");
+      opt.value = node.id;
+      opt.textContent = `${node.id} (${node.skill})`;
+      sel.appendChild(opt);
+    });
+  });
+  if (workflowBuilderEdgeFromEl && priorFrom) workflowBuilderEdgeFromEl.value = priorFrom;
+  if (workflowBuilderEdgeToEl && priorTo) workflowBuilderEdgeToEl.value = priorTo;
+}
+
+function refreshWorkflowBuilderSkillOptions() {
+  if (!workflowBuilderSkillSelectEl) return;
+  const prior = workflowBuilderSkillSelectEl.value;
+  const priorSelectedSkill = workflowBuilderSelectedNodeSkillEl?.value || "";
+  workflowBuilderSkillSelectEl.innerHTML = "";
+  if (workflowBuilderSelectedNodeSkillEl) workflowBuilderSelectedNodeSkillEl.innerHTML = "";
+  (state.skills || []).forEach((skill) => {
+    const sid = (skill.skill_id || "").trim();
+    if (!sid) return;
+    const opt = document.createElement("option");
+    opt.value = sid;
+    opt.textContent = `${sid} @ ${skill.version || "n/a"}`;
+    workflowBuilderSkillSelectEl.appendChild(opt);
+    if (workflowBuilderSelectedNodeSkillEl) {
+      const opt2 = document.createElement("option");
+      opt2.value = sid;
+      opt2.textContent = `${sid} @ ${skill.version || "n/a"}`;
+      workflowBuilderSelectedNodeSkillEl.appendChild(opt2);
+    }
+  });
+  if (prior) workflowBuilderSkillSelectEl.value = prior;
+  if (workflowBuilderSelectedNodeSkillEl && priorSelectedSkill) workflowBuilderSelectedNodeSkillEl.value = priorSelectedSkill;
+  syncSelectedNodeInspector();
+}
+
+function renderWorkflowBuilderEdges() {
+  if (!workflowBuilderEdgesEl || !workflowBuilderCanvasWrapEl) return;
+  workflowBuilderEdgesEl.innerHTML = "";
+  const nodes = state.workflowGraph.nodes || [];
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const markerId = "workflowBuilderArrow";
+  const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+  const marker = document.createElementNS("http://www.w3.org/2000/svg", "marker");
+  marker.setAttribute("id", markerId);
+  marker.setAttribute("markerWidth", "7");
+  marker.setAttribute("markerHeight", "7");
+  marker.setAttribute("refX", "6");
+  marker.setAttribute("refY", "3.5");
+  marker.setAttribute("orient", "auto");
+  const arrow = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  arrow.setAttribute("d", "M 0 0 L 7 3.5 L 0 7 z");
+  arrow.setAttribute("fill", "#5d8574");
+  marker.appendChild(arrow);
+  defs.appendChild(marker);
+  workflowBuilderEdgesEl.appendChild(defs);
+
+  nodes.forEach((node) => {
+    const toX = Number(node.position?.x || 0) + 68;
+    const toY = Number(node.position?.y || 0) + 24;
+    (node.depends_on || []).forEach((depId) => {
+      const dep = byId.get(depId);
+      if (!dep) return;
+      const fromX = Number(dep.position?.x || 0) + 68;
+      const fromY = Number(dep.position?.y || 0) + 24;
+      const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      line.setAttribute("x1", String(fromX));
+      line.setAttribute("y1", String(fromY));
+      line.setAttribute("x2", String(toX));
+      line.setAttribute("y2", String(toY));
+      line.setAttribute("stroke", "#5d8574");
+      line.setAttribute("stroke-width", "1.5");
+      line.setAttribute("marker-end", `url(#${markerId})`);
+      workflowBuilderEdgesEl.appendChild(line);
+    });
+  });
+}
+
+function updateWorkflowBuilderJson() {
+  if (!workflowBuilderJsonEl) return;
+  const payload = { nodes: graphNodesToPayload() };
+  workflowBuilderJsonEl.value = JSON.stringify(payload, null, 2);
+}
+
+function renderWorkflowBuilder() {
+  if (!workflowBuilderCanvasEl) return;
+  workflowBuilderCanvasEl.innerHTML = "";
+  const selected = state.workflowGraph.selectedNodeId;
+  (state.workflowGraph.nodes || []).forEach((node) => {
+    const el = document.createElement("div");
+    el.className = "workflow-node" + (selected === node.id ? " selected" : "");
+    el.dataset.nodeId = node.id;
+    el.style.left = `${Math.round(Number(node.position?.x || 0))}px`;
+    el.style.top = `${Math.round(Number(node.position?.y || 0))}px`;
+    el.innerHTML = `
+      <div class="workflow-node-id">${escapeHtml(node.id)}</div>
+      <div class="workflow-node-skill">${escapeHtml(node.skill)}</div>
+    `;
+    el.addEventListener("mousedown", (evt) => {
+      evt.preventDefault();
+      state.workflowGraph.selectedNodeId = node.id;
+      state.workflowGraph.dragNodeId = node.id;
+      const wrapRect = workflowBuilderCanvasWrapEl?.getBoundingClientRect();
+      const x = Number(node.position?.x || 0);
+      const y = Number(node.position?.y || 0);
+      state.workflowGraph.dragOffsetX = evt.clientX - (wrapRect ? wrapRect.left + x : evt.clientX);
+      state.workflowGraph.dragOffsetY = evt.clientY - (wrapRect ? wrapRect.top + y : evt.clientY);
+      syncSelectedNodeInspector();
+      renderWorkflowBuilder();
+    });
+    el.addEventListener("click", () => {
+      state.workflowGraph.selectedNodeId = node.id;
+      syncSelectedNodeInspector();
+      renderWorkflowBuilder();
+    });
+    workflowBuilderCanvasEl.appendChild(el);
+  });
+  renderWorkflowBuilderEdges();
+  refreshWorkflowBuilderNodeSelectors();
+  syncSelectedNodeInspector();
+  updateWorkflowBuilderJson();
+}
+
+function setWorkflowGraph(nodes, dirty = false) {
+  state.workflowGraph.nodes = normalizeGraphNodes(nodes);
+  state.workflowGraph.selectedNodeId = null;
+  state.workflowGraph.dragNodeId = null;
+  state.workflowGraph.dirty = Boolean(dirty);
+  syncSelectedNodeInspector();
+  renderWorkflowBuilder();
+}
+
+function loadSelectedWorkflowIntoBuilder() {
+  const selected = workflowRecordFromRef(workflowSelectEl?.value || "");
+  if (!selected) {
+    setWorkflowBuilderMeta("Select a workflow to load into builder.", true);
+    return;
+  }
+  if (workflowBuilderIdEl) workflowBuilderIdEl.value = selected.workflow_id || "";
+  if (workflowBuilderVersionEl) workflowBuilderVersionEl.value = selected.version || "";
+  if (workflowBuilderDefaultsEl) {
+    workflowBuilderDefaultsEl.value = JSON.stringify(selected.default_params || {}, null, 2);
+  }
+  const nodes = normalizeGraphNodes((selected.graph_json || {}).nodes || []);
+  setWorkflowGraph(nodes.length ? nodes : defaultWorkflowGraphNodes(), false);
+  setWorkflowBuilderMeta(`Loaded ${selected.workflow_id}@${selected.version}`);
+}
+
+function addWorkflowBuilderNode() {
+  const skillId = (workflowBuilderSkillSelectEl?.value || "").trim();
+  if (!skillId) throw new Error("Choose a skill");
+  const base = (workflowBuilderNodeIdEl?.value || "").trim();
+  const existing = new Set((state.workflowGraph.nodes || []).map((n) => n.id));
+  let id = base || `${skillId}_${(state.workflowGraph.nodes || []).length + 1}`;
+  while (existing.has(id)) id = `${id}_n`;
+  const nodes = [...(state.workflowGraph.nodes || [])];
+  nodes.push({
+    id,
+    skill: skillId,
+    depends_on: [],
+    position: { x: 24 + ((nodes.length % 4) * 180), y: 18 + (Math.floor(nodes.length / 4) * 86) },
+  });
+  setWorkflowGraph(nodes, true);
+  state.workflowGraph.selectedNodeId = id;
+  renderWorkflowBuilder();
+  if (workflowBuilderNodeIdEl) workflowBuilderNodeIdEl.value = "";
+  setWorkflowBuilderMeta(`Added node ${id}`);
+}
+
+function removeSelectedWorkflowBuilderNode() {
+  const selected = (state.workflowGraph.selectedNodeId || "").trim();
+  if (!selected) throw new Error("Select a node first");
+  let nodes = [...(state.workflowGraph.nodes || [])].filter((node) => node.id !== selected);
+  nodes = nodes.map((node) => ({
+    ...node,
+    depends_on: (node.depends_on || []).filter((dep) => dep !== selected),
+  }));
+  setWorkflowGraph(nodes, true);
+  setWorkflowBuilderMeta(`Removed node ${selected}`);
+}
+
+function addWorkflowBuilderEdge() {
+  const fromId = (workflowBuilderEdgeFromEl?.value || "").trim();
+  const toId = (workflowBuilderEdgeToEl?.value || "").trim();
+  if (!fromId || !toId) throw new Error("Choose edge endpoints");
+  if (fromId === toId) throw new Error("Edge endpoints must differ");
+  const nodes = [...(state.workflowGraph.nodes || [])].map((node) => ({ ...node, depends_on: [...(node.depends_on || [])] }));
+  const target = nodes.find((node) => node.id === toId);
+  if (!target) throw new Error("Target node not found");
+  if (!target.depends_on.includes(fromId)) target.depends_on.push(fromId);
+  setWorkflowGraph(nodes, true);
+  setWorkflowBuilderMeta(`Added edge ${fromId} -> ${toId}`);
+}
+
+function removeWorkflowBuilderEdge() {
+  const fromId = (workflowBuilderEdgeFromEl?.value || "").trim();
+  const toId = (workflowBuilderEdgeToEl?.value || "").trim();
+  if (!fromId || !toId) throw new Error("Choose edge endpoints");
+  const nodes = [...(state.workflowGraph.nodes || [])].map((node) => ({
+    ...node,
+    depends_on: node.id === toId ? (node.depends_on || []).filter((dep) => dep !== fromId) : [...(node.depends_on || [])],
+  }));
+  setWorkflowGraph(nodes, true);
+  setWorkflowBuilderMeta(`Removed edge ${fromId} -> ${toId}`);
+}
+
+function autoLayoutWorkflowGraph() {
+  const nodes = [...(state.workflowGraph.nodes || [])].map((node) => ({ ...node, depends_on: [...(node.depends_on || [])] }));
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const inDegree = new Map(nodes.map((node) => [node.id, 0]));
+  const outgoing = new Map(nodes.map((node) => [node.id, []]));
+  nodes.forEach((node) => {
+    (node.depends_on || []).forEach((dep) => {
+      if (!byId.has(dep)) return;
+      inDegree.set(node.id, (inDegree.get(node.id) || 0) + 1);
+      outgoing.get(dep).push(node.id);
+    });
+  });
+  const queue = Array.from(inDegree.entries()).filter(([, degree]) => degree === 0).map(([id]) => id).sort();
+  const layerById = new Map();
+  queue.forEach((id) => layerById.set(id, 0));
+  while (queue.length) {
+    const id = queue.shift();
+    const layer = layerById.get(id) || 0;
+    (outgoing.get(id) || []).forEach((next) => {
+      const current = layerById.get(next);
+      if (current === undefined || current < layer + 1) layerById.set(next, layer + 1);
+      const degree = (inDegree.get(next) || 0) - 1;
+      inDegree.set(next, degree);
+      if (degree === 0) queue.push(next);
+    });
+    queue.sort();
+  }
+  const groups = new Map();
+  nodes.forEach((node) => {
+    const layer = layerById.get(node.id) ?? 0;
+    if (!groups.has(layer)) groups.set(layer, []);
+    groups.get(layer).push(node);
+  });
+  Array.from(groups.keys()).sort((a, b) => a - b).forEach((layer) => {
+    const group = groups.get(layer) || [];
+    group.sort((a, b) => a.id.localeCompare(b.id));
+    group.forEach((node, idx) => {
+      node.position = { x: 20 + (layer * 190), y: 18 + (idx * 72) };
+    });
+  });
+  setWorkflowGraph(nodes, true);
+  setWorkflowBuilderMeta("Auto-layout applied");
+}
+
+function applyWorkflowBuilderJson() {
+  const raw = workflowBuilderJsonEl?.value || "";
+  const parsed = parseJsonInput(raw, "Workflow graph JSON");
+  const nodes = normalizeGraphNodes((parsed || {}).nodes || []);
+  if (!nodes.length) throw new Error("Graph JSON must include nodes");
+  setWorkflowGraph(nodes, true);
+  setWorkflowBuilderMeta("Applied JSON to workflow graph");
+}
+
+function applySelectedWorkflowNodeEdit() {
+  const selected = (state.workflowGraph.selectedNodeId || "").trim();
+  if (!selected) throw new Error("Select a node first");
+  const nodes = [...(state.workflowGraph.nodes || [])].map((node) => ({ ...node, depends_on: [...(node.depends_on || [])] }));
+  const node = nodes.find((row) => row.id === selected);
+  if (!node) throw new Error("Selected node not found");
+  const nextId = (workflowBuilderSelectedNodeIdEl?.value || "").trim();
+  const nextSkill = (workflowBuilderSelectedNodeSkillEl?.value || "").trim();
+  if (!nextId) throw new Error("Node ID is required");
+  if (!nextSkill) throw new Error("Skill is required");
+  if (nextId !== selected && nodes.some((row) => row.id === nextId)) {
+    throw new Error(`Node ID already exists: ${nextId}`);
+  }
+
+  node.id = nextId;
+  node.skill = nextSkill;
+  if (nextId !== selected) {
+    nodes.forEach((row) => {
+      row.depends_on = (row.depends_on || []).map((dep) => (dep === selected ? nextId : dep));
+    });
+  }
+  setWorkflowGraph(nodes, true);
+  state.workflowGraph.selectedNodeId = nextId;
+  syncSelectedNodeInspector();
+  renderWorkflowBuilder();
+  setWorkflowBuilderMeta(`Updated node ${nextId}`);
+}
+
+function setWorkflowBuilderDetached(detached) {
+  state.workflowBuilder.isDetached = Boolean(detached);
+  workflowBuilderHostEl?.classList.toggle("detached", Boolean(detached));
+  if (workflowBuilderPopoutBtnEl) workflowBuilderPopoutBtnEl.disabled = Boolean(detached);
+  if (workflowBuilderDockBtnEl) workflowBuilderDockBtnEl.disabled = !Boolean(detached);
+}
+
+function dockWorkflowBuilderFromWindow(closePopup = false) {
+  if (!workflowBuilderDockEl || !workflowBuilderHostEl) return;
+  if (workflowBuilderDockEl.parentElement !== workflowBuilderHostEl) {
+    workflowBuilderHostEl.appendChild(workflowBuilderDockEl);
+  }
+  const popup = state.workflowBuilder.popoutWindow;
+  state.workflowBuilder.popoutWindow = null;
+  setWorkflowBuilderDetached(false);
+  if (closePopup && popup && !popup.closed) {
+    try {
+      popup.close();
+    } catch (_) {
+      // ignore
+    }
+  }
+  renderWorkflowBuilder();
+}
+
+function openWorkflowBuilderWorkspaceWindow() {
+  if (!workflowBuilderDockEl || !workflowBuilderHostEl) return;
+  const existing = state.workflowBuilder.popoutWindow;
+  if (existing && !existing.closed) {
+    existing.focus();
+    return;
+  }
+  const popup = window.open("", "geoagentWorkflowBuilder", "popup=yes,width=1520,height=940,resizable=yes,scrollbars=yes");
+  if (!popup) {
+    toast("Popup blocked. Allow popups to open workflow workspace.");
+    return;
+  }
+  const cssHref = `${window.location.origin}/app/styles.css`;
+  popup.document.open();
+  popup.document.write(`
+    <!doctype html>
+    <html>
+      <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>GeoAgent Workflow Workspace</title>
+        <link rel="stylesheet" href="${cssHref}" />
+      </head>
+      <body class="workflow-builder-popup-body">
+        <div class="workflow-builder-popup-toolbar">
+          <strong>Workflow Workspace</strong>
+          <button id="workflowBuilderPopupDockBtn" type="button" class="ghost tiny">Dock Back</button>
+        </div>
+        <div id="workflowBuilderPopupMount" class="workflow-builder-popup-mount"></div>
+      </body>
+    </html>
+  `);
+  popup.document.close();
+  const mount = popup.document.getElementById("workflowBuilderPopupMount");
+  if (!mount) {
+    popup.close();
+    throw new Error("Failed to initialize workflow popup");
+  }
+  mount.appendChild(workflowBuilderDockEl);
+  state.workflowBuilder.popoutWindow = popup;
+  setWorkflowBuilderDetached(true);
+  popup.document.getElementById("workflowBuilderPopupDockBtn")?.addEventListener("click", () => {
+    dockWorkflowBuilderFromWindow(false);
+    try {
+      popup.close();
+    } catch (_) {
+      // ignore
+    }
+  });
+  popup.addEventListener("beforeunload", () => {
+    dockWorkflowBuilderFromWindow(false);
+  });
+  renderWorkflowBuilder();
+  setWorkflowBuilderMeta("Workflow workspace detached to new window");
+}
+
+async function saveWorkflowBuilderWorkflow() {
+  const workflowId = (workflowBuilderIdEl?.value || "").trim();
+  const version = (workflowBuilderVersionEl?.value || "").trim();
+  if (!workflowId || !version) throw new Error("Workflow ID and version are required");
+  const defaults = parseJsonInput(workflowBuilderDefaultsEl?.value || "", "Default params JSON") || {};
+  const payload = {
+    workflow_id: workflowId,
+    version,
+    graph_json: { nodes: graphNodesToPayload() },
+    default_params: defaults,
+  };
+  await apiJson("/api/workflows", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  await loadWorkbenchData();
+  const refValue = `${workflowId}@${version}`;
+  if (workflowSelectEl) workflowSelectEl.value = refValue;
+  if (scheduleWorkflowSelectEl) scheduleWorkflowSelectEl.value = refValue;
+  loadSelectedWorkflowIntoBuilder();
+  setWorkflowBuilderMeta(`Saved workflow ${refValue}`);
+}
+
+function dragWorkflowNode(evt) {
+  const nodeId = state.workflowGraph.dragNodeId;
+  if (!nodeId || !workflowBuilderCanvasWrapEl) return;
+  const wrapRect = workflowBuilderCanvasWrapEl.getBoundingClientRect();
+  const node = (state.workflowGraph.nodes || []).find((n) => n.id === nodeId);
+  if (!node) return;
+  const maxX = Math.max(0, workflowBuilderCanvasWrapEl.clientWidth - 160);
+  const maxY = Math.max(0, workflowBuilderCanvasWrapEl.clientHeight - 56);
+  const x = Math.max(0, Math.min(maxX, evt.clientX - wrapRect.left - state.workflowGraph.dragOffsetX));
+  const y = Math.max(0, Math.min(maxY, evt.clientY - wrapRect.top - state.workflowGraph.dragOffsetY));
+  node.position = { x, y };
+  state.workflowGraph.dirty = true;
+  renderWorkflowBuilder();
+}
+
+function stopWorkflowNodeDrag() {
+  if (!state.workflowGraph.dragNodeId) return;
+  state.workflowGraph.dragNodeId = null;
+  state.workflowGraph.dragOffsetX = 0;
+  state.workflowGraph.dragOffsetY = 0;
+}
+
+function setWorkbenchTab(tab) {
+  state.activeTab = tab;
+  showLeftView(tab);
+  const buttons = Array.from(workbenchTabsEl?.querySelectorAll(".tab-btn") || []);
+  buttons.forEach((btn) => btn.classList.toggle("active", btn.dataset.tab === tab));
+  if (tab === "explore") {
+    setRightPanelTitle("Search Results");
+    renderTimeCarousel(state.overviewItems || []);
+  } else if (tab === "runs") {
+    const selected = state.runs.find((r) => r.run_id === state.selectedRunId) || null;
+    renderRunArtifactsInRightPanel(selected);
+    renderEventFeed();
+  } else if (tab === "schedules") {
+    resetCarouselLazyState();
+    setRightPanelTitle("Schedules");
+    timeCarouselListEl.innerHTML = `<div class="meta">Schedules and subscriptions are managed in the left panel.</div>`;
+  } else {
+    resetCarouselLazyState();
+    setRightPanelTitle("Workflows");
+    timeCarouselListEl.innerHTML = `<div class="meta">Choose a workflow preset and run it.</div>`;
+    renderWorkflowBuilder();
+  }
+}
+
+function parseJsonInput(text, label) {
+  const raw = (text || "").trim();
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch (err) {
+    throw new Error(`${label} must be valid JSON`);
+  }
+}
+
+function refreshWorkflowSelectOptions() {
+  const workflowOptions = state.workflows || [];
+  const priorWorkflow = workflowSelectEl?.value || "";
+  const priorScheduleWorkflow = scheduleWorkflowSelectEl?.value || "";
+  if (workflowSelectEl) workflowSelectEl.innerHTML = "";
+  if (scheduleWorkflowSelectEl) scheduleWorkflowSelectEl.innerHTML = "";
+  workflowOptions.forEach((wf) => {
+    const value = `${wf.workflow_id}@${wf.version}`;
+    const label = `${wf.workflow_id} @ ${wf.version}`;
+    if (workflowSelectEl) {
+      const opt = document.createElement("option");
+      opt.value = value;
+      opt.textContent = label;
+      workflowSelectEl.appendChild(opt);
+    }
+    if (scheduleWorkflowSelectEl) {
+      const opt = document.createElement("option");
+      opt.value = value;
+      opt.textContent = label;
+      scheduleWorkflowSelectEl.appendChild(opt);
+    }
+  });
+  if (workflowSelectEl && priorWorkflow) workflowSelectEl.value = priorWorkflow;
+  if (scheduleWorkflowSelectEl && priorScheduleWorkflow) scheduleWorkflowSelectEl.value = priorScheduleWorkflow;
+  refreshWorkflowBuilderSkillOptions();
+  if (workflowOptions.length && !state.workflowGraph.dirty) {
+    if (workflowSelectEl && !workflowSelectEl.value) {
+      workflowSelectEl.value = `${workflowOptions[0].workflow_id}@${workflowOptions[0].version}`;
+    }
+    loadSelectedWorkflowIntoBuilder();
+  }
+}
+
+function refreshPoiAndSubscriptionOptions() {
+  const poiOptions = state.poiSets || [];
+  const subOptions = state.subscriptions || [];
+  [workflowPoiSetSelectEl, subscriptionPoiSetSelectEl].forEach((sel) => {
+    if (!sel) return;
+    const prior = sel.value;
+    sel.innerHTML = '<option value="">None</option>';
+    poiOptions.forEach((poi) => {
+      const opt = document.createElement("option");
+      opt.value = poi.poi_set_id;
+      opt.textContent = `${poi.name || poi.poi_set_id} (${poi.poi_set_id})`;
+      sel.appendChild(opt);
+    });
+    if (prior) sel.value = prior;
+  });
+  if (scheduleSubscriptionSelectEl) {
+    const prior = scheduleSubscriptionSelectEl.value;
+    scheduleSubscriptionSelectEl.innerHTML = '<option value="">None</option>';
+    subOptions.forEach((sub) => {
+      const opt = document.createElement("option");
+      opt.value = sub.subscription_id;
+      opt.textContent = sub.subscription_id;
+      scheduleSubscriptionSelectEl.appendChild(opt);
+    });
+    if (prior) scheduleSubscriptionSelectEl.value = prior;
+  }
+}
+
+async function loadWorkbenchData() {
+  const [workflowData, poiSets, subscriptions, schedules, runs, events] = await Promise.all([
+    apiJson("/api/workflows"),
+    apiJson("/api/poi_sets"),
+    apiJson("/api/subscriptions"),
+    apiJson("/api/schedules"),
+    apiJson("/api/runs?limit=100"),
+    apiJson("/api/events?limit=120"),
+  ]);
+  state.workflows = workflowData.workflows || [];
+  state.skills = workflowData.skills || [];
+  state.providers = workflowData.providers || [];
+  state.poiSets = poiSets.poi_sets || [];
+  state.subscriptions = subscriptions.subscriptions || [];
+  state.schedules = schedules.schedules || [];
+  state.runs = runs.runs || [];
+  state.events = events.events || [];
+  refreshWorkflowSelectOptions();
+  refreshPoiAndSubscriptionOptions();
+  renderScheduleList();
+  renderRunsList();
+  renderEventFeed();
+}
+
+function renderScheduleList() {
+  if (!scheduleListOutEl) return;
+  const rows = state.schedules || [];
+  if (scheduleSelectEl) {
+    const prior = state.selectedScheduleId || scheduleSelectEl.value || "";
+    scheduleSelectEl.innerHTML = "";
+    rows.forEach((row) => {
+      const opt = document.createElement("option");
+      opt.value = row.trigger_id;
+      opt.textContent = `${row.enabled ? "ENABLED" : "DISABLED"} | ${row.type} | ${row.trigger_id}`;
+      scheduleSelectEl.appendChild(opt);
+    });
+    if (prior) scheduleSelectEl.value = prior;
+    if (!state.selectedScheduleId && scheduleSelectEl.options.length) {
+      state.selectedScheduleId = scheduleSelectEl.options[0].value;
+      scheduleSelectEl.value = state.selectedScheduleId;
+    }
+  }
+  if (!rows.length) {
+    scheduleListOutEl.textContent = "No schedules.";
+    return;
+  }
+  const selected = rows.find((row) => row.trigger_id === state.selectedScheduleId) || rows[0];
+  scheduleListOutEl.textContent = JSON.stringify(selected, null, 2);
+}
+
+function renderRunsList() {
+  if (!runsSelectEl) return;
+  const prior = state.selectedRunId;
+  runsSelectEl.innerHTML = "";
+  (state.runs || []).forEach((run) => {
+    const opt = document.createElement("option");
+    opt.value = run.run_id;
+    opt.textContent = `${run.status || "unknown"} | ${run.run_id} | ${run.workflow_id}@${run.workflow_version}`;
+    runsSelectEl.appendChild(opt);
+  });
+  if (prior) runsSelectEl.value = prior;
+  if (!state.selectedRunId && runsSelectEl.options.length) {
+    state.selectedRunId = runsSelectEl.options[0].value;
+    runsSelectEl.value = state.selectedRunId;
+  }
+  if (state.selectedRunId) {
+    showRunInspector(state.selectedRunId).catch((err) => toast(err.message));
+  }
+}
+
+function renderEventFeed() {
+  if (!runEventsOutEl) return;
+  const rows = state.events || [];
+  if (!rows.length) {
+    runEventsOutEl.textContent = "No events.";
+    return;
+  }
+  runEventsOutEl.textContent = rows
+    .slice(-80)
+    .map((ev) => `${ev.at || "n/a"} | ${ev.type || "event"} | run=${ev.run_id || "-"}`)
+    .join("\n");
+}
+
+async function showRunInspector(runId) {
+  const run = await apiJson(`/api/runs/${encodeURIComponent(runId)}`);
+  state.selectedRunId = run.run_id;
+  const artifacts = Array.isArray(run.artifacts) ? run.artifacts : [];
+  if (runInspectorOutEl) {
+    runInspectorOutEl.textContent = [
+      `run_id: ${run.run_id}`,
+      `status: ${run.status}`,
+      `workflow: ${run.workflow_id}@${run.workflow_version}`,
+      `trigger_id: ${run.trigger_id || "manual"}`,
+      `artifacts: ${artifacts.length}`,
+      `created_at: ${run.created_at}`,
+      `updated_at: ${run.updated_at}`,
+      "",
+      "Stage progress:",
+      ...(run.stage_progress || []).map((s) => `- ${s.stage}: ${s.status} (${Math.round(Number(s.progress || 0) * 100)}%) ${s.message || ""}`),
+    ].join("\n");
+  }
+  renderRunArtifactsInRightPanel(run);
+}
+
+async function createWorkflowRun() {
+  const workflowRef = (workflowSelectEl?.value || "").trim();
+  if (!workflowRef) throw new Error("Choose a workflow");
+  const [workflowId, workflowVersion] = workflowRef.split("@");
+  let roi = null;
+  if (workflowUseViewportEl?.checked) roi = geometryFromBounds(map.getBounds());
+  const poiSetId = (workflowPoiSetSelectEl?.value || "").trim();
+  if (!roi && poiSetId) {
+    const poi = (state.poiSets || []).find((x) => x.poi_set_id === poiSetId);
+    if (poi?.geometry) roi = poi.geometry;
+  }
+  if (!roi) roi = geometryFromBounds(map.getBounds());
+  const params = parseJsonInput(workflowParamsJsonEl?.value || "", "Workflow params") || {};
+  const sceneIds = workflowUseSelectedEl?.checked ? activeSceneIdsForRun() : [];
+  if (workflowId === "forest_urban_change_series" && sceneIds.length < 2) {
+    throw new Error("Select at least 2 carousel scenes for the forest+urban workflow");
+  }
+  const payload = {
+    workflow_id: workflowId,
+    workflow_version: workflowVersion,
+    inputs_payload: {
+      roi: normalizeGeometryLongitudes(roi),
+      viewport_geometry: normalizeGeometryLongitudes(geometryFromBounds(map.getBounds())),
+      scene_ids: sceneIds,
+      contract_id: selectedContractId(),
+      collection_id: collectionEl?.value || "l1d-sr",
+      start_date: isoDate(startDateEl.value),
+      end_date: isoDate(endDateEl.value),
+      max_cloud_cover: parseOptionalNumber(maxCloudEl.value),
+      satellite_name: (satelliteNameEl.value || "").trim() || null,
+      min_gsd: parseOptionalNumber(minGsdEl.value),
+      max_gsd: parseOptionalNumber(maxGsdEl.value),
+      params,
+    },
+  };
+  const run = await apiJson("/api/runs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  state.selectedRunId = run.run_id;
+  if (workflowMetaEl) workflowMetaEl.textContent = `Run created: ${run.run_id}`;
+  await refreshRuns();
+  setWorkbenchTab("runs");
+}
+
+async function refreshRuns() {
+  const data = await apiJson("/api/runs?limit=100");
+  state.runs = data.runs || [];
+  renderRunsList();
+}
+
+async function refreshSchedules() {
+  const data = await apiJson("/api/schedules");
+  state.schedules = data.schedules || [];
+  renderScheduleList();
+  refreshPoiAndSubscriptionOptions();
+}
+
+async function refreshEvents() {
+  const data = await apiJson("/api/events?limit=120");
+  state.events = data.events || [];
+  renderEventFeed();
+}
+
+workbenchTabsEl?.addEventListener("click", (evt) => {
+  const btn = evt.target.closest(".tab-btn");
+  if (!btn) return;
+  const tab = (btn.dataset.tab || "explore").trim();
+  setWorkbenchTab(tab);
+});
+
+workflowRefreshBtnEl?.addEventListener("click", async () => {
+  try {
+    await loadWorkbenchData();
+    toast("Workflow data refreshed");
+  } catch (err) {
+    toast(err.message);
+  }
+});
+
+workflowRunBtnEl?.addEventListener("click", async () => {
+  try {
+    await createWorkflowRun();
+    toast("Workflow run submitted");
+  } catch (err) {
+    toast(err.message);
+  }
+});
+
+workflowSelectEl?.addEventListener("change", () => {
+  const selected = workflowRecordFromRef(workflowSelectEl.value);
+  if (!selected) return;
+  if (workflowMetaEl) workflowMetaEl.textContent = `Selected ${selected.workflow_id}@${selected.version}`;
+  if (selected.workflow_id === "forest_urban_change_series" && workflowUseSelectedEl) {
+    workflowUseSelectedEl.checked = true;
+    if (workflowMetaEl) workflowMetaEl.textContent = "Selected forest+urban workflow (requires selected carousel scenes).";
+  }
+  if (!state.workflowGraph.dirty) loadSelectedWorkflowIntoBuilder();
+});
+
+workflowBuilderLoadSelectedBtnEl?.addEventListener("click", () => {
+  try {
+    loadSelectedWorkflowIntoBuilder();
+  } catch (err) {
+    setWorkflowBuilderMeta(err.message || "Failed to load workflow", true);
+  }
+});
+
+workflowBuilderAddNodeBtnEl?.addEventListener("click", () => {
+  try {
+    addWorkflowBuilderNode();
+  } catch (err) {
+    setWorkflowBuilderMeta(err.message || "Add node failed", true);
+  }
+});
+
+workflowBuilderRemoveNodeBtnEl?.addEventListener("click", () => {
+  try {
+    removeSelectedWorkflowBuilderNode();
+  } catch (err) {
+    setWorkflowBuilderMeta(err.message || "Remove node failed", true);
+  }
+});
+
+workflowBuilderAddEdgeBtnEl?.addEventListener("click", () => {
+  try {
+    addWorkflowBuilderEdge();
+  } catch (err) {
+    setWorkflowBuilderMeta(err.message || "Add edge failed", true);
+  }
+});
+
+workflowBuilderRemoveEdgeBtnEl?.addEventListener("click", () => {
+  try {
+    removeWorkflowBuilderEdge();
+  } catch (err) {
+    setWorkflowBuilderMeta(err.message || "Remove edge failed", true);
+  }
+});
+
+workflowBuilderAutoLayoutBtnEl?.addEventListener("click", () => {
+  try {
+    autoLayoutWorkflowGraph();
+  } catch (err) {
+    setWorkflowBuilderMeta(err.message || "Auto-layout failed", true);
+  }
+});
+
+workflowBuilderApplyJsonBtnEl?.addEventListener("click", () => {
+  try {
+    applyWorkflowBuilderJson();
+  } catch (err) {
+    setWorkflowBuilderMeta(err.message || "Apply JSON failed", true);
+  }
+});
+
+workflowBuilderSaveBtnEl?.addEventListener("click", async () => {
+  try {
+    await saveWorkflowBuilderWorkflow();
+    toast("Workflow version saved");
+  } catch (err) {
+    setWorkflowBuilderMeta(err.message || "Save workflow failed", true);
+    toast(err.message || "Save workflow failed");
+  }
+});
+
+workflowBuilderApplyNodeBtnEl?.addEventListener("click", () => {
+  try {
+    applySelectedWorkflowNodeEdit();
+  } catch (err) {
+    setWorkflowBuilderMeta(err.message || "Node update failed", true);
+  }
+});
+
+workflowBuilderSelectedNodeIdEl?.addEventListener("keydown", (evt) => {
+  if (evt.key !== "Enter") return;
+  evt.preventDefault();
+  try {
+    applySelectedWorkflowNodeEdit();
+  } catch (err) {
+    setWorkflowBuilderMeta(err.message || "Node update failed", true);
+  }
+});
+
+workflowBuilderPopoutBtnEl?.addEventListener("click", () => {
+  try {
+    openWorkflowBuilderWorkspaceWindow();
+  } catch (err) {
+    setWorkflowBuilderMeta(err.message || "Open workspace failed", true);
+  }
+});
+
+workflowBuilderDockBtnEl?.addEventListener("click", () => {
+  dockWorkflowBuilderFromWindow(true);
+});
+
+scheduleRefreshBtnEl?.addEventListener("click", async () => {
+  try {
+    await refreshSchedules();
+    await refreshEvents();
+    toast("Schedules refreshed");
+  } catch (err) {
+    toast(err.message);
+  }
+});
+
+scheduleCreateBtnEl?.addEventListener("click", async () => {
+  try {
+    const wfRef = (scheduleWorkflowSelectEl?.value || "").trim();
+    if (!wfRef) throw new Error("Choose a workflow for schedule");
+    const [workflowId, workflowVersion] = wfRef.split("@");
+    const payload = {
+      type: (scheduleTypeEl?.value || "CRON"),
+      workflow_id: workflowId,
+      workflow_version: workflowVersion,
+      cron: (scheduleCronEl?.value || "").trim() || null,
+      interval_seconds: Number(scheduleIntervalSecondsEl?.value || 0),
+      subscription_id: (scheduleSubscriptionSelectEl?.value || "").trim() || null,
+      scope: { geometry: normalizeGeometryLongitudes(geometryFromBounds(map.getBounds())) },
+      batching: {
+        policy: "per_day_per_region",
+        max_scenes_per_run: Number(scheduleMaxScenesEl?.value || 24),
+        coalesce_minutes: 30,
+      },
+      caps: { max_runs_per_day: 24 },
+      filters: {
+        contract_id: selectedContractId(),
+        collection_id: collectionEl?.value || "l1d-sr",
+      },
+      enabled: true,
+    };
+    await apiJson("/api/schedules", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    await refreshSchedules();
+    toast("Schedule created");
+  } catch (err) {
+    toast(err.message);
+  }
+});
+
+scheduleSelectEl?.addEventListener("change", () => {
+  state.selectedScheduleId = (scheduleSelectEl.value || "").trim() || null;
+  renderScheduleList();
+});
+
+scheduleEnableBtnEl?.addEventListener("click", async () => {
+  const scheduleId = (scheduleSelectEl?.value || "").trim();
+  if (!scheduleId) {
+    toast("Select a schedule first");
+    return;
+  }
+  try {
+    await apiJson(`/api/schedules/${encodeURIComponent(scheduleId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: true }),
+    });
+    await refreshSchedules();
+    toast("Schedule enabled");
+  } catch (err) {
+    toast(err.message);
+  }
+});
+
+scheduleDisableBtnEl?.addEventListener("click", async () => {
+  const scheduleId = (scheduleSelectEl?.value || "").trim();
+  if (!scheduleId) {
+    toast("Select a schedule first");
+    return;
+  }
+  try {
+    await apiJson(`/api/schedules/${encodeURIComponent(scheduleId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: false }),
+    });
+    await refreshSchedules();
+    toast("Schedule disabled");
+  } catch (err) {
+    toast(err.message);
+  }
+});
+
+poiSetCreateBtnEl?.addEventListener("click", async () => {
+  try {
+    const parsed = parseJsonInput(poiSetGeoJsonEl?.value || "", "POI geometry");
+    if (!parsed) throw new Error("Enter POI geometry JSON");
+    const payload = {
+      name: (poiSetNameEl?.value || "poi_set").trim() || "poi_set",
+      geometry: parsed.type ? parsed : null,
+      features: Array.isArray(parsed.features) ? parsed.features : [],
+    };
+    await apiJson("/api/poi_sets", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const poiData = await apiJson("/api/poi_sets");
+    state.poiSets = poiData.poi_sets || [];
+    refreshPoiAndSubscriptionOptions();
+    toast("POI set created");
+  } catch (err) {
+    toast(err.message);
+  }
+});
+
+subscriptionCreateBtnEl?.addEventListener("click", async () => {
+  try {
+    const poiSetId = (subscriptionPoiSetSelectEl?.value || "").trim() || null;
+    const geom = parseJsonInput(subscriptionGeometryEl?.value || "", "Subscription geometry");
+    const payload = {
+      poi_set_id: poiSetId,
+      geometry: geom || null,
+      matching_rules: {},
+      filters: {
+        contract_id: selectedContractId(),
+        collection_id: collectionEl?.value || "l1d-sr",
+      },
+      enabled: true,
+    };
+    await apiJson("/api/subscriptions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const subData = await apiJson("/api/subscriptions");
+    state.subscriptions = subData.subscriptions || [];
+    refreshPoiAndSubscriptionOptions();
+    toast("Subscription created");
+  } catch (err) {
+    toast(err.message);
+  }
+});
+
+runsRefreshBtnEl?.addEventListener("click", async () => {
+  try {
+    await refreshRuns();
+    await refreshEvents();
+    toast("Runs refreshed");
+  } catch (err) {
+    toast(err.message);
+  }
+});
+
+runsSelectEl?.addEventListener("change", async () => {
+  const runId = (runsSelectEl.value || "").trim();
+  if (!runId) return;
+  try {
+    await showRunInspector(runId);
+  } catch (err) {
+    toast(err.message);
+  }
+});
+
+runInspectorOutEl?.addEventListener("click", async (evt) => {
+  const target = evt.target;
+  if (!(target instanceof Element)) return;
+  const btn = target.closest(".evidence-jump");
+  if (!(btn instanceof HTMLButtonElement)) return;
+  evt.preventDefault();
+  const sceneId = (btn.dataset.sceneId || "").trim();
+  if (!sceneId) return;
+  try {
+    await jumpToEvidenceScene(sceneId);
+  } catch (err) {
+    toast(err.message || "Evidence jump failed");
+  }
+});
+
+document.addEventListener("mousemove", (evt) => {
+  if (!state.workflowGraph.dragNodeId) return;
+  dragWorkflowNode(evt);
+});
+
+document.addEventListener("mouseup", () => {
+  stopWorkflowNodeDrag();
+});
+
 mapLocateFormEl?.addEventListener("submit", async (evt) => {
   evt.preventDefault();
   try {
@@ -2517,6 +4018,10 @@ mapLocateInputEl?.addEventListener("keydown", (evt) => {
 
 mapLocateHistoryEl?.addEventListener("click", (evt) => {
   evt.stopPropagation();
+});
+
+timeCarouselListEl?.addEventListener("scroll", () => {
+  maybeLoadMoreCarouselOnScroll();
 });
 
 document.getElementById("searchBtn").addEventListener("click", async () => {
@@ -2621,6 +4126,16 @@ map.on("move zoom", () => {
   updateMapStatus();
 });
 
+map.on("draw:created draw:edited draw:deleted", () => {
+  ensureLayerEditorControlAnchor();
+  if (layerEditorPopoverEl?.classList.contains("open")) positionLayerEditorPopover();
+});
+
+map.on("draw:toolbaropened draw:toolbarclosed", () => {
+  ensureLayerEditorControlAnchor();
+  if (layerEditorPopoverEl?.classList.contains("open")) positionLayerEditorPopover();
+});
+
 compareRangeEl.addEventListener("input", () => {
   applyCompareFrameAt(Math.round(Number(compareRangeEl.value || 0)));
 });
@@ -2654,8 +4169,22 @@ compareModeBtnEl.addEventListener("click", () => {
   setCompareMode(!state.compareMode);
 });
 
+layerEditorSelectEl?.addEventListener("change", async (evt) => {
+  const mode = evt?.target?.value || "natural";
+  try {
+    await applyDetailLayerMode(mode, true);
+  } catch (err) {
+    toast(err.message || "Layer update failed");
+  }
+});
+
+layerEditorPopoverEl?.addEventListener("click", (evt) => {
+  evt.stopPropagation();
+});
+
 animateSeriesBtnEl?.addEventListener("click", (evt) => {
   evt.stopPropagation();
+  hideLayerEditorPopover();
   hideDownloadPopover();
   toggleAnimateSeriesPopover();
 });
@@ -2681,6 +4210,7 @@ animateSeriesPopoverEl?.addEventListener("click", (evt) => {
 
 downloadMenuBtnEl?.addEventListener("click", (evt) => {
   evt.stopPropagation();
+  hideLayerEditorPopover();
   hideAnimateSeriesPopover();
   toggleDownloadPopover();
 });
@@ -2726,6 +4256,7 @@ map.on("contextmenu", (evt) => {
 map.on("click", () => {
   hideContextMenu();
   hideLocationHistoryMenu();
+  hideLayerEditorPopover();
   hideAnimateSeriesPopover();
   hideDownloadPopover();
 });
@@ -2737,6 +4268,10 @@ document.addEventListener("click", (evt) => {
     const target = evt.target;
     if (!animateSeriesPopoverEl.contains(target) && !animateSeriesBtnEl.contains(target)) hideAnimateSeriesPopover();
   }
+  if (layerEditorPopoverEl && layerEditorBtnEl) {
+    const target = evt.target;
+    if (!layerEditorPopoverEl.contains(target) && !layerEditorBtnEl.contains(target)) hideLayerEditorPopover();
+  }
   if (downloadPopoverEl && downloadMenuBtnEl) {
     const target = evt.target;
     if (!downloadPopoverEl.contains(target) && !downloadMenuBtnEl.contains(target)) hideDownloadPopover();
@@ -2746,6 +4281,7 @@ document.addEventListener("click", (evt) => {
 document.addEventListener("keydown", (evt) => {
   if (evt.key === "Escape") {
     hideLocationHistoryMenu();
+    hideLayerEditorPopover();
     hideAnimateSeriesPopover();
     hideDownloadPopover();
   }
@@ -2803,6 +4339,10 @@ contractSelectEl.addEventListener("change", () => {
 updateLockButtonState();
 updateMapStatus();
 loadLocationHistory();
+ensureLayerEditorControlAnchor();
+if (layerEditorSelectEl) layerEditorSelectEl.value = normalizeDetailLayerMode(state.detailLayerMode);
+setWorkflowBuilderDetached(false);
+setWorkflowGraph(defaultWorkflowGraphNodes(), false);
 if (DEBUG_NET) {
   if (mapDebugStatsEl) mapDebugStatsEl.style.display = "block";
   updateDebugStats();
@@ -2816,4 +4356,31 @@ if (DEBUG_NET) {
 (async () => {
   await loadContracts();
   await loadCollections();
+  try {
+    await loadWorkbenchData();
+  } catch (err) {
+    toast(`Workbench load failed: ${err.message}`);
+  }
+  setWorkbenchTab("explore");
+  setInterval(() => {
+    if (state.activeTab === "runs") {
+      refreshRuns().catch(() => {});
+      refreshEvents().catch(() => {});
+    }
+    if (state.activeTab === "schedules") {
+      refreshSchedules().catch(() => {});
+      refreshEvents().catch(() => {});
+    }
+  }, 10000);
 })();
+
+window.addEventListener("beforeunload", () => {
+  const popup = state.workflowBuilder.popoutWindow;
+  if (popup && !popup.closed) {
+    try {
+      popup.close();
+    } catch (_) {
+      // ignore
+    }
+  }
+});

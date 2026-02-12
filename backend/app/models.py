@@ -127,3 +127,57 @@ class DownloadBundleRequest(BaseModel):
     assets: list[DownloadAssetEntry] = Field(default_factory=list)
     contract_id: str | None = None
     bundle_name: str = "tiles_download"
+
+
+class WorkflowDefinitionPayload(BaseModel):
+    workflow_id: str
+    version: str
+    graph_json: dict[str, Any] = Field(default_factory=dict)
+    default_params: dict[str, Any] = Field(default_factory=dict)
+
+
+class RunCreateRequest(BaseModel):
+    workflow_id: str | None = None
+    workflow_version: str | None = None
+    trigger_id: str | None = None
+    idempotency_key: str | None = None
+    inputs_payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class ScheduleCreateRequest(BaseModel):
+    type: Literal["MANUAL", "CRON", "IMAGERY_ARRIVAL", "STACK_ARRIVAL"] = "MANUAL"
+    workflow_id: str | None = None
+    workflow_version: str | None = None
+    scope: dict[str, Any] = Field(default_factory=dict)
+    filters: dict[str, Any] = Field(default_factory=dict)
+    batching: dict[str, Any] = Field(default_factory=dict)
+    caps: dict[str, Any] = Field(default_factory=dict)
+    subscription_id: str | None = None
+    cron: str | None = None
+    interval_seconds: int | None = Field(default=None, ge=0)
+    enabled: bool = True
+
+
+class SchedulePatchRequest(BaseModel):
+    enabled: bool | None = None
+    cron: str | None = None
+    interval_seconds: int | None = Field(default=None, ge=0)
+    scope: dict[str, Any] | None = None
+    filters: dict[str, Any] | None = None
+    batching: dict[str, Any] | None = None
+    caps: dict[str, Any] | None = None
+    subscription_id: str | None = None
+
+
+class PoiSetCreateRequest(BaseModel):
+    name: str = "poi_set"
+    geometry: dict[str, Any] | None = None
+    features: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class SubscriptionCreateRequest(BaseModel):
+    geometry: dict[str, Any] | None = None
+    poi_set_id: str | None = None
+    matching_rules: dict[str, Any] = Field(default_factory=dict)
+    filters: dict[str, Any] = Field(default_factory=dict)
+    enabled: bool = True
