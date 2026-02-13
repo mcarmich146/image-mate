@@ -5,44 +5,14 @@ from pathlib import Path
 from typing import Any
 import base64
 import io
-import json
 import logging
 import math
-import statistics
-import uuid
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from shapely.geometry import shape
 
-from .config import settings
-from .satellogic_client import normalize_item
-
 logger = logging.getLogger("image_mate")
-
-
-def build_stacks(features: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    grouped: dict[str, list[dict[str, Any]]] = {}
-    for feature in features:
-        item = normalize_item(feature)
-        key = item["outcome_id"] or item["id"]
-        grouped.setdefault(key, []).append(item)
-
-    stacks = []
-    for outcome_id, items in grouped.items():
-        sorted_items = sorted(items, key=lambda i: i.get("datetime") or "", reverse=True)
-        cloud_values = [i.get("cloud_cover") for i in sorted_items if i.get("cloud_cover") is not None]
-        stacks.append(
-            {
-                "outcome_id": outcome_id,
-                "count": len(sorted_items),
-                "latest_datetime": sorted_items[0].get("datetime") if sorted_items else None,
-                "mean_cloud_cover": round(statistics.mean(cloud_values), 2) if cloud_values else None,
-                "items": sorted_items,
-            }
-        )
-
-    return sorted(stacks, key=lambda s: (s["latest_datetime"] or ""), reverse=True)
 
 
 def _to_small_gray(image_bytes: bytes, size: int = 256) -> np.ndarray:
@@ -675,86 +645,101 @@ def _build_capture_mosaic_frame(group_items: list[dict[str, Any]], capture_datet
 
 
 def _draw_frame_label(canvas: Image.Image, capture_datetime: str | None):
-    draw = ImageDraw.Draw(canvas)
     text = f"Capture: {capture_datetime or 'unknown'}"
-    try:
-        font = ImageFont.truetype("Arial.ttf", 34)
-    except Exception:
-        font = ImageFont.load_default()
-
-    x, y = 20, 14
-    # shadow/stroke for readability
-    for ox, oy in [(-1, -1), (1, -1), (-1, 1), (1, 1), (0, 0)]:
-        fill = (0, 0, 0) if (ox, oy) != (0, 0) else (255, 255, 255)
-        draw.text((x + ox, y + oy), text, font=font, fill=fill)
+    _draw_scaled_top_label(canvas, text, target_width_ratio=0.52, max_height_ratio=0.16)
 
 
 def _draw_datetime_label(canvas: Image.Image, capture_datetime: str | None):
-    draw = ImageDraw.Draw(canvas)
     text = capture_datetime or "unknown datetime"
+    _draw_scaled_top_label(canvas, text, target_width_ratio=0.5, max_height_ratio=0.14)
+
+
+def _load_label_font(size: int):
+    size = max(10, int(size))
+    for family in ("DejaVuSans-Bold.ttf", "Arial.ttf", "Helvetica.ttc", "Helvetica.ttf"):
+        try:
+            return ImageFont.truetype(family, size)
+        except Exception:
+            continue
+    return ImageFont.load_default()
+
+
+def _text_bbox(draw: ImageDraw.ImageDraw, text: str, font) -> tuple[int, int]:
     try:
-        font = ImageFont.truetype("Arial.ttf", 42)
+        left, top, right, bottom = draw.textbbox((0, 0), text, font=font)
+        return max(1, int(right - left)), max(1, int(bottom - top))
     except Exception:
-        font = ImageFont.load_default()
-
-    x, y = 20, 16
-    for ox, oy in [(-2, -2), (2, -2), (-2, 2), (2, 2), (0, 0)]:
-        fill = (0, 0, 0) if (ox, oy) != (0, 0) else (255, 255, 255)
-        draw.text((x + ox, y + oy), text, font=font, fill=fill)
-
-
-def compare_pair(before_item: dict[str, Any], after_item: dict[str, Any]) -> dict[str, Any]:
-    before_url = before_item["assets"].get("preview") or before_item["assets"].get("thumbnail") or before_item["assets"].get("visual")
-    after_url = after_item["assets"].get("preview") or after_item["assets"].get("thumbnail") or after_item["assets"].get("visual")
-
-    return {
-        "before": {
-            "id": before_item["id"],
-            "datetime": before_item.get("datetime"),
-            "url": before_url,
-        },
-        "after": {
-            "id": after_item["id"],
-            "datetime": after_item.get("datetime"),
-            "url": after_url,
-        },
-    }
+        try:
+            width, height = draw.textsize(text, font=font)
+            return max(1, int(width)), max(1, int(height))
+        except Exception:
+            return max(1, 8 * len(text)), 14
 
 
-def _load_annotations(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        return {"type": "FeatureCollection", "features": []}
-    with open(path, "r", encoding="utf-8") as fh:
-        return json.load(fh)
+def _fit_label_font(
+    draw: ImageDraw.ImageDraw,
+    text: str,
+    canvas_size: tuple[int, int],
+    target_width_ratio: float,
+    max_height_ratio: float,
+):
+    canvas_w, canvas_h = canvas_size
+    base = int(round(min(canvas_w, canvas_h) * 0.045))
+    lo = max(10, int(round(min(canvas_w, canvas_h) * 0.018)))
+    hi = max(lo, int(round(min(canvas_w, canvas_h) * 0.18)))
+    guess = max(lo, min(hi, base))
+
+    best_font = _load_label_font(guess)
+    best_size = guess
+
+    # Binary-search for the largest readable font that still fits top-label limits.
+    left = lo
+    right = hi
+    while left <= right:
+        guess = (left + right) // 2
+        font = _load_label_font(guess)
+        text_w, text_h = _text_bbox(draw, text, font)
+        too_wide = text_w > (canvas_w * target_width_ratio)
+        too_tall = text_h > (canvas_h * max_height_ratio)
+        if too_wide or too_tall:
+            right = guess - 1
+            continue
+        best_font = font
+        best_size = guess
+        left = guess + 1
+    return best_font, best_size
 
 
-def list_annotations(aoi_name: str | None = None) -> dict[str, Any]:
-    payload = _load_annotations(settings.annotations_file)
-    if not aoi_name:
-        return payload
+def _draw_scaled_top_label(
+    canvas: Image.Image,
+    text: str,
+    target_width_ratio: float,
+    max_height_ratio: float,
+):
+    draw = ImageDraw.Draw(canvas)
+    font, font_size = _fit_label_font(
+        draw,
+        text,
+        canvas.size,
+        target_width_ratio=target_width_ratio,
+        max_height_ratio=max_height_ratio,
+    )
 
-    features = [f for f in payload.get("features", []) if f.get("properties", {}).get("aoi_name") == aoi_name]
-    return {"type": "FeatureCollection", "features": features}
+    margin_x = max(10, int(round(canvas.width * 0.012)))
+    margin_y = max(8, int(round(canvas.height * 0.012)))
+    x, y = margin_x, margin_y
 
+    stroke = max(1, int(round(font_size * 0.08)))
+    for ox in range(-stroke, stroke + 1):
+        for oy in range(-stroke, stroke + 1):
+            if ox == 0 and oy == 0:
+                continue
+            if (ox * ox) + (oy * oy) > (stroke * stroke):
+                continue
+            draw.text((x + ox, y + oy), text, font=font, fill=(0, 0, 0))
+    try:
+        draw.text((x, y), text, font=font, fill=(255, 255, 255))
+    except Exception:
+        # Avoid failing the render if text draw fails on any backend font edge case.
+        return
 
-def save_annotation(note: str, geometry: dict[str, Any], label: str = "observation", aoi_name: str = "default") -> dict[str, Any]:
-    settings.annotations_file.parent.mkdir(parents=True, exist_ok=True)
-    payload = _load_annotations(settings.annotations_file)
-
-    feature = {
-        "type": "Feature",
-        "geometry": geometry,
-        "properties": {
-            "id": str(uuid.uuid4()),
-            "aoi_name": aoi_name,
-            "label": label,
-            "note": note,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        },
-    }
-
-    payload.setdefault("features", []).append(feature)
-    with open(settings.annotations_file, "w", encoding="utf-8") as fh:
-        json.dump(payload, fh, indent=2)
-
-    return feature

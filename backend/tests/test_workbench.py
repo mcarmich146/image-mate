@@ -286,6 +286,7 @@ class WorkbenchCoreTests(unittest.TestCase):
             names = {Path(str(a.get("uri"))).name for a in artifacts}
             self.assertIn("report.md", names)
             self.assertIn("report.json", names)
+            self.assertIn("report.docx", names)
             self.assertIn("provenance.json", names)
             self.assertIn("hashes.txt", names)
 

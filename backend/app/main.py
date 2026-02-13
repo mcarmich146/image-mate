@@ -26,8 +26,6 @@ from .geoagent import generate_geo_report
 from .models import (
     AnimationSearchRequest,
     AnimationRequest,
-    AnnotationRecord,
-    CompareRequest,
     DownloadBundleRequest,
     GeoAgentRequest,
     GeoAgentResponse,
@@ -45,13 +43,9 @@ from .models import (
 )
 from .satellogic_client import SatellogicClient, normalize_item
 from .services import (
-    build_stacks,
-    compare_pair,
-    list_annotations,
     make_animation_gif,
     make_capture_mosaic_animation,
     make_selected_extent_mp4,
-    save_annotation,
 )
 from .workbench import GeoWorkbenchEngine
 
@@ -87,7 +81,6 @@ app.state.workbench_lock = threading.Lock()
 @app.on_event("startup")
 def startup_event():
     settings.output_dir.mkdir(parents=True, exist_ok=True)
-    settings.annotations_file.parent.mkdir(parents=True, exist_ok=True)
     auth_mode = getattr(client, "auth_mode", "unknown")
     uses_oauth = auth_mode in {"oauth", "oauth_client_credentials", "auto"}
     has_client_credentials = bool(getattr(client, "key_id", "") and getattr(client, "key_secret", ""))
@@ -1127,6 +1120,7 @@ def _ensure_workbench() -> GeoWorkbenchEngine:
             root_dir=settings.output_dir,
             search_items_fn=_workbench_search_items,
             resolve_item_fn=_resolve_item,
+            download_bytes_fn=lambda url, contract_id=None: client.download_bytes(url, contract_id=contract_id),
         )
         engine.start()
         app.state.workbench = engine
@@ -1187,29 +1181,6 @@ def archive_search(request: SearchRequest):
         return SearchResponse(count=len(typed_items), items=typed_items)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Archive search failed: {exc}") from exc
-
-
-@app.post("/api/archive/stacks")
-def archive_stacks(request: SearchRequest):
-    try:
-        features = client.search(
-            geometry=request.geometry,
-            start_date=request.start_date,
-            end_date=request.end_date,
-            collection_id=request.collection_id,
-            contract_id=request.contract_id,
-            limit=request.limit,
-            max_cloud_cover=request.max_cloud_cover,
-            satellite_name=request.satellite_name,
-            min_gsd=request.min_gsd,
-            max_gsd=request.max_gsd,
-        )
-        stacks = build_stacks(features)
-        for stack in stacks:
-            _cache_items(stack["items"])
-        return {"count": len(stacks), "stacks": stacks}
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"Stack discovery failed: {exc}") from exc
 
 
 @app.post("/api/archive/animate")
@@ -1364,33 +1335,6 @@ def archive_animate_mp4_job_download(job_id: str):
 
     filename = job.get("file_name") or output_path.name
     return FileResponse(path=output_path, media_type="video/mp4", filename=filename)
-
-
-@app.post("/api/archive/compare")
-def archive_compare(request: CompareRequest):
-    before_item = _resolve_item(request.before_item_id, contract_id=request.contract_id)
-    after_item = _resolve_item(request.after_item_id, contract_id=request.contract_id)
-
-    if not before_item or not after_item:
-        raise HTTPException(status_code=404, detail="One or both comparison items were not found")
-
-    return compare_pair(before_item, after_item)
-
-
-@app.get("/api/annotations")
-def get_annotations(aoi_name: str | None = None):
-    return list_annotations(aoi_name)
-
-
-@app.post("/api/annotations")
-def post_annotation(record: AnnotationRecord):
-    feature = save_annotation(
-        note=record.note,
-        geometry=record.geometry,
-        label=record.label,
-        aoi_name=record.aoi_name,
-    )
-    return {"saved": True, "feature": feature}
 
 
 @app.post("/api/geoagent/report", response_model=GeoAgentResponse)

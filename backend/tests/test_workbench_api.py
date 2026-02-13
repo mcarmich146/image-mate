@@ -75,6 +75,7 @@ class WorkbenchApiTests(unittest.TestCase):
         payload = {
             "workflow_id": "airbase_time_series_analyst",
             "workflow_version": "1.0.0",
+            "idempotency_key": f"test-workbench-api-{time.time_ns()}",
             "inputs_payload": {
                 "roi": copy.deepcopy(a["geometry"]),
                 "scene_ids": [a["id"], b["id"]],
@@ -102,6 +103,7 @@ class WorkbenchApiTests(unittest.TestCase):
         names = [a.get("uri", "").split("/")[-1] for a in arts.json().get("artifacts", [])]
         self.assertIn("report.md", names)
         self.assertIn("report.json", names)
+        self.assertIn("report.docx", names)
         self.assertIn("provenance.json", names)
         self.assertIn("hashes.txt", names)
 

@@ -42,21 +42,6 @@ class AnimationRequest(BaseModel):
     max_frames: int = Field(default=30, ge=2, le=200)
 
 
-class CompareRequest(BaseModel):
-    before_item_id: str
-    after_item_id: str
-    contract_id: str | None = None
-
-
-class AnnotationRecord(BaseModel):
-    id: str | None = None
-    aoi_name: str = "default"
-    note: str
-    geometry: dict[str, Any]
-    label: str = "observation"
-    created_at: str | None = None
-
-
 class GeoAgentRequest(BaseModel):
     geometry: dict[str, Any]
     start_date: str

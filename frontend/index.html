@@ -26,84 +26,35 @@
       </nav>
 
       <div id="leftExploreView" class="left-view active">
-      <section class="panel-block">
-        <h2>Archive Search</h2>
-        <div class="grid two">
-          <label>Lat<input id="lat" type="number" step="0.0001" value="37.6188" /></label>
-          <label>Lon<input id="lon" type="number" step="0.0001" value="-122.375" /></label>
+      <section class="panel-block archive-search-block">
+        <div class="archive-search-head">
+          <h2>Archive Search</h2>
+          <p class="meta">Fast viewport search with collection, quality, and sensor filters.</p>
         </div>
         <div class="grid two">
-          <label>Width (km)<input id="widthKm" type="number" step="0.5" value="8" /></label>
-          <label>Cloud ≤<input id="maxCloud" type="number" min="0" max="100" value="40" /></label>
+          <label>Start Date<input id="startDate" type="date" /></label>
+          <label>End Date<input id="endDate" type="date" /></label>
         </div>
         <div class="grid two">
-          <label>Start<input id="startDate" type="date" /></label>
-          <label>End<input id="endDate" type="date" /></label>
+          <label>Collection<select id="collection"></select></label>
+          <label>Contract<select id="contractSelect"></select></label>
         </div>
         <div class="grid three">
-          <label>Satellite<input id="satelliteName" type="text" placeholder="optional, e.g. SN48" /></label>
+          <label>Cloud Cover ≤<input id="maxCloud" type="number" min="0" max="100" value="40" /></label>
           <label>GSD Min (m)<input id="minGsd" type="number" step="0.01" min="0" placeholder="optional" /></label>
           <label>GSD Max (m)<input id="maxGsd" type="number" step="0.01" min="0" placeholder="optional" /></label>
         </div>
         <div class="grid two">
-          <label>Contract<select id="contractSelect"></select></label>
-          <label>Collection<select id="collection"></select></label>
+          <label>Satellite Name<input id="satelliteName" type="text" placeholder="optional, e.g. SN48" /></label>
+          <label>Result Limit<input id="limit" type="number" min="1" max="1000" value="250" /></label>
         </div>
-        <div class="grid two">
-          <label>Limit<input id="limit" type="number" min="1" max="1000" value="250" /></label>
-          <label>&nbsp;<input disabled value="Satellogic API v2" /></label>
-        </div>
-        <div class="actions">
+        <label class="toggle-inline"><input id="displayFramesToggle" type="checkbox" checked /> Display Frames</label>
+        <div class="actions single">
           <button id="searchBtn">Search View Extent</button>
-          <button id="stackBtn" class="ghost">Discover Stacks</button>
         </div>
-        <p class="meta">Search uses the current map viewport extent at the moment you click.</p>
         <p id="searchMeta" class="meta">No search run yet.</p>
       </section>
 
-      <section class="panel-block">
-        <h2>Time Series</h2>
-        <div class="actions">
-          <button id="playBtn">Play</button>
-          <button id="pauseBtn" class="ghost">Pause</button>
-          <button id="gifBtn" class="ghost">Build GIF</button>
-        </div>
-        <label>Frame<select id="frameSelect" multiple size="5"></select></label>
-        <input id="timeline" type="range" min="0" max="0" value="0" />
-        <img id="framePreview" alt="Frame preview" class="preview" />
-      </section>
-
-      <section class="panel-block">
-        <h2>Image Comparison</h2>
-        <div class="grid two">
-          <label>Before<select id="beforeSelect"></select></label>
-          <label>After<select id="afterSelect"></select></label>
-        </div>
-        <button id="compareBtn">Compare Pair</button>
-        <div class="compare-wrap" id="compareWrap">
-          <img id="afterImg" alt="After image" class="compare-layer" />
-          <div id="beforeClip" class="before-clip"><img id="beforeImg" alt="Before image" class="compare-layer" /></div>
-          <input id="compareSlider" type="range" min="0" max="100" value="50" />
-        </div>
-      </section>
-
-      <section class="panel-block">
-        <h2>GeoAgent Report</h2>
-        <label>Prompt
-          <textarea id="geoPrompt" rows="5" placeholder="Describe what to assess, e.g. activity tempo, runway usage, staging changes..."></textarea>
-        </label>
-        <button id="reportBtn">Generate Intelligence Report</button>
-        <pre id="reportOut" class="report">No report generated.</pre>
-      </section>
-
-      <section class="panel-block">
-        <h2>Annotation</h2>
-        <label>Note<textarea id="annotationNote" rows="3" placeholder="Observation note"></textarea></label>
-        <div class="actions">
-          <button id="saveAnnotationBtn">Save Last Drawn Shape</button>
-          <button id="loadAnnotationBtn" class="ghost">Reload Saved</button>
-        </div>
-      </section>
       </div>
 
       <div id="leftWorkflowsView" class="left-view">
@@ -288,6 +239,9 @@
               <button id="animateSeriesBtn" class="ghost tiny icon-only" type="button" title="Animate Selected" aria-label="Animate Selected">
                 <span class="movie-icon" aria-hidden="true"></span>
               </button>
+              <button id="generateSeriesReportBtn" class="ghost tiny icon-only" type="button" title="Generate Report" aria-label="Generate Report">
+                <span class="report-icon" aria-hidden="true"></span>
+              </button>
               <div id="animateSeriesPopover" class="animate-popover" role="dialog" aria-label="Animate selected timeline">
                 <h4>Animate Selected</h4>
                 <label>Seconds / frame<input id="animateSeriesSeconds" type="number" min="0.1" max="10" step="0.1" value="0.8" /></label>
@@ -296,6 +250,20 @@
                   <button id="animateSeriesCloseBtn" type="button" class="ghost tiny">Close</button>
                 </div>
                 <p id="animateSeriesStatus" class="meta">Select 2+ images in the carousel, then render.</p>
+              </div>
+              <div id="generateSeriesReportPopover" class="report-popover" role="dialog" aria-label="Generate selected report">
+                <h4>Generate Report</h4>
+                <label>Workflow
+                  <select id="generateSeriesReportWorkflow"></select>
+                </label>
+                <label>Optional Additional Prompt
+                  <textarea id="generateSeriesReportPrompt" rows="3" placeholder="Optional analyst instructions for the AI scene-change narrative."></textarea>
+                </label>
+                <div class="report-popover-actions">
+                  <button id="generateSeriesReportRunBtn" type="button">Generate</button>
+                  <button id="generateSeriesReportCloseBtn" type="button" class="ghost tiny">Close</button>
+                </div>
+                <p id="generateSeriesReportStatus" class="meta">Uses selected images and current viewport extent.</p>
               </div>
               <button id="downloadMenuBtn" class="ghost tiny icon-only" type="button" title="Download" aria-label="Download">
                 <span class="download-icon" aria-hidden="true"></span>

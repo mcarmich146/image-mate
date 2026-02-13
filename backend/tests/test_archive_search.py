@@ -21,15 +21,16 @@ TEST_GEOMETRY = {
 }
 
 
-def _sample_feature(item_id: str, dt: str) -> dict:
+def _sample_feature(item_id: str, dt: str, outcome_id: str | None = None, geometry: dict | None = None) -> dict:
     return {
         "id": item_id,
         "collection": "l1d-sr",
         "properties": {
             "datetime": dt,
             "eo:cloud_cover": 12.5,
+            "satl:outcome_id": outcome_id or f"outcome-{item_id}",
         },
-        "geometry": copy.deepcopy(TEST_GEOMETRY),
+        "geometry": copy.deepcopy(geometry or TEST_GEOMETRY),
         "assets": {
             "visual": {"href": f"https://example.com/{item_id}_visual.tif"},
             "preview": {"href": f"https://example.com/{item_id}_preview.png"},
@@ -117,7 +118,6 @@ class ArchiveSearchApiTests(unittest.TestCase):
         self.assertEqual(body["count"], 2)
         self.assertEqual([item["id"] for item in body["collections"]], ["l1d-sr", "quickview-visual-thumb"])
         self.assertIn("default_collection_id", body)
-
 
 if __name__ == "__main__":
     unittest.main()

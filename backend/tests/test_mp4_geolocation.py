@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import unittest
 
+from PIL import Image, ImageChops, ImageDraw
+
 from backend.app import services
 
 
@@ -81,6 +83,39 @@ class Mp4GeolocationTests(unittest.TestCase):
             px, py = project(x, y)
             self.assertAlmostEqual(px, x, places=6)
             self.assertAlmostEqual(py, y, places=6)
+
+    def test_datetime_label_draws_on_small_and_large_frames(self):
+        small_before = Image.new("RGB", (320, 240), (0, 0, 0))
+        small_after = small_before.copy()
+        services._draw_datetime_label(small_after, "2026-02-13T12:34:56Z")
+        self.assertIsNotNone(ImageChops.difference(small_before, small_after).getbbox())
+
+        large_before = Image.new("RGB", (4096, 2160), (0, 0, 0))
+        large_after = large_before.copy()
+        services._draw_datetime_label(large_after, "2026-02-13T12:34:56Z")
+        self.assertIsNotNone(ImageChops.difference(large_before, large_after).getbbox())
+
+    def test_fit_label_font_increases_for_larger_canvas(self):
+        text = "2026-02-13T12:34:56Z"
+        small_canvas = Image.new("RGB", (320, 240), (0, 0, 0))
+        large_canvas = Image.new("RGB", (4096, 2160), (0, 0, 0))
+        small_draw = ImageDraw.Draw(small_canvas)
+        large_draw = ImageDraw.Draw(large_canvas)
+        _, small_size = services._fit_label_font(
+            small_draw,
+            text,
+            small_canvas.size,
+            target_width_ratio=0.5,
+            max_height_ratio=0.14,
+        )
+        _, large_size = services._fit_label_font(
+            large_draw,
+            text,
+            large_canvas.size,
+            target_width_ratio=0.5,
+            max_height_ratio=0.14,
+        )
+        self.assertGreaterEqual(large_size, small_size)
 
 
 if __name__ == "__main__":

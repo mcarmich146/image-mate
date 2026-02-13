@@ -4,9 +4,11 @@ const state = {
   items: [],
   overviewItems: [],
   detailItems: [],
+  outlineItems: [],
   mapVectorLayer: null,
   mapThumbOverlayLayer: null,
   mapThumbMarkerLayer: null,
+  stackOutlineLayer: null,
   compareBlendLayer: null,
   activeFrameOverlay: null,
   playTimer: null,
@@ -40,6 +42,9 @@ const state = {
   mp4JobId: null,
   mp4JobTimer: null,
   mp4JobDownloading: false,
+  reportRunId: null,
+  reportRunTimer: null,
+  reportRunDownloading: false,
   activeTab: "explore",
   workflows: [],
   skills: [],
@@ -63,9 +68,12 @@ const state = {
     popoutWindow: null,
     isDetached: false,
   },
+  displayFrames: true,
 };
 
 const DETAIL_ZOOM_THRESHOLD = 13;
+const STACK_DISCOVERY_COLLECTION_ID = "quickview-visual-thumb";
+const ZOOMED_OUT_SEARCH_MAX_ZOOM = 12;
 const DETAIL_COG_HIGHRES_ZOOM = 16;
 const DETAIL_COG_TILE_BUFFER = 2;
 const DETAIL_FETCH_DEBOUNCE_MS = 700;
@@ -110,6 +118,7 @@ window.addEventListener("resize", () => {
   map.invalidateSize();
   ensureLayerEditorControlAnchor();
   if (animateSeriesPopoverEl?.classList.contains("open")) positionAnimateSeriesPopover();
+  if (generateSeriesReportPopoverEl?.classList.contains("open")) positionGenerateSeriesReportPopover();
   if (layerEditorPopoverEl?.classList.contains("open")) positionLayerEditorPopover();
 });
 setTimeout(() => map.invalidateSize(), 80);
@@ -163,9 +172,6 @@ map.on(L.Draw.Event.DELETED, () => {
   toast("Drawn AOI cleared; center/width search will be used");
 });
 
-const latEl = document.getElementById("lat");
-const lonEl = document.getElementById("lon");
-const widthKmEl = document.getElementById("widthKm");
 const startDateEl = document.getElementById("startDate");
 const endDateEl = document.getElementById("endDate");
 const maxCloudEl = document.getElementById("maxCloud");
@@ -173,6 +179,7 @@ const satelliteNameEl = document.getElementById("satelliteName");
 const minGsdEl = document.getElementById("minGsd");
 const maxGsdEl = document.getElementById("maxGsd");
 const limitEl = document.getElementById("limit");
+const displayFramesToggleEl = document.getElementById("displayFramesToggle");
 const collectionEl = document.getElementById("collection");
 const contractSelectEl = document.getElementById("contractSelect");
 const searchMetaEl = document.getElementById("searchMeta");
@@ -181,13 +188,8 @@ const timelineEl = document.getElementById("timeline");
 const framePreviewEl = document.getElementById("framePreview");
 const beforeSelectEl = document.getElementById("beforeSelect");
 const afterSelectEl = document.getElementById("afterSelect");
-const beforeImgEl = document.getElementById("beforeImg");
-const afterImgEl = document.getElementById("afterImg");
 const beforeClipEl = document.getElementById("beforeClip");
 const compareSliderEl = document.getElementById("compareSlider");
-const geoPromptEl = document.getElementById("geoPrompt");
-const reportOutEl = document.getElementById("reportOut");
-const annotationNoteEl = document.getElementById("annotationNote");
 const timeCarouselListEl = document.getElementById("timeCarouselList");
 const searchResultsCountEl = document.getElementById("searchResultsCount");
 const searchResultsFilterMetaEl = document.getElementById("searchResultsFilterMeta");
@@ -228,6 +230,13 @@ const animateSeriesSecondsEl = document.getElementById("animateSeriesSeconds");
 const animateSeriesRunBtnEl = document.getElementById("animateSeriesRunBtn");
 const animateSeriesCloseBtnEl = document.getElementById("animateSeriesCloseBtn");
 const animateSeriesStatusEl = document.getElementById("animateSeriesStatus");
+const generateSeriesReportBtnEl = document.getElementById("generateSeriesReportBtn");
+const generateSeriesReportPopoverEl = document.getElementById("generateSeriesReportPopover");
+const generateSeriesReportWorkflowEl = document.getElementById("generateSeriesReportWorkflow");
+const generateSeriesReportPromptEl = document.getElementById("generateSeriesReportPrompt");
+const generateSeriesReportRunBtnEl = document.getElementById("generateSeriesReportRunBtn");
+const generateSeriesReportCloseBtnEl = document.getElementById("generateSeriesReportCloseBtn");
+const generateSeriesReportStatusEl = document.getElementById("generateSeriesReportStatus");
 const downloadMenuBtnEl = document.getElementById("downloadMenuBtn");
 const downloadPopoverEl = document.getElementById("downloadPopover");
 const downloadOutcomeCsvBtnEl = document.getElementById("downloadOutcomeCsvBtn");
@@ -433,15 +442,6 @@ function geometryFromBounds(bounds) {
 function updateSearchFieldsFromGeometry(geometry) {
   const bounds = boundsFromGeometry(geometry);
   if (!bounds) return;
-  const center = bounds.getCenter();
-  const west = bounds.getWest();
-  const east = bounds.getEast();
-  const widthDeg = Math.abs(east - west);
-  const widthKm = widthDeg * 111.0 * Math.cos((center.lat * Math.PI) / 180);
-
-  latEl.value = clampLatitude(center.lat).toFixed(6);
-  lonEl.value = normalizeLongitude(center.lng).toFixed(6);
-  widthKmEl.value = Math.max(0.1, widthKm).toFixed(2);
 }
 
 function buildSearchPayload(geometry, collectionOverride = null, limitOverride = null) {
@@ -624,6 +624,41 @@ function toggleAnimateSeriesPopover() {
   if (willOpen) {
     setAnimateSeriesStatus("Select 2+ images in the carousel, then render.");
     positionAnimateSeriesPopover();
+  }
+}
+
+function setGenerateSeriesReportStatus(message, isError = false) {
+  if (!generateSeriesReportStatusEl) return;
+  generateSeriesReportStatusEl.textContent = message;
+  generateSeriesReportStatusEl.style.color = isError ? "#d17569" : "";
+}
+
+function positionGenerateSeriesReportPopover() {
+  if (!generateSeriesReportPopoverEl || !generateSeriesReportBtnEl) return;
+  const host = generateSeriesReportPopoverEl.offsetParent || generateSeriesReportBtnEl.offsetParent || generateSeriesReportBtnEl.parentElement;
+  if (!host) return;
+  const hostRect = host.getBoundingClientRect();
+  const btnRect = generateSeriesReportBtnEl.getBoundingClientRect();
+  const top = btnRect.bottom - hostRect.top + 6;
+  const desiredRight = hostRect.right - btnRect.right;
+  const maxRight = Math.max(0, host.clientWidth - 16);
+  const clampedRight = Math.max(0, Math.min(maxRight, desiredRight));
+  generateSeriesReportPopoverEl.style.top = `${Math.max(0, top)}px`;
+  generateSeriesReportPopoverEl.style.left = "auto";
+  generateSeriesReportPopoverEl.style.right = `${clampedRight}px`;
+}
+
+function hideGenerateSeriesReportPopover() {
+  generateSeriesReportPopoverEl?.classList.remove("open");
+}
+
+function toggleGenerateSeriesReportPopover() {
+  if (!generateSeriesReportPopoverEl) return;
+  const willOpen = !generateSeriesReportPopoverEl.classList.contains("open");
+  generateSeriesReportPopoverEl.classList.toggle("open");
+  if (willOpen) {
+    setGenerateSeriesReportStatus("Uses selected images and current viewport extent.");
+    positionGenerateSeriesReportPopover();
   }
 }
 
@@ -1151,16 +1186,17 @@ function openAnimationWindow(gifBase64, filename = "capture_animation.gif") {
   popup.document.close();
 }
 
-function updateSearchResultsHeader(visibleCount) {
-  if (searchResultsCountEl) searchResultsCountEl.textContent = `${visibleCount} Products Found`;
+function updateSearchResultsHeader(visibleCount, totalCount = null) {
+  const total = Number.isFinite(Number(totalCount)) ? Number(totalCount) : Number(visibleCount);
+  if (searchResultsCountEl) searchResultsCountEl.textContent = `${visibleCount} Frames in View (${total} total)`;
   if (!searchResultsFilterMetaEl) return;
   if (!state.carouselFilterActive) {
-    searchResultsFilterMetaEl.style.display = "none";
-    searchResultsFilterMetaEl.textContent = "";
+    searchResultsFilterMetaEl.textContent = `Viewport filter active: showing ${visibleCount} of ${total}.`;
+    searchResultsFilterMetaEl.style.display = "block";
     return;
   }
-  const total = Math.max(0, Number(state.carouselQuickviewCount || 0));
-  searchResultsFilterMetaEl.textContent = `Showing quickviews backed by l1d-sr: ${visibleCount} of ${total}`;
+  const quickviewTotal = Math.max(0, Number(state.carouselQuickviewCount || 0));
+  searchResultsFilterMetaEl.textContent = `Viewport filter active: showing ${visibleCount} of ${total}. Quickviews backed by l1d-sr: ${visibleCount} of ${quickviewTotal}.`;
   searchResultsFilterMetaEl.style.display = "block";
 }
 
@@ -1259,22 +1295,39 @@ function maybeLoadMoreCarouselOnScroll() {
   }
 }
 
-function renderTimeCarousel(items) {
+function renderTimeCarousel(items, totalCount = null) {
   resetCarouselLazyState();
   timeCarouselListEl.innerHTML = "";
   if (!items.length) {
-    updateSearchResultsHeader(0);
-    timeCarouselListEl.innerHTML = `<div class="meta">No quickview thumbnails for current search.</div>`;
+    updateSearchResultsHeader(0, totalCount);
+    timeCarouselListEl.innerHTML = `<div class="meta">No frames intersect the current viewport.</div>`;
     updateLockButtonState();
     return;
   }
 
   const sorted = [...items].sort((a, b) => (b.datetime || "").localeCompare(a.datetime || ""));
-  updateSearchResultsHeader(sorted.length);
+  updateSearchResultsHeader(sorted.length, totalCount);
   state.carouselRenderItems = sorted;
   state.carouselRenderNextIndex = 0;
   appendCarouselBatch();
   fillCarouselViewport();
+}
+
+function overviewItemsForCarousel() {
+  return dedupeById(state.overviewItems.length ? state.overviewItems : state.items);
+}
+
+function viewportFilteredCarouselItems(bounds = map.getBounds()) {
+  const source = overviewItemsForCarousel();
+  if (!source.length) return [];
+  return dedupeById(filterItemsToViewport(source, bounds));
+}
+
+function renderTimeCarouselForViewport(bounds = map.getBounds()) {
+  if (state.activeTab !== "explore") return;
+  const total = overviewItemsForCarousel().length;
+  const visible = viewportFilteredCarouselItems(bounds);
+  renderTimeCarousel(visible, total);
 }
 
 const carouselImageObserver = typeof IntersectionObserver === "function"
@@ -1486,6 +1539,63 @@ function clearMapLayers() {
   state.activeFrameOverlay = null;
 }
 
+function clearStackOutlines() {
+  if (state.stackOutlineLayer) {
+    map.removeLayer(state.stackOutlineLayer);
+    state.stackOutlineLayer = null;
+  }
+}
+
+function stackOutlineColor(index) {
+  const hue = (index * 67) % 360;
+  return `hsl(${hue}, 72%, 48%)`;
+}
+
+function renderDiscoveredStackOutlines(stacks) {
+  clearStackOutlines();
+  if (!Array.isArray(stacks) || !stacks.length) return;
+
+  const seenIds = new Set();
+  const features = [];
+  stacks.forEach((stack, stackIndex) => {
+    const stackItems = Array.isArray(stack?.items) ? stack.items : [];
+    stackItems.forEach((item) => {
+      if (!item?.geometry) return;
+      const itemId = item.id || "";
+      if (itemId && seenIds.has(itemId)) return;
+      if (itemId) seenIds.add(itemId);
+      features.push({
+        type: "Feature",
+        geometry: item.geometry,
+        properties: {
+          stack_id: stack.stack_id || `stack-${stackIndex + 1}`,
+          stack_index: stackIndex,
+          datetime: item.datetime || "",
+          item_id: itemId,
+        },
+      });
+    });
+  });
+  if (!features.length) return;
+
+  state.stackOutlineLayer = L.geoJSON(
+    {
+      type: "FeatureCollection",
+      features,
+    },
+    {
+      interactive: false,
+      style: (feature) => ({
+        color: stackOutlineColor(Number(feature?.properties?.stack_index || 0)),
+        weight: 2,
+        opacity: 0.9,
+        fillOpacity: 0,
+      }),
+    },
+  ).addTo(map);
+  state.stackOutlineLayer.bringToFront();
+}
+
 function thumbnailUrl(item) {
   return item.assets?.thumbnail || item.assets?.preview || item.assets?.visual || "";
 }
@@ -1588,6 +1698,20 @@ function boundsFromGeometry(geometry) {
   }
 }
 
+function overlayBoundsFromItem(item) {
+  const raw = item?.__overlayBounds;
+  if (!Array.isArray(raw) || raw.length !== 2) return null;
+  const sw = raw[0];
+  const ne = raw[1];
+  if (!Array.isArray(sw) || !Array.isArray(ne) || sw.length < 2 || ne.length < 2) return null;
+  try {
+    const bounds = L.latLngBounds([Number(sw[0]), Number(sw[1])], [Number(ne[0]), Number(ne[1])]);
+    return bounds.isValid() ? bounds : null;
+  } catch (_) {
+    return null;
+  }
+}
+
 function updateActiveFrameOverlay(item) {
   if (state.activeFrameOverlay) {
     map.removeLayer(state.activeFrameOverlay);
@@ -1629,8 +1753,13 @@ function drawResults(items, mode = "overview", fitToBounds = false, options = {}
     return false;
   };
 
-  const features = items
-    .filter((item) => item.geometry)
+  const showOutlines = Boolean(options.showOutlines ?? state.displayFrames);
+  const vectorSource = Array.isArray(options.vectorItems) && options.vectorItems.length ? options.vectorItems : items;
+  const features = vectorSource
+    .filter((item) => {
+      const geomType = (item?.geometry?.type || "").toString().toLowerCase();
+      return item?.geometry && (geomType === "polygon" || geomType === "multipolygon");
+    })
     .map((item, itemIndex) => ({
       type: "Feature",
       geometry: item.geometry,
@@ -1648,16 +1777,40 @@ function drawResults(items, mode = "overview", fitToBounds = false, options = {}
 
   state.mapVectorLayer = L.geoJSON(features, {
     interactive: false,
-    style: () => ({
+    style: (feature) => {
+      const selected = Boolean(feature?.properties?.selected);
+      if (!showOutlines) {
+        return {
+          color: "transparent",
+          weight: 0,
+          fillOpacity: 0,
+          opacity: 0,
+        };
+      }
+      return {
+        color: selected ? "#1e63d8" : "#ff8a00",
+        weight: selected ? 2.4 : 1.8,
+        fillOpacity: 0,
+        opacity: selected ? 0.98 : 0.84,
+      };
+    },
+  }).addTo(map);
+
+  if (showOutlines) {
+    state.mapVectorLayer.bringToFront();
+  }
+
+  state.mapThumbOverlayLayer = L.layerGroup().addTo(map);
+  state.mapThumbMarkerLayer = L.layerGroup().addTo(map);
+
+  if (!showOutlines && state.mapVectorLayer) {
+    state.mapVectorLayer.setStyle({
       color: "transparent",
       weight: 0,
       fillOpacity: 0,
       opacity: 0,
-    }),
-  }).addTo(map);
-
-  state.mapThumbOverlayLayer = L.layerGroup().addTo(map);
-  state.mapThumbMarkerLayer = L.layerGroup().addTo(map);
+    });
+  }
 
   const overlayItemsProvided = Array.isArray(options.overlayItems);
   let overlaySourceItems = overlayItemsProvided ? options.overlayItems : items;
@@ -1694,7 +1847,7 @@ function drawResults(items, mode = "overview", fitToBounds = false, options = {}
   }
 
   loadEntries.forEach(({ item, visualIndex, zIndex }) => {
-    const bounds = boundsFromGeometry(item.geometry);
+    const bounds = overlayBoundsFromItem(item) || boundsFromGeometry(item.geometry);
     if (!bounds) return;
 
     if (mode === "detail" && state.useCogTileProxy) {
@@ -1771,13 +1924,13 @@ function drawResults(items, mode = "overview", fitToBounds = false, options = {}
 }
 
 function setItemSelectors(items) {
-  frameSelectEl.innerHTML = "";
-  beforeSelectEl.innerHTML = "";
-  afterSelectEl.innerHTML = "";
+  if (frameSelectEl) frameSelectEl.innerHTML = "";
+  if (beforeSelectEl) beforeSelectEl.innerHTML = "";
+  if (afterSelectEl) afterSelectEl.innerHTML = "";
 
   items.forEach((item, idx) => {
     const label = `${idx + 1}. ${item.datetime || "n/a"} (${item.id.slice(0, 10)})`;
-    [frameSelectEl, beforeSelectEl, afterSelectEl].forEach((sel) => {
+    [frameSelectEl, beforeSelectEl, afterSelectEl].filter(Boolean).forEach((sel) => {
       const opt = document.createElement("option");
       opt.value = item.id;
       opt.textContent = label;
@@ -1785,13 +1938,15 @@ function setItemSelectors(items) {
     });
   });
 
-  if (items.length > 0) {
+  if (beforeSelectEl && afterSelectEl && items.length > 0) {
     beforeSelectEl.selectedIndex = Math.min(items.length - 1, 1);
     afterSelectEl.selectedIndex = 0;
   }
 
-  timelineEl.max = String(Math.max(0, items.length - 1));
-  timelineEl.value = "0";
+  if (timelineEl) {
+    timelineEl.max = String(Math.max(0, items.length - 1));
+    timelineEl.value = "0";
+  }
   showFrame(0);
 }
 
@@ -1799,13 +1954,13 @@ function showFrame(index) {
   const item = state.items[index];
   if (!item) return;
   const src = assetProxyUrl(previewUrl(item));
-  framePreviewEl.src = src || "";
-  timelineEl.value = String(index);
+  if (framePreviewEl) framePreviewEl.src = src || "";
+  if (timelineEl) timelineEl.value = String(index);
   updateActiveFrameOverlay(item);
 }
 
 function selectedFrameIds() {
-  const selected = Array.from(frameSelectEl.selectedOptions).map((opt) => opt.value);
+  const selected = frameSelectEl ? Array.from(frameSelectEl.selectedOptions).map((opt) => opt.value) : [];
   if (selected.length > 0) return selected;
   return state.items.slice(0, 12).map((item) => item.id);
 }
@@ -1985,7 +2140,10 @@ async function focusFromCarousel(overviewItem) {
   state.mapMode = "detail";
   const visibleTiles = filterItemsToViewport(state.detailItems);
   const renderTiles = topCaptureOnly(visibleTiles);
-  drawResults(renderTiles, "detail", false);
+  drawResults(renderTiles, "detail", false, {
+    vectorItems: stripOutlineVectorItems(renderTiles),
+    showOutlines: state.displayFrames,
+  });
   updateActiveFrameOverlay(renderTiles[0]);
 
   const bounds = boundsFromGeometry(overviewItem.geometry || state.detailItems[0].geometry);
@@ -2075,6 +2233,16 @@ function topCaptureOnly(items) {
   return sorted.filter((item) => item.datetime === topDt);
 }
 
+function stripOutlineVectorItems(fallbackItems = []) {
+  const fromQuickview = dedupeById(Array.isArray(state.outlineItems) ? state.outlineItems : []);
+  if (fromQuickview.length) return fromQuickview;
+  const fromOverview = dedupeById(Array.isArray(state.overviewItems) ? state.overviewItems : []);
+  if (fromOverview.length) return fromOverview;
+  const fromFallback = dedupeById(Array.isArray(fallbackItems) ? fallbackItems : []);
+  if (fromFallback.length) return fromFallback;
+  return dedupeById(Array.isArray(state.items) ? state.items : []);
+}
+
 function latestVisibleStripMosaic(items) {
   if (!Array.isArray(items) || !items.length) return [];
 
@@ -2100,6 +2268,7 @@ function latestVisibleStripMosaic(items) {
   }
 
   const selected = new Set();
+  const selectedCellBounds = new Map();
   const zoom = map.getZoom();
   for (let tx = minTileX; tx <= maxTileX; tx += 1) {
     for (let ty = minTileY; ty <= maxTileY; ty += 1) {
@@ -2110,6 +2279,13 @@ function latestVisibleStripMosaic(items) {
         const entry = prepared[i];
         if (entry.bounds.intersects(tileBounds)) {
           selected.add(entry.key);
+          const prior = selectedCellBounds.get(entry.key);
+          if (!prior) {
+            selectedCellBounds.set(entry.key, L.latLngBounds(tileBounds.getSouthWest(), tileBounds.getNorthEast()));
+          } else {
+            prior.extend(tileBounds.getSouthWest());
+            prior.extend(tileBounds.getNorthEast());
+          }
           break;
         }
       }
@@ -2117,7 +2293,19 @@ function latestVisibleStripMosaic(items) {
   }
 
   if (!selected.size) return latestStripPerArea(prepared.map((entry) => entry.item));
-  return prepared.filter((entry) => selected.has(entry.key)).map((entry) => entry.item);
+  return prepared
+    .filter((entry) => selected.has(entry.key))
+    .map((entry) => {
+      const clipped = selectedCellBounds.get(entry.key);
+      if (!clipped || !clipped.isValid()) return entry.item;
+      return {
+        ...entry.item,
+        __overlayBounds: [
+          [clipped.getSouth(), clipped.getWest()],
+          [clipped.getNorth(), clipped.getEast()],
+        ],
+      };
+    });
 }
 
 function stripAreaKey(item) {
@@ -2207,7 +2395,12 @@ async function refreshMapMode(force = false) {
       const selectedVisible = filterItemsToViewport(dedupeById(selectedTiles), viewportBounds);
       if (selectedVisible.length) overlayItems = selectedVisible;
     }
-    drawResults(detailVisible, "detail", false, { overlayItems });
+    drawResults(detailVisible, "detail", false, {
+      overlayItems,
+      vectorItems: stripOutlineVectorItems(detailCandidates),
+      showOutlines: state.displayFrames,
+    });
+    renderTimeCarouselForViewport(viewportBounds);
     const sel = state.selectedCarouselIds.size;
     searchMetaEl.textContent = `Mode: detail (zoom ${map.getZoom()}) • strips: ${detailVisible.length} • overlays(latest-visible): ${overlayItems.length} • layer: ${detailLayerLabel()}${sel ? ` • selected: ${sel}` : ""}`;
     syncCarouselCheckboxes();
@@ -2218,7 +2411,11 @@ async function refreshMapMode(force = false) {
   state.mapMode = "overview";
   const overview = orderedOverviewDisplayItems();
   const overviewVisible = filterItemsToViewport(overview, viewportBounds);
-  drawResults(overviewVisible, "overview", false);
+  drawResults(overviewVisible, "overview", false, {
+    vectorItems: stripOutlineVectorItems(overviewVisible),
+    showOutlines: state.displayFrames,
+  });
+  renderTimeCarouselForViewport(viewportBounds);
   const mapReadyThumbs = overviewVisible.filter((item) => Boolean(item.geometry && thumbnailUrl(item))).length;
   const sel = state.selectedCarouselIds.size;
   searchMetaEl.textContent = `Mode: overview • ${overviewVisible.length} visible (${mapReadyThumbs} thumbnails) • zoom to ${DETAIL_ZOOM_THRESHOLD}+ for detail${sel ? ` • selected: ${sel}` : ""}`;
@@ -2242,9 +2439,15 @@ function applyCompareFrameAt(index) {
 
   if (map.getZoom() >= DETAIL_ZOOM_THRESHOLD) {
     const renderTiles = renderTilesForFrame(frame);
-    drawResults(renderTiles, "detail", false);
+    drawResults(renderTiles, "detail", false, {
+      vectorItems: stripOutlineVectorItems(renderTiles),
+      showOutlines: state.displayFrames,
+    });
   } else {
-    drawResults([frame], "overview", false);
+    drawResults([frame], "overview", false, {
+      vectorItems: stripOutlineVectorItems([frame]),
+      showOutlines: state.displayFrames,
+    });
   }
   updateCompareDateTag();
   prefetchCompareTilesAroundIndex(idx);
@@ -2299,11 +2502,13 @@ function stepCompareBy(delta) {
 }
 
 async function searchArchive() {
+  clearStackOutlines();
   const geometry = normalizeGeometryLongitudes(geometryFromBounds(map.getBounds()));
   updateSearchFieldsFromGeometry(geometry);
   state.currentAoi = geometry;
 
-  state.searchParams = buildSearchPayload(geometry);
+  const zoomedOutCollectionId = map.getZoom() <= ZOOMED_OUT_SEARCH_MAX_ZOOM ? STACK_DISCOVERY_COLLECTION_ID : null;
+  state.searchParams = buildSearchPayload(geometry, zoomedOutCollectionId);
   state.lastDetailRequestKey = null;
   state.lastDetailCoverageBounds = null;
   state.lastDetailCoverageZoom = null;
@@ -2312,21 +2517,26 @@ async function searchArchive() {
   state.useCogTileProxy = true;
   state.tileProxyWarned = false;
   state.detailItems = [];
+  state.outlineItems = [];
   state.selectedCarouselIds.clear();
   state.selectedCarouselId = null;
   if (state.compareMode) setCompareMode(false);
 
   const primaryItems = await fetchArchiveItems(state.searchParams);
-  const overviewPayload = {
-    ...state.searchParams,
-    collection_id: "quickview-visual-thumb",
-    limit: Math.max(Number(limitEl.value), 300),
-  };
   let overviewItems = [];
-  try {
-    overviewItems = await fetchArchiveItems(overviewPayload);
-  } catch (_) {
-    overviewItems = [];
+  if (state.searchParams.collection_id === STACK_DISCOVERY_COLLECTION_ID) {
+    overviewItems = primaryItems;
+  } else {
+    const overviewPayload = {
+      ...state.searchParams,
+      collection_id: STACK_DISCOVERY_COLLECTION_ID,
+      limit: Math.max(Number(limitEl.value), 300),
+    };
+    try {
+      overviewItems = await fetchArchiveItems(overviewPayload);
+    } catch (_) {
+      overviewItems = [];
+    }
   }
   const filteredOverviewItems = filterOverviewItemsByPrimaryAvailability(
     overviewItems,
@@ -2335,6 +2545,7 @@ async function searchArchive() {
   );
 
   state.items = primaryItems;
+  state.outlineItems = dedupeById(overviewItems.length ? overviewItems : primaryItems);
   state.carouselQuickviewCount = overviewItems.length;
   state.carouselFilterActive = shouldRestrictCarouselToL1dSr(state.searchParams.collection_id);
   if (shouldRestrictCarouselToL1dSr(state.searchParams.collection_id)) {
@@ -2342,35 +2553,17 @@ async function searchArchive() {
   } else {
     state.overviewItems = overviewItems.length ? overviewItems : primaryItems;
   }
-  renderTimeCarousel(state.overviewItems);
+  renderTimeCarouselForViewport();
   updateLockButtonState();
 
   // Keep analyst viewport stable; do not auto-fit search results.
-  drawResults(orderedOverviewDisplayItems(), "overview", false);
+  drawResults(orderedOverviewDisplayItems(), "overview", false, {
+    vectorItems: stripOutlineVectorItems(orderedOverviewDisplayItems()),
+    showOutlines: state.displayFrames,
+  });
   setItemSelectors(state.items);
   await refreshMapMode(true);
   toast(`Loaded ${state.items.length} timeline items, ${state.overviewItems.length} overview items`);
-}
-
-async function discoverStacks() {
-  const geometry = normalizeGeometryLongitudes(geometryFromBounds(map.getBounds()));
-  updateSearchFieldsFromGeometry(geometry);
-  state.currentAoi = geometry;
-
-  const payload = buildSearchPayload(geometry);
-
-  const res = await fetch(`${apiBase}/api/archive/stacks`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.detail || "Stack discovery failed");
-
-  const totalCaptures = data.stacks.reduce((sum, s) => sum + s.count, 0);
-  searchMetaEl.textContent = `${data.count} stacks, ${totalCaptures} tiles total`;
-  toast(`Stacks discovered: ${data.count}`);
 }
 
 async function buildGif() {
@@ -2391,7 +2584,7 @@ async function buildGif() {
   if (!res.ok) throw new Error(data.detail || "Animation failed");
 
   if (data.created && data.gif_base64) {
-    framePreviewEl.src = `data:image/gif;base64,${data.gif_base64}`;
+    if (framePreviewEl) framePreviewEl.src = `data:image/gif;base64,${data.gif_base64}`;
     toast(`GIF ready (${data.frame_count} frames)`);
   } else {
     throw new Error(data.reason || "GIF not created");
@@ -2551,62 +2744,159 @@ async function startSelectedMp4Animation() {
   }
 }
 
-async function compareSelection() {
-  const payload = {
-    before_item_id: beforeSelectEl.value,
-    after_item_id: afterSelectEl.value,
-    contract_id: selectedContractId(),
-  };
-
-  const res = await fetch(`${apiBase}/api/archive/compare`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.detail || "Comparison failed");
-
-  beforeImgEl.src = assetProxyUrl(data.before.url || "");
-  afterImgEl.src = assetProxyUrl(data.after.url || "");
-  toast("Comparison pair loaded");
+function clearReportRunPolling() {
+  if (state.reportRunTimer) {
+    clearInterval(state.reportRunTimer);
+    state.reportRunTimer = null;
+  }
 }
 
-async function generateReport() {
-  if (!state.currentAoi) {
-    state.currentAoi = bboxFromCenter(Number(latEl.value), Number(lonEl.value), Number(widthKmEl.value));
+function buildSelectedSeriesReportRunPayload() {
+  const workflowRef = (generateSeriesReportWorkflowEl?.value || "").trim();
+  if (!workflowRef) throw new Error("Choose a workflow.");
+  const [workflowId, workflowVersion] = workflowRef.split("@");
+  if (!workflowId || !workflowVersion) throw new Error("Invalid workflow selection.");
+
+  const selectedFrames = sortNewestFirst(selectedOverviewItems()).reverse();
+  if (selectedFrames.length < 2) {
+    throw new Error("Select at least two images in the carousel.");
   }
-  state.currentAoi = normalizeGeometryLongitudes(state.currentAoi);
+  const viewportGeometry = normalizeGeometryLongitudes(geometryFromBounds(map.getBounds()));
+  const customPrompt = (generateSeriesReportPromptEl?.value || "").trim();
+  const sortedByTime = [...selectedFrames].sort((a, b) => (a.datetime || "").localeCompare(b.datetime || ""));
+  const start = sortedByTime[0]?.datetime || isoDate(startDateEl.value);
+  const end = sortedByTime[sortedByTime.length - 1]?.datetime || isoDate(endDateEl.value);
+  const params = {};
+  if (customPrompt) {
+    params.additional_prompt = customPrompt;
+    params.ai_prompt = customPrompt;
+  }
 
-  const payload = {
-    geometry: state.currentAoi,
-    start_date: isoDate(startDateEl.value),
-    end_date: isoDate(endDateEl.value),
-    prompt: geoPromptEl.value.trim() || "Summarize notable temporal activity in this AOI.",
-    latest_item_id: afterSelectEl.value || null,
-    collection_id: collectionEl.value.trim() || "l1d-sr",
-    contract_id: selectedContractId(),
-    satellite_name: (satelliteNameEl.value || "").trim() || null,
-    min_gsd: parseOptionalNumber(minGsdEl.value),
-    max_gsd: parseOptionalNumber(maxGsdEl.value),
-    max_frames: 12,
+  return {
+    workflow_id: workflowId,
+    workflow_version: workflowVersion,
+    inputs_payload: {
+      roi: viewportGeometry,
+      viewport_geometry: viewportGeometry,
+      scene_ids: selectedFrames.map((item) => item.id).filter(Boolean),
+      contract_id: selectedContractId(),
+      collection_id: (collectionEl?.value || "l1d-sr").trim() || "l1d-sr",
+      start_date: start,
+      end_date: end,
+      max_cloud_cover: parseOptionalNumber(maxCloudEl.value),
+      satellite_name: (satelliteNameEl.value || "").trim() || null,
+      min_gsd: parseOptionalNumber(minGsdEl.value),
+      max_gsd: parseOptionalNumber(maxGsdEl.value),
+      params,
+    },
   };
+}
 
-  reportOutEl.textContent = "Generating report...";
-  const res = await fetch(`${apiBase}/api/geoagent/report`, {
+async function downloadRunArtifactBlob(runId, artifact) {
+  const artifactId = artifact?.artifact_id;
+  if (!artifactId) throw new Error("Artifact id missing");
+  const url = `${apiBase}/api/runs/${encodeURIComponent(runId)}/artifacts/${encodeURIComponent(artifactId)}/download`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Artifact download failed (${res.status})`);
+  const blob = await res.blob();
+  const uri = (artifact?.uri || "").toString();
+  const name = (uri.split("/").pop() || `geoagent_report_${timestampTag()}.docx`).trim();
+  triggerBlobDownload(blob, name);
+}
+
+async function tryDownloadReportDocx(runId, runData = null) {
+  const run = runData || await apiJson(`/api/runs/${encodeURIComponent(runId)}`);
+  const artifacts = Array.isArray(run?.artifacts) ? run.artifacts : [];
+  const docx = artifacts.find((art) => (art.type || "").toLowerCase() === "docx" || String(art.uri || "").toLowerCase().endsWith(".docx"));
+  if (!docx) return false;
+  await downloadRunArtifactBlob(runId, docx);
+  return true;
+}
+
+async function pollSeriesReportRun(runId) {
+  const run = await apiJson(`/api/runs/${encodeURIComponent(runId)}`);
+  const status = (run.status || "").toLowerCase();
+  if (status === "queued") {
+    setGenerateSeriesReportStatus("Run queued...");
+    return run;
+  }
+  if (status === "running") {
+    const stages = Array.isArray(run.stage_progress) ? run.stage_progress : [];
+    const latest = stages.length ? stages[stages.length - 1] : null;
+    const msg = latest?.message || "Processing selected imagery...";
+    setGenerateSeriesReportStatus(msg);
+    return run;
+  }
+  if (status === "failed") {
+    clearReportRunPolling();
+    state.reportRunId = null;
+    state.reportRunDownloading = false;
+    const logs = Array.isArray(run.logs) ? run.logs : [];
+    const err = logs.length ? (logs[logs.length - 1]?.message || "Run failed") : "Run failed";
+    setGenerateSeriesReportStatus(err, true);
+    throw new Error(err);
+  }
+  if (status === "completed") {
+    clearReportRunPolling();
+    return run;
+  }
+  return run;
+}
+
+async function startSelectedSeriesReportRun() {
+  const payload = buildSelectedSeriesReportRunPayload();
+  setGenerateSeriesReportStatus("Submitting workflow run...");
+  hideAnimateSeriesPopover();
+  hideDownloadPopover();
+
+  const run = await apiJson("/api/runs", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  const data = await res.json();
 
-  if (!res.ok) {
-    reportOutEl.textContent = data.detail || "Geoagent failed.";
-    throw new Error(data.detail || "Geoagent failed");
+  state.reportRunId = run.run_id;
+  state.reportRunDownloading = false;
+  clearReportRunPolling();
+  setGenerateSeriesReportStatus(`Run queued: ${run.run_id}`);
+  setWorkbenchTab("runs");
+  await refreshRuns();
+
+  state.reportRunTimer = window.setInterval(async () => {
+    if (!state.reportRunId) return;
+    try {
+      const latest = await pollSeriesReportRun(state.reportRunId);
+      if ((latest.status || "").toLowerCase() === "completed" && !state.reportRunDownloading) {
+        state.reportRunDownloading = true;
+        const downloaded = await tryDownloadReportDocx(state.reportRunId, latest);
+        if (!downloaded) throw new Error("Run completed but report.docx artifact was not found.");
+        setGenerateSeriesReportStatus("Report DOCX downloaded.");
+        toast("Workflow report ready");
+        state.reportRunId = null;
+      }
+    } catch (err) {
+      clearReportRunPolling();
+      state.reportRunId = null;
+      state.reportRunDownloading = false;
+      setGenerateSeriesReportStatus(err.message || "Workflow run failed", true);
+      toast(err.message || "Workflow run failed");
+    }
+  }, 2000);
+
+  const first = await pollSeriesReportRun(state.reportRunId);
+  if ((first.status || "").toLowerCase() === "completed" && !state.reportRunDownloading) {
+    state.reportRunDownloading = true;
+    const downloaded = await tryDownloadReportDocx(state.reportRunId, first);
+    if (!downloaded) {
+      throw new Error("Run completed but report.docx artifact was not found.");
+    }
+    clearReportRunPolling();
+    state.reportRunId = null;
+    setGenerateSeriesReportStatus("Report DOCX downloaded.");
+    toast("Workflow report ready");
+  } else {
+    toast("Workflow run started");
   }
-
-  reportOutEl.textContent = data.report_markdown;
-  toast(`Report generated with ${data.frame_count} frames`);
 }
 
 async function runSearchAnimation() {
@@ -2644,55 +2934,6 @@ async function runSearchAnimation() {
 
   openAnimationWindow(data.gif_base64, "satellogic_capture_animation.gif");
   toast(`Animation created (${data.frame_count} frames)`);
-}
-
-async function saveAnnotation() {
-  const note = annotationNoteEl.value.trim();
-  if (!note) {
-    toast("Add a note before saving annotation");
-    return;
-  }
-
-  const geometry = state.lastDrawnGeometry || state.currentAoi;
-  if (!geometry) {
-    toast("Draw a geometry or run a search first");
-    return;
-  }
-
-  const payload = {
-    note,
-    geometry: normalizeGeometryLongitudes(geometry),
-    label: "analyst-note",
-    aoi_name: "default",
-  };
-
-  const res = await fetch(`${apiBase}/api/annotations`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.detail || "Annotation save failed");
-
-  toast("Annotation saved");
-}
-
-async function loadAnnotations() {
-  const res = await fetch(`${apiBase}/api/annotations`);
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.detail || "Failed to load annotations");
-
-  const geo = L.geoJSON(data, {
-    style: { color: "#0c7b63", weight: 2, fillOpacity: 0.1 },
-    pointToLayer: (_, latlng) => L.circleMarker(latlng, { radius: 5, color: "#0c7b63", fillOpacity: 0.8 }),
-    onEachFeature: (feature, layer) => {
-      const p = feature.properties || {};
-      layer.bindPopup(`<strong>${p.label || "annotation"}</strong><br/>${p.note || ""}`);
-    },
-  });
-  geo.addTo(map);
-  toast("Annotations loaded");
 }
 
 async function loadContracts() {
@@ -2910,7 +3151,8 @@ function defaultWorkflowGraphNodes() {
     { id: "analytics", skill: "analytics_provider", depends_on: ["evidence"], position: { x: 245, y: 20 } },
     { id: "metrics", skill: "scene_metrics", depends_on: ["analytics"], position: { x: 470, y: 20 } },
     { id: "change", skill: "change_pol", depends_on: ["metrics"], position: { x: 695, y: 20 } },
-    { id: "report", skill: "report_writer", depends_on: ["evidence", "metrics", "change"], position: { x: 470, y: 130 } },
+    { id: "ai", skill: "ai_scene_change_agent", depends_on: ["evidence", "change"], position: { x: 920, y: 20 } },
+    { id: "report", skill: "report_writer", depends_on: ["evidence", "metrics", "change", "ai"], position: { x: 580, y: 130 } },
   ];
 }
 
@@ -3409,7 +3651,7 @@ function setWorkbenchTab(tab) {
   buttons.forEach((btn) => btn.classList.toggle("active", btn.dataset.tab === tab));
   if (tab === "explore") {
     setRightPanelTitle("Search Results");
-    renderTimeCarousel(state.overviewItems || []);
+    renderTimeCarouselForViewport();
   } else if (tab === "runs") {
     const selected = state.runs.find((r) => r.run_id === state.selectedRunId) || null;
     renderRunArtifactsInRightPanel(selected);
@@ -3440,8 +3682,10 @@ function refreshWorkflowSelectOptions() {
   const workflowOptions = state.workflows || [];
   const priorWorkflow = workflowSelectEl?.value || "";
   const priorScheduleWorkflow = scheduleWorkflowSelectEl?.value || "";
+  const priorCarouselWorkflow = generateSeriesReportWorkflowEl?.value || "";
   if (workflowSelectEl) workflowSelectEl.innerHTML = "";
   if (scheduleWorkflowSelectEl) scheduleWorkflowSelectEl.innerHTML = "";
+  if (generateSeriesReportWorkflowEl) generateSeriesReportWorkflowEl.innerHTML = "";
   workflowOptions.forEach((wf) => {
     const value = `${wf.workflow_id}@${wf.version}`;
     const label = `${wf.workflow_id} @ ${wf.version}`;
@@ -3457,9 +3701,21 @@ function refreshWorkflowSelectOptions() {
       opt.textContent = label;
       scheduleWorkflowSelectEl.appendChild(opt);
     }
+    if (generateSeriesReportWorkflowEl) {
+      const opt = document.createElement("option");
+      opt.value = value;
+      opt.textContent = label;
+      generateSeriesReportWorkflowEl.appendChild(opt);
+    }
   });
   if (workflowSelectEl && priorWorkflow) workflowSelectEl.value = priorWorkflow;
   if (scheduleWorkflowSelectEl && priorScheduleWorkflow) scheduleWorkflowSelectEl.value = priorScheduleWorkflow;
+  if (generateSeriesReportWorkflowEl && priorCarouselWorkflow) generateSeriesReportWorkflowEl.value = priorCarouselWorkflow;
+  if (generateSeriesReportWorkflowEl && !generateSeriesReportWorkflowEl.value && workflowOptions.length) {
+    const preferred = workflowOptions.find((wf) => wf.workflow_id === "carousel_scene_change_report");
+    if (preferred) generateSeriesReportWorkflowEl.value = `${preferred.workflow_id}@${preferred.version}`;
+    else generateSeriesReportWorkflowEl.value = `${workflowOptions[0].workflow_id}@${workflowOptions[0].version}`;
+  }
   refreshWorkflowBuilderSkillOptions();
   if (workflowOptions.length && !state.workflowGraph.dirty) {
     if (workflowSelectEl && !workflowSelectEl.value) {
@@ -3598,7 +3854,9 @@ async function showRunInspector(runId) {
       ...(run.stage_progress || []).map((s) => `- ${s.stage}: ${s.status} (${Math.round(Number(s.progress || 0) * 100)}%) ${s.message || ""}`),
     ].join("\n");
   }
-  renderRunArtifactsInRightPanel(run);
+  if (state.activeTab === "runs") {
+    renderRunArtifactsInRightPanel(run);
+  }
 }
 
 async function createWorkflowRun() {
@@ -4024,7 +4282,7 @@ timeCarouselListEl?.addEventListener("scroll", () => {
   maybeLoadMoreCarouselOnScroll();
 });
 
-document.getElementById("searchBtn").addEventListener("click", async () => {
+document.getElementById("searchBtn")?.addEventListener("click", async () => {
   try {
     await searchArchive();
   } catch (err) {
@@ -4032,15 +4290,13 @@ document.getElementById("searchBtn").addEventListener("click", async () => {
   }
 });
 
-document.getElementById("stackBtn").addEventListener("click", async () => {
-  try {
-    await discoverStacks();
-  } catch (err) {
-    toast(err.message);
-  }
+displayFramesToggleEl?.addEventListener("change", () => {
+  state.displayFrames = Boolean(displayFramesToggleEl.checked);
+  if (!state.searchParams) return;
+  refreshMapMode(false).catch((err) => toast(err.message));
 });
 
-document.getElementById("gifBtn").addEventListener("click", async () => {
+document.getElementById("gifBtn")?.addEventListener("click", async () => {
   try {
     await buildGif();
   } catch (err) {
@@ -4048,40 +4304,9 @@ document.getElementById("gifBtn").addEventListener("click", async () => {
   }
 });
 
-document.getElementById("compareBtn").addEventListener("click", async () => {
-  try {
-    await compareSelection();
-  } catch (err) {
-    toast(err.message);
-  }
-});
-
-document.getElementById("reportBtn").addEventListener("click", async () => {
-  try {
-    await generateReport();
-  } catch (err) {
-    toast(err.message);
-  }
-});
-
-document.getElementById("saveAnnotationBtn").addEventListener("click", async () => {
-  try {
-    await saveAnnotation();
-  } catch (err) {
-    toast(err.message);
-  }
-});
-
-document.getElementById("loadAnnotationBtn").addEventListener("click", async () => {
-  try {
-    await loadAnnotations();
-  } catch (err) {
-    toast(err.message);
-  }
-});
-
-document.getElementById("playBtn").addEventListener("click", () => {
+document.getElementById("playBtn")?.addEventListener("click", () => {
   if (!state.items.length) return;
+  if (!timelineEl) return;
   if (state.playTimer) clearInterval(state.playTimer);
   state.playTimer = setInterval(() => {
     const next = (Number(timelineEl.value) + 1) % state.items.length;
@@ -4089,22 +4314,23 @@ document.getElementById("playBtn").addEventListener("click", () => {
   }, 900);
 });
 
-document.getElementById("pauseBtn").addEventListener("click", () => {
+document.getElementById("pauseBtn")?.addEventListener("click", () => {
   if (state.playTimer) {
     clearInterval(state.playTimer);
     state.playTimer = null;
   }
 });
 
-compareSliderEl.addEventListener("input", () => {
+compareSliderEl?.addEventListener("input", () => {
+  if (!beforeClipEl) return;
   beforeClipEl.style.width = `${compareSliderEl.value}%`;
 });
 
-timelineEl.addEventListener("input", () => {
+timelineEl?.addEventListener("input", () => {
   showFrame(Number(timelineEl.value));
 });
 
-frameSelectEl.addEventListener("change", () => {
+frameSelectEl?.addEventListener("change", () => {
   const selected = Array.from(frameSelectEl.selectedOptions);
   if (selected.length) {
     const id = selected[selected.length - 1].value;
@@ -4185,6 +4411,7 @@ layerEditorPopoverEl?.addEventListener("click", (evt) => {
 animateSeriesBtnEl?.addEventListener("click", (evt) => {
   evt.stopPropagation();
   hideLayerEditorPopover();
+  hideGenerateSeriesReportPopover();
   hideDownloadPopover();
   toggleAnimateSeriesPopover();
 });
@@ -4208,10 +4435,38 @@ animateSeriesPopoverEl?.addEventListener("click", (evt) => {
   evt.stopPropagation();
 });
 
+generateSeriesReportBtnEl?.addEventListener("click", (evt) => {
+  evt.stopPropagation();
+  hideLayerEditorPopover();
+  hideAnimateSeriesPopover();
+  hideDownloadPopover();
+  toggleGenerateSeriesReportPopover();
+});
+
+generateSeriesReportRunBtnEl?.addEventListener("click", async (evt) => {
+  evt.stopPropagation();
+  try {
+    await startSelectedSeriesReportRun();
+  } catch (err) {
+    setGenerateSeriesReportStatus(err.message || "Report run failed", true);
+    toast(err.message || "Report run failed");
+  }
+});
+
+generateSeriesReportCloseBtnEl?.addEventListener("click", (evt) => {
+  evt.stopPropagation();
+  hideGenerateSeriesReportPopover();
+});
+
+generateSeriesReportPopoverEl?.addEventListener("click", (evt) => {
+  evt.stopPropagation();
+});
+
 downloadMenuBtnEl?.addEventListener("click", (evt) => {
   evt.stopPropagation();
   hideLayerEditorPopover();
   hideAnimateSeriesPopover();
+  hideGenerateSeriesReportPopover();
   toggleDownloadPopover();
 });
 
@@ -4258,6 +4513,7 @@ map.on("click", () => {
   hideLocationHistoryMenu();
   hideLayerEditorPopover();
   hideAnimateSeriesPopover();
+  hideGenerateSeriesReportPopover();
   hideDownloadPopover();
 });
 
@@ -4267,6 +4523,10 @@ document.addEventListener("click", (evt) => {
   if (animateSeriesPopoverEl && animateSeriesBtnEl) {
     const target = evt.target;
     if (!animateSeriesPopoverEl.contains(target) && !animateSeriesBtnEl.contains(target)) hideAnimateSeriesPopover();
+  }
+  if (generateSeriesReportPopoverEl && generateSeriesReportBtnEl) {
+    const target = evt.target;
+    if (!generateSeriesReportPopoverEl.contains(target) && !generateSeriesReportBtnEl.contains(target)) hideGenerateSeriesReportPopover();
   }
   if (layerEditorPopoverEl && layerEditorBtnEl) {
     const target = evt.target;
@@ -4283,6 +4543,7 @@ document.addEventListener("keydown", (evt) => {
     hideLocationHistoryMenu();
     hideLayerEditorPopover();
     hideAnimateSeriesPopover();
+    hideGenerateSeriesReportPopover();
     hideDownloadPopover();
   }
 });
@@ -4340,6 +4601,9 @@ updateLockButtonState();
 updateMapStatus();
 loadLocationHistory();
 ensureLayerEditorControlAnchor();
+if (displayFramesToggleEl) {
+  displayFramesToggleEl.checked = Boolean(state.displayFrames);
+}
 if (layerEditorSelectEl) layerEditorSelectEl.value = normalizeDetailLayerMode(state.detailLayerMode);
 setWorkflowBuilderDetached(false);
 setWorkflowGraph(defaultWorkflowGraphNodes(), false);

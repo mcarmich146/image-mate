@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from io import BytesIO
 from pathlib import Path
 from typing import Any, Callable
 import hashlib
@@ -13,8 +14,14 @@ import re
 import threading
 import time
 import uuid
+import zipfile
+from urllib.parse import urlparse
+from xml.sax.saxutils import escape as xml_escape
 
 from shapely.geometry import box, mapping, shape
+from PIL import Image
+
+from .geoagent import generate_geo_report
 
 logger = logging.getLogger("image_mate")
 
@@ -308,11 +315,13 @@ class GeoWorkbenchEngine:
         root_dir: Path,
         search_items_fn: Callable[[dict[str, Any]], list[dict[str, Any]]],
         resolve_item_fn: Callable[[str, str | None], dict[str, Any] | None],
+        download_bytes_fn: Callable[[str, str | None], bytes] | None = None,
         on_run_status: Callable[[dict[str, Any]], None] | None = None,
     ):
         self.root_dir = root_dir
         self.search_items_fn = search_items_fn
         self.resolve_item_fn = resolve_item_fn
+        self.download_bytes_fn = download_bytes_fn
         self.on_run_status = on_run_status
 
         self.workbench_dir = self.root_dir / "workbench"
@@ -421,6 +430,14 @@ class GeoWorkbenchEngine:
                 "ui_schema": {"title": "Change + Pattern Of Life"},
             },
             {
+                "skill_id": "ai_scene_change_agent",
+                "version": "1.0.0",
+                "input_schema": {"type": "object", "required": ["scene_set", "change_notes"]},
+                "output_schema": {"type": "object", "required": ["ai_narrative"]},
+                "runtime": "async",
+                "ui_schema": {"title": "AI Scene/Change Agent"},
+            },
+            {
                 "skill_id": "report_writer",
                 "version": "1.0.0",
                 "input_schema": {"type": "object", "required": ["evidence_bundle", "scene_metrics", "change_notes"]},
@@ -450,7 +467,8 @@ class GeoWorkbenchEngine:
                 {"id": "analytics", "skill": "analytics_provider", "depends_on": ["evidence"]},
                 {"id": "metrics", "skill": "scene_metrics", "depends_on": ["analytics"]},
                 {"id": "change", "skill": "change_pol", "depends_on": ["metrics"]},
-                {"id": "report", "skill": "report_writer", "depends_on": ["evidence", "metrics", "change"]},
+                {"id": "ai", "skill": "ai_scene_change_agent", "depends_on": ["evidence", "change"]},
+                {"id": "report", "skill": "report_writer", "depends_on": ["evidence", "metrics", "change", "ai"]},
             ]
         }
         default_workflows = [
@@ -486,6 +504,19 @@ class GeoWorkbenchEngine:
                     "analytic_types": ["deforestation", "urban_change", "change"],
                     "max_scenes": 36,
                     "require_selected_scenes": True,
+                },
+            },
+            {
+                "workflow_id": "carousel_scene_change_report",
+                "version": "1.0.0",
+                "graph_json": default_graph,
+                "default_params": {
+                    "profile": "forest_urban",
+                    "provider_id": "thirdparty.mock",
+                    "analytic_types": ["deforestation", "urban_change", "change"],
+                    "max_scenes": 24,
+                    "require_selected_scenes": True,
+                    "ai_prompt": "Describe the scene and summarize observed temporal changes over the selected viewport.",
                 },
             },
         ]
@@ -599,6 +630,7 @@ class GeoWorkbenchEngine:
             "analytics_provider": {"detections", "provider"},
             "scene_metrics": {"scene_metrics"},
             "change_pol": {"change_notes", "pattern_of_life"},
+            "ai_scene_change_agent": {"ai_narrative"},
             "report_writer": {"report_md", "report_json"},
         }
         if skill_id in builtin:
@@ -1047,6 +1079,16 @@ class GeoWorkbenchEngine:
                 raise ValueError(f"node {node.get('id')} missing scene_metrics input")
             return self._stage_change_and_pol(run, metrics_payload)
 
+        if skill_id == "ai_scene_change_agent":
+            evidence_stage = {
+                "scene_set": dep_payload.get("scene_set") or stage_data.get("scene_set") or [],
+                "evidence_bundle": dep_payload.get("evidence_bundle") or stage_data.get("evidence_bundle") or {},
+            }
+            change_notes = dep_payload.get("change_notes") or stage_data.get("change_notes") or {}
+            if not evidence_stage["scene_set"]:
+                raise ValueError(f"node {node.get('id')} missing scene_set input")
+            return self._stage_ai_scene_change(run, workflow, evidence_stage, change_notes)
+
         if skill_id == "report_writer":
             report_stage = dict(stage_data)
             report_stage.update(dep_payload)
@@ -1399,6 +1441,347 @@ class GeoWorkbenchEngine:
             "pol_artifact": pol_art,
         }
 
+    def _stage_ai_scene_change(
+        self,
+        run: dict[str, Any],
+        workflow: dict[str, Any],
+        evidence: dict[str, Any],
+        change_notes: dict[str, Any],
+    ) -> dict[str, Any]:
+        params = dict(workflow.get("default_params") or {})
+        params.update(run.get("inputs_payload", {}).get("params") or {})
+        base_prompt = str(
+            params.get("ai_prompt")
+            or "Describe the scene and summarize observed changes between the selected captures."
+        ).strip()
+        additional_prompt = str(params.get("additional_prompt") or "").strip()
+        if additional_prompt:
+            prompt = f"{base_prompt}\n\nAdditional analyst prompt:\n{additional_prompt}"
+        else:
+            prompt = base_prompt
+
+        scene_set = evidence.get("scene_set") or []
+        frames = []
+        for scene in scene_set:
+            assets = scene.get("assets") or {}
+            quality = scene.get("quality") or {}
+            frames.append(
+                {
+                    "id": scene.get("scene_id"),
+                    "datetime": scene.get("captured_at"),
+                    "cloud_cover": quality.get("cloud_cover"),
+                    "assets": {
+                        "thumbnail": assets.get("thumbnail") or "",
+                        "preview": assets.get("preview") or "",
+                        "visual": assets.get("visual") or "",
+                    },
+                }
+            )
+        latest = frames[-1] if frames else None
+
+        contract_id = (run.get("inputs_payload") or {}).get("contract_id")
+
+        def _download(url: str) -> bytes:
+            parsed = urlparse(url)
+            host = (parsed.netloc or "").lower()
+            if host.endswith("example.com"):
+                raise RuntimeError("sample URL skipped")
+            if not self.download_bytes_fn:
+                raise RuntimeError("download callback unavailable")
+            return self.download_bytes_fn(url, contract_id)
+
+        report_markdown, insights = generate_geo_report(
+            prompt=prompt,
+            frames=frames,
+            latest_item=latest,
+            downloader=_download,
+        )
+        ai_payload = {
+            "prompt": prompt,
+            "narrative_markdown": report_markdown,
+            "insights": insights,
+            "scene_count": len(frames),
+            "change_notes": change_notes or {},
+        }
+        art_md = self._add_artifact(
+            run["run_id"],
+            "md",
+            "ai_scene_change.md",
+            report_markdown.encode("utf-8"),
+            metadata={"scene_count": len(frames)},
+        )
+        art_json = self._json_artifact(
+            run["run_id"],
+            "json",
+            "ai_scene_change.json",
+            ai_payload,
+            metadata={"scene_count": len(frames)},
+        )
+        return {
+            "ai_narrative": ai_payload,
+            "ai_narrative_artifact": art_md,
+            "ai_narrative_json_artifact": art_json,
+        }
+
+    def _docx_paragraph_xml(self, text: str, style: str | None = None, bold: bool = False) -> str:
+        value = xml_escape((text or "").replace("\r", ""))
+        if not value:
+            return "<w:p/>"
+        style_xml = f'<w:pPr><w:pStyle w:val="{xml_escape(style)}"/></w:pPr>' if style else ""
+        run_prop = "<w:rPr><w:b/></w:rPr>" if bold else ""
+        return f'<w:p>{style_xml}<w:r>{run_prop}<w:t xml:space="preserve">{value}</w:t></w:r></w:p>'
+
+    def _docx_image_xml(self, rid: str, docpr_id: int, name: str, cx: int, cy: int) -> str:
+        safe_name = xml_escape(name or f"Image {docpr_id}")
+        return (
+            "<w:p><w:r><w:drawing>"
+            '<wp:inline distT="0" distB="0" distL="0" distR="0">'
+            f'<wp:extent cx="{cx}" cy="{cy}"/>'
+            f'<wp:docPr id="{docpr_id}" name="{safe_name}"/>'
+            "<wp:cNvGraphicFramePr/>"
+            '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
+            '<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+            '<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+            "<pic:nvPicPr>"
+            f'<pic:cNvPr id="{docpr_id}" name="{safe_name}"/>'
+            "<pic:cNvPicPr/>"
+            "</pic:nvPicPr>"
+            "<pic:blipFill>"
+            f'<a:blip r:embed="{xml_escape(rid)}"/>'
+            '<a:stretch><a:fillRect/></a:stretch>'
+            "</pic:blipFill>"
+            "<pic:spPr>"
+            '<a:xfrm><a:off x="0" y="0"/>'
+            f'<a:ext cx="{cx}" cy="{cy}"/></a:xfrm>'
+            '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>'
+            "</pic:spPr>"
+            "</pic:pic>"
+            "</a:graphicData>"
+            "</a:graphic>"
+            "</wp:inline>"
+            "</w:drawing></w:r></w:p>"
+        )
+
+    def _download_docx_inset_images(self, run: dict[str, Any], report_json: dict[str, Any], limit: int = 6) -> list[dict[str, Any]]:
+        if not self.download_bytes_fn:
+            return []
+        contract_id = (run.get("inputs_payload") or {}).get("contract_id")
+        image_insets = report_json.get("image_insets") or []
+        out: list[dict[str, Any]] = []
+        for idx, scene in enumerate(image_insets):
+            if idx >= limit:
+                break
+            uri = (scene.get("chip_uri") or "").strip()
+            if not uri:
+                continue
+            try:
+                parsed = urlparse(uri)
+                host = (parsed.netloc or "").lower()
+                if host.endswith("example.com"):
+                    continue
+            except Exception:
+                pass
+            try:
+                raw = self.download_bytes_fn(uri, contract_id)
+                with Image.open(BytesIO(raw)) as img:
+                    rgb = img.convert("RGB")
+                    if rgb.width > 1800:
+                        ratio = 1800.0 / float(rgb.width)
+                        rgb = rgb.resize((1800, max(1, int(round(rgb.height * ratio)))), resample=Image.Resampling.BICUBIC)
+                    buf = BytesIO()
+                    rgb.save(buf, format="JPEG", quality=88)
+                    data = buf.getvalue()
+                    out.append(
+                        {
+                            "scene_id": scene.get("scene_id") or f"scene_{idx + 1}",
+                            "captured_at": scene.get("captured_at") or "",
+                            "file_name": f"image_{idx + 1}.jpg",
+                            "bytes": data,
+                            "width": int(rgb.width),
+                            "height": int(rgb.height),
+                        }
+                    )
+            except Exception:
+                continue
+        return out
+
+    def _build_report_docx_bytes(
+        self,
+        workflow: dict[str, Any],
+        run: dict[str, Any],
+        report_json: dict[str, Any],
+        report_md: str,
+        ai_narrative: dict[str, Any] | None,
+    ) -> bytes:
+        images = self._download_docx_inset_images(run, report_json, limit=6)
+
+        paragraphs: list[str] = []
+        title = str(report_json.get("profile") or "GeoAgent Evidence Report")
+        paragraphs.append(self._docx_paragraph_xml(title, style="Heading1"))
+        paragraphs.append(
+            self._docx_paragraph_xml(
+                f"Workflow: {workflow.get('workflow_id')}@{workflow.get('version')}  |  Run: {run.get('run_id')}",
+                style="Normal",
+            )
+        )
+        paragraphs.append(self._docx_paragraph_xml(""))
+
+        summary = (report_json.get("summary") or {}).get("text") or ""
+        paragraphs.append(self._docx_paragraph_xml("Executive Summary", style="Heading2"))
+        for line in str(summary).splitlines() or [""]:
+            paragraphs.append(self._docx_paragraph_xml(line or " "))
+
+        findings = report_json.get("findings") or []
+        paragraphs.append(self._docx_paragraph_xml("Findings", style="Heading2"))
+        if findings:
+            for idx, finding in enumerate(findings, start=1):
+                claim = str((finding or {}).get("claim") or "").strip() or "No claim text."
+                paragraphs.append(self._docx_paragraph_xml(f"{idx}. {claim}"))
+        else:
+            paragraphs.append(self._docx_paragraph_xml("No findings generated."))
+
+        if ai_narrative and ai_narrative.get("narrative_markdown"):
+            paragraphs.append(self._docx_paragraph_xml("AI Scene-Change Narrative", style="Heading2"))
+            for raw_line in str(ai_narrative.get("narrative_markdown") or "").splitlines():
+                line = raw_line.strip()
+                if not line:
+                    continue
+                if line.startswith("#"):
+                    continue
+                paragraphs.append(self._docx_paragraph_xml(line))
+
+        limitations = report_json.get("limitations") or []
+        paragraphs.append(self._docx_paragraph_xml("Confidence and Limitations", style="Heading2"))
+        conf = report_json.get("confidence") or {}
+        paragraphs.append(self._docx_paragraph_xml(f"Overall confidence: {conf.get('overall', 'unknown')}"))
+        rationale = str(conf.get("rationale") or "").strip()
+        if rationale:
+            paragraphs.append(self._docx_paragraph_xml(f"Rationale: {rationale}"))
+        for line in limitations:
+            paragraphs.append(self._docx_paragraph_xml(f"- {line}"))
+
+        if images:
+            paragraphs.append(self._docx_paragraph_xml("Imagery Insets", style="Heading2"))
+
+        image_doc_xml: list[str] = []
+        image_rels_xml: list[str] = []
+        next_rel_index = 2  # rId1 reserved for styles relation.
+        next_docpr_id = 10
+        for image in images:
+            rid = f"rId{next_rel_index}"
+            next_rel_index += 1
+            scene_id = image.get("scene_id") or "scene"
+            captured_at = image.get("captured_at") or "unknown"
+            paragraphs.append(self._docx_paragraph_xml(f"{scene_id} ({captured_at})"))
+
+            width_px = max(1, int(image.get("width") or 1))
+            height_px = max(1, int(image.get("height") or 1))
+            max_width_emu = int(6.2 * 914400)
+            cx = min(max_width_emu, width_px * 9525)
+            cy = max(1, int(round((height_px / float(width_px)) * cx)))
+            image_doc_xml.append(
+                self._docx_image_xml(
+                    rid=rid,
+                    docpr_id=next_docpr_id,
+                    name=scene_id,
+                    cx=cx,
+                    cy=cy,
+                )
+            )
+            next_docpr_id += 1
+            image_rels_xml.append(
+                f'<Relationship Id="{rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/{xml_escape(image["file_name"])}"/>'
+            )
+
+        appendix = report_json.get("appendix") or {}
+        scene_list = appendix.get("scene_list") or []
+        if scene_list:
+            paragraphs.append(self._docx_paragraph_xml("Scene List", style="Heading2"))
+            for scene in scene_list[:40]:
+                sid = scene.get("scene_id") or "scene"
+                captured = scene.get("captured_at") or "unknown"
+                paragraphs.append(self._docx_paragraph_xml(f"- {sid} ({captured})"))
+
+        doc_body = "".join(paragraphs + image_doc_xml)
+        document_xml = (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+            'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
+            'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" '
+            'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+            'xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+            f"<w:body>{doc_body}"
+            '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr>'
+            "</w:body></w:document>"
+        )
+
+        styles_xml = (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+            '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>'
+            '<w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:uiPriority w:val="9"/><w:qFormat/>'
+            '<w:rPr><w:b/><w:sz w:val="36"/></w:rPr></w:style>'
+            '<w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:basedOn w:val="Normal"/><w:uiPriority w:val="9"/><w:qFormat/>'
+            '<w:rPr><w:b/><w:sz w:val="28"/></w:rPr></w:style>'
+            "</w:styles>"
+        )
+
+        content_types_xml = (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+            '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+            '<Default Extension="xml" ContentType="application/xml"/>'
+            '<Default Extension="jpg" ContentType="image/jpeg"/>'
+            '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
+            '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>'
+            '<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>'
+            "</Types>"
+        )
+
+        package_rels_xml = (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>'
+            '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>'
+            "</Relationships>"
+        )
+
+        doc_rels_xml = (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>'
+            f"{''.join(image_rels_xml)}"
+            "</Relationships>"
+        )
+
+        created = xml_escape(utc_now_iso())
+        core_xml = (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" '
+            'xmlns:dc="http://purl.org/dc/elements/1.1/" '
+            'xmlns:dcterms="http://purl.org/dc/terms/" '
+            'xmlns:dcmitype="http://purl.org/dc/dcmitype/" '
+            'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">'
+            f"<dc:title>{xml_escape(title)}</dc:title>"
+            "<dc:creator>GeoAgent</dc:creator>"
+            "<cp:lastModifiedBy>GeoAgent</cp:lastModifiedBy>"
+            f'<dcterms:created xsi:type="dcterms:W3CDTF">{created}</dcterms:created>'
+            f'<dcterms:modified xsi:type="dcterms:W3CDTF">{created}</dcterms:modified>'
+            "</cp:coreProperties>"
+        )
+
+        out = BytesIO()
+        with zipfile.ZipFile(out, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("[Content_Types].xml", content_types_xml.encode("utf-8"))
+            zf.writestr("_rels/.rels", package_rels_xml.encode("utf-8"))
+            zf.writestr("word/document.xml", document_xml.encode("utf-8"))
+            zf.writestr("word/styles.xml", styles_xml.encode("utf-8"))
+            zf.writestr("word/_rels/document.xml.rels", doc_rels_xml.encode("utf-8"))
+            zf.writestr("docProps/core.xml", core_xml.encode("utf-8"))
+            for image in images:
+                zf.writestr(f"word/media/{image['file_name']}", image["bytes"])
+        return out.getvalue()
+
     def _build_report(self, workflow: dict[str, Any], run: dict[str, Any], stage_data: dict[str, Any]) -> tuple[str, dict[str, Any]]:
         params = dict(workflow.get("default_params") or {})
         params.update(run.get("inputs_payload", {}).get("params") or {})
@@ -1409,6 +1792,7 @@ class GeoWorkbenchEngine:
         metrics = stage_data["scene_metrics"]
         change = stage_data["change_notes"]
         pol = stage_data["pattern_of_life"]
+        ai_narrative = stage_data.get("ai_narrative") if isinstance(stage_data.get("ai_narrative"), dict) else {}
 
         scene_refs = []
         for scene in scenes:
@@ -1531,6 +1915,11 @@ class GeoWorkbenchEngine:
             },
             "findings": findings_json,
             "image_insets": inset_refs,
+            "ai_narrative": {
+                "prompt": ai_narrative.get("prompt"),
+                "insights": ai_narrative.get("insights") or [],
+                "artifact_uri": "ai_scene_change.md" if ai_narrative.get("narrative_markdown") else None,
+            },
             "confidence": confidence,
             "limitations": limitations,
             "appendix": {
@@ -1565,6 +1954,15 @@ class GeoWorkbenchEngine:
             "## Findings",
         ]
         md_lines.extend(findings)
+        if ai_narrative.get("narrative_markdown"):
+            md_lines.extend(["", "## AI Scene-Change Narrative"])
+            for raw_line in str(ai_narrative.get("narrative_markdown") or "").splitlines():
+                line = raw_line.strip()
+                if not line:
+                    continue
+                if line.startswith("#"):
+                    continue
+                md_lines.append(line)
         if inset_refs:
             md_lines.extend(["", "## Image Insets"])
             for scene in inset_refs:
@@ -1715,7 +2113,23 @@ class GeoWorkbenchEngine:
             if "report_json" not in stage_data:
                 raise ValueError("Workflow graph did not produce report output (missing report_writer stage)")
 
-            self._set_run_status(run_id, "running", message="Writing provenance and integrity manifests", stage="publish", progress=0.92)
+            self._set_run_status(run_id, "running", message="Rendering DOCX report artifact", stage="publish_docx", progress=0.9)
+            docx_bytes = self._build_report_docx_bytes(
+                workflow=workflow,
+                run=run,
+                report_json=stage_data.get("report_json") or {},
+                report_md=stage_data.get("report_md") or "",
+                ai_narrative=stage_data.get("ai_narrative") if isinstance(stage_data.get("ai_narrative"), dict) else None,
+            )
+            self._add_artifact(
+                run_id,
+                "docx",
+                "report.docx",
+                docx_bytes,
+                metadata={"profile": (stage_data.get("report_json") or {}).get("profile")},
+            )
+
+            self._set_run_status(run_id, "running", message="Writing provenance and integrity manifests", stage="publish", progress=0.94)
             provenance = self._write_provenance(run, workflow, stage_data)
             self._json_artifact(run_id, "json", "provenance.json", provenance)
             self._write_hashes_manifest(run_id)

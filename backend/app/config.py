@@ -35,7 +35,6 @@ class Settings:
     port: int = int(os.getenv("IMAGE_MATE_PORT", "8000"))
     cors_origins: list[str] = None  # type: ignore[assignment]
 
-    annotations_file: Path = ROOT_DIR / "backend" / "data" / "annotations.json"
     output_dir: Path = ROOT_DIR / "backend" / "output"
     frontend_dir: Path = ROOT_DIR / "frontend"
 
