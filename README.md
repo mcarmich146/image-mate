@@ -49,7 +49,7 @@ cp .env-template .env
     - `CDSE_DOWNLOAD_PASSWORD`
     - `CDSE_DOWNLOAD_TOTP` (only if your CDSE account enforces TOTP)
 - `OPENAI_API_KEY` (for GeoAgent)
-- See `.env-template` for the full key list and defaults.
+- `.env-template` now contains the minimum required keys; optional advanced overrides are documented in `backend/app/config.py`.
 
 ### Copernicus/CDSE setup (step-by-step)
 
