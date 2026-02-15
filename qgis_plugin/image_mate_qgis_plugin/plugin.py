@@ -222,13 +222,16 @@ class ImageMatePlugin:
         if not item:
             return
         source_id = str(item.get("source_id") or "").strip().lower()
+        detail_mode = self._is_detail_zoom()
 
         self._stop_stream_progress_monitor()
         if self.dock is not None:
             self.dock.append_search_log(f"Loading imagery for selection: {item_key}")
             self.dock.set_stream_status(f"Stream status: preparing {source_id or 'source'} item {item_key}")
         try:
-            stream_item = self._resolve_satellogic_stream_item(item)
+            stream_item = item
+            if source_id == "satellogic" and detail_mode:
+                stream_item = self._resolve_satellogic_stream_item(item)
             if stream_item is not item and self.dock is not None:
                 self.dock.append_search_log(
                     "Resolved selection to l1d-sr detail item "
@@ -755,6 +758,18 @@ class ImageMatePlugin:
             return 1
         return 2 if zoom_level >= int(self._satellogic_highres_zoom_threshold) else 1
 
+    def _is_detail_zoom(self):
+        zoom_level = self._current_canvas_zoom_level()
+        if zoom_level is not None:
+            return zoom_level >= int(self._auto_stream_zoom_threshold)
+        canvas = self.iface.mapCanvas()
+        if canvas is None:
+            return False
+        try:
+            return float(canvas.scale() or 0.0) <= 250000
+        except Exception:
+            return False
+
     def _start_stream_progress_monitor(self, item_id):
         if not self.local_tile_proxy.is_running():
             self._set_stream_status("Stream status: streaming via external backend (progress unavailable)")
@@ -834,24 +849,8 @@ class ImageMatePlugin:
             return
         if not self.search_items:
             return
-        canvas = self.iface.mapCanvas()
-        if canvas is None:
+        if not self._is_detail_zoom():
             return
-        zoom_level = None
-        try:
-            if hasattr(canvas, "zoomLevel"):
-                zoom_level = int(canvas.zoomLevel())
-        except Exception:
-            zoom_level = None
-        if zoom_level is not None:
-            if zoom_level < int(self._auto_stream_zoom_threshold):
-                return
-        else:
-            try:
-                if float(canvas.scale() or 0.0) > 250000:
-                    return
-            except Exception:
-                pass
         now = datetime.now(tz=timezone.utc).timestamp()
         if now - float(self._last_auto_stream_at or 0.0) < 1.0:
             return
