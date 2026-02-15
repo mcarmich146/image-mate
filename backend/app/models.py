@@ -8,6 +8,7 @@ class SearchRequest(BaseModel):
     geometry: dict[str, Any]
     start_date: str
     end_date: str
+    source_id: str = "satellogic"
     collection_id: str = "l1d-sr"
     contract_id: str | None = None
     limit: int = 300
@@ -19,6 +20,7 @@ class SearchRequest(BaseModel):
 
 class SearchResultItem(BaseModel):
     id: str
+    source_id: str | None = None
     collection: str | None = None
     datetime: str | None = None
     outcome_id: str | None = None
@@ -48,6 +50,7 @@ class GeoAgentRequest(BaseModel):
     end_date: str
     prompt: str
     latest_item_id: str | None = None
+    source_id: str = "satellogic"
     collection_id: str = "l1d-sr"
     contract_id: str | None = None
     satellite_name: str | None = None
@@ -71,6 +74,7 @@ class AnimationSearchRequest(BaseModel):
     geometry: dict[str, Any]
     start_date: str
     end_date: str
+    source_id: str = "satellogic"
     collection_id: str = "l1d-sr"
     contract_id: str | None = None
     max_cloud_cover: float | None = Field(default=40, ge=0, le=100)
@@ -166,3 +170,50 @@ class SubscriptionCreateRequest(BaseModel):
     matching_rules: dict[str, Any] = Field(default_factory=dict)
     filters: dict[str, Any] = Field(default_factory=dict)
     enabled: bool = True
+
+
+class TaskingOrderCreateRequest(BaseModel):
+    target_type: Literal["point", "area"]
+    geometry: dict[str, Any]
+    order_name: str = Field(min_length=1, max_length=120)
+    project_name: str = Field(min_length=1, max_length=120)
+    sku: str = Field(min_length=1, max_length=80)
+    start_date: str = Field(min_length=1, max_length=80)
+    end_date: str = Field(min_length=1, max_length=80)
+    revisit_period: str | None = Field(default=None, max_length=64)
+    remapping_period: str | None = Field(default=None, max_length=64)
+    contract_id: str | None = None
+    additional_parameters: dict[str, Any] = Field(default_factory=dict)
+
+
+class MonitoringSubscriptionCreateRequest(BaseModel):
+    source_id: str = "merlin-s2"
+    name: str | None = Field(default=None, max_length=120)
+    collection_ids: list[str] = Field(default_factory=list)
+    geometry: dict[str, Any]
+    filters: dict[str, Any] = Field(default_factory=dict)
+    enabled: bool = True
+    external_subscription_id: str | None = None
+    cursor: str | None = None
+
+
+class MonitoringEventCreateRequest(BaseModel):
+    subscription_id: str
+    source_id: str = "merlin-s2"
+    scene_id: str | None = None
+    event_type: str = "change.candidate"
+    status: str = "open"
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class MonitoringEventAckRequest(BaseModel):
+    status: str = "acked"
+
+
+class CueCreateRequest(BaseModel):
+    event_id: str | None = None
+    source_id: str = "merlin-s2"
+    status: str = "queued_review"
+    priority: Literal["low", "medium", "high", "urgent"] = "medium"
+    geometry: dict[str, Any]
+    payload: dict[str, Any] = Field(default_factory=dict)

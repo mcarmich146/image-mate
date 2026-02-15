@@ -72,6 +72,7 @@ def _normalize_geometry_longitudes(geometry: Any) -> Any:
 
 class SatellogicClient:
     def __init__(self):
+        self.api_base_url = settings.satellogic_api_base_url.rstrip("/")
         self.stac_url = settings.satellogic_stac_url.rstrip("/")
         self.token_url = settings.satellogic_token_url
         self.bearer_token = settings.satellogic_bearer_token
@@ -210,6 +211,54 @@ class SatellogicClient:
         if isinstance(payload, list):
             return payload
         return []
+
+    def list_orders(
+        self,
+        contract_id: str | None = None,
+        *,
+        limit: int = 100,
+        query: str | None = None,
+        next_url: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        Return v2 orders from Satellogic Order Management API.
+        """
+        if next_url:
+            url = next_url if next_url.startswith("http") else f"{self.api_base_url}{next_url}"
+            response = requests.get(url, headers=self.auth_headers(contract_id=contract_id), timeout=60)
+        else:
+            url = f"{self.api_base_url}/v2/orders/"
+            params: dict[str, Any] = {"limit": int(max(1, min(limit, 500)))}
+            if query:
+                params["query"] = query
+            response = requests.get(
+                url,
+                headers=self.auth_headers(contract_id=contract_id),
+                params=params,
+                timeout=60,
+            )
+        response.raise_for_status()
+        payload = response.json()
+        if isinstance(payload, dict):
+            return payload
+        return {"results": []}
+
+    def create_order(self, feature: dict[str, Any], contract_id: str | None = None) -> dict[str, Any]:
+        """
+        Create a new v2 tasking order.
+        """
+        url = f"{self.api_base_url}/v2/orders/"
+        response = requests.post(
+            url,
+            headers=self.auth_headers(contract_id=contract_id),
+            json=feature,
+            timeout=60,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if isinstance(payload, dict):
+            return payload
+        return {"result": payload}
 
     def search(
         self,

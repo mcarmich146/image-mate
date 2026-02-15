@@ -20,6 +20,7 @@
       </header>
       <nav class="workbench-tabs" id="workbenchTabs">
         <button type="button" class="tab-btn active" data-tab="explore">Explore</button>
+        <button type="button" class="tab-btn" data-tab="tasking">Tasking</button>
         <button type="button" class="tab-btn" data-tab="workflows">Workflows</button>
         <button type="button" class="tab-btn" data-tab="schedules">Schedules</button>
         <button type="button" class="tab-btn" data-tab="runs">Runs</button>
@@ -35,10 +36,13 @@
           <label>Start Date<input id="startDate" type="date" /></label>
           <label>End Date<input id="endDate" type="date" /></label>
         </div>
-        <div class="grid two">
-          <label>Collection<select id="collection"></select></label>
-          <label>Contract<select id="contractSelect"></select></label>
+        <label class="legacy-source-select">Source<select id="sourceSelect"></select></label>
+        <div class="grid three stac-collection-grid">
+          <div class="stac-collection-title"><span>STAC</span><span>Collection</span></div>
+          <label>Sentinel-2 Collection<select id="sentinelCollection"></select></label>
+          <label>Satellogic Collection<select id="collection"></select></label>
         </div>
+        <label>Satellogic Contract<select id="contractSelect"></select></label>
         <div class="grid three">
           <label>Cloud Cover ≤<input id="maxCloud" type="number" min="0" max="100" value="40" /></label>
           <label>GSD Min (m)<input id="minGsd" type="number" step="0.01" min="0" placeholder="optional" /></label>
@@ -48,13 +52,82 @@
           <label>Satellite Name<input id="satelliteName" type="text" placeholder="optional, e.g. SN48" /></label>
           <label>Result Limit<input id="limit" type="number" min="1" max="1000" value="250" /></label>
         </div>
-        <label class="toggle-inline"><input id="displayFramesToggle" type="checkbox" checked /> Display Frames</label>
         <div class="actions single">
           <button id="searchBtn">Search View Extent</button>
         </div>
         <p id="searchMeta" class="meta">No search run yet.</p>
       </section>
 
+      <section class="panel-block layer-controls-block">
+        <div class="archive-search-head">
+          <h2>Layer Controls</h2>
+          <p class="meta">Organize browse imagery and analytics by provider.</p>
+        </div>
+
+        <details class="layer-subsection" open>
+          <summary>Imagery Layers</summary>
+          <div class="layer-subsection-body">
+            <details class="layer-provider" open>
+              <summary>NewSat</summary>
+              <div class="layer-provider-body">
+                <label class="toggle-inline"><input id="layerSatellogicToggle" type="checkbox" checked /> NewSat</label>
+                <label class="toggle-inline"><input id="layerSatellogicFramesToggle" type="checkbox" checked /> Display NewSat Frames</label>
+              </div>
+            </details>
+
+            <details class="layer-provider" open>
+              <summary>Merlin</summary>
+              <div class="layer-provider-body">
+                <label class="toggle-inline"><input id="layerSentinelBaseToggle" type="checkbox" checked /> Merlin</label>
+                <label class="toggle-inline"><input id="layerSentinelFramesToggle" type="checkbox" checked /> Display Merlin Frames</label>
+                <label class="toggle-inline"><input id="layerSentinelWmtsToggle" type="checkbox" checked /> Sentinel-2 WMTS (default base)</label>
+                <label class="toggle-inline"><input id="layerSentinelStacToggle" type="checkbox" /> Show selected STAC imagery (step 2)</label>
+                <p id="sentinelWmtsMeta" class="meta">WMTS status not loaded.</p>
+                <div class="wmts-time-widget">
+                  <div class="wmts-time-widget-head">S-2 Window (timeline controlled)</div>
+                  <p id="wmtsWeekWindowMeta" class="meta">S-2 Window: --</p>
+                </div>
+              </div>
+            </details>
+          </div>
+        </details>
+
+        <details class="layer-subsection" open>
+          <summary>Analytic Layers</summary>
+          <div class="layer-subsection-body">
+            <details class="layer-provider" open>
+              <summary>Sentinel-2</summary>
+              <div class="layer-provider-body">
+                <div class="layer-list-head">
+                  <h3>Sentinel WMTS Analytic Layers</h3>
+                  <span id="sentinelAnalyticsCount" class="chip">0</span>
+                </div>
+                <div id="sentinelAnalyticsLayers" class="layer-checklist">
+                  <p class="meta">No WMTS analytic layers discovered yet.</p>
+                </div>
+              </div>
+            </details>
+            <details class="layer-provider">
+              <summary>NewSat</summary>
+              <div class="layer-provider-body">
+                <label class="toggle-inline"><input type="checkbox" disabled /> Additional analytics (coming soon)</label>
+              </div>
+            </details>
+          </div>
+        </details>
+      </section>
+
+      </div>
+
+      <div id="leftTaskingView" class="left-view">
+        <section class="panel-block">
+          <h2>Tasking Orders</h2>
+          <div class="actions single">
+            <button id="taskingRefreshBtn" type="button">Refresh Taskings</button>
+          </div>
+          <p id="taskingOrdersMeta" class="meta">No tasking orders loaded.</p>
+          <div id="taskingOrdersList" class="tasking-orders-list"></div>
+        </section>
       </div>
 
       <div id="leftWorkflowsView" class="left-view">
@@ -211,6 +284,10 @@
         </form>
         <div id="mapLocateHistory" class="map-locate-history" role="listbox" aria-label="Previously searched locations"></div>
       </div>
+      <div id="tilePerfHud" class="tile-perf-hud">
+        <span id="tilePerfNewSat" class="tile-perf-chip">NewSat --</span>
+        <span id="tilePerfMerlin" class="tile-perf-chip">Merlin --</span>
+      </div>
       <div id="layerEditorPopover" class="layer-popover" role="dialog" aria-label="Layer editor">
         <h4>Layer Editor</h4>
         <label>Display Layer
@@ -222,6 +299,18 @@
           </select>
         </label>
         <p class="meta">Computed from multispectral imagery and cloud-mask assets when available.</p>
+      </div>
+      <div id="mapTimebar" class="map-timebar" role="region" aria-label="Imagery timeline">
+        <div class="map-timebar-controls">
+          <button id="mapTimebarPageBackBtn" type="button" class="ghost tiny icon-timebar" title="Jump back by full timeline extent" aria-label="Jump back by full timeline extent">&laquo;</button>
+          <button id="mapTimebarDayBackBtn" type="button" class="ghost tiny icon-timebar" title="Jump back by one day" aria-label="Jump back by one day">&lsaquo;</button>
+          <button id="mapTimebarDayForwardBtn" type="button" class="ghost tiny icon-timebar" title="Jump forward by one day" aria-label="Jump forward by one day">&rsaquo;</button>
+          <button id="mapTimebarPageForwardBtn" type="button" class="ghost tiny icon-timebar" title="Jump forward by full timeline extent" aria-label="Jump forward by full timeline extent">&raquo;</button>
+          <input id="mapTimebarCenterInput" type="datetime-local" step="60" title="Center timeline on date/time" aria-label="Center timeline on date/time" />
+          <button id="mapTimebarCenterBtn" type="button" class="ghost tiny" title="Jump timeline to now">Now</button>
+        </div>
+        <canvas id="mapTimebarCanvas" class="map-timebar-canvas" aria-label="Timeline canvas"></canvas>
+        <div id="mapTimebarTooltip" class="map-timebar-tooltip" role="status" aria-live="polite"></div>
       </div>
       <div id="mapStatus" class="map-status">Zoom -- | Lat -- | Lon --</div>
       <div id="mapDebugStats" class="map-debug-stats">Search -- | Tiles --</div>
@@ -244,12 +333,13 @@
               </button>
               <div id="animateSeriesPopover" class="animate-popover" role="dialog" aria-label="Animate selected timeline">
                 <h4>Animate Selected</h4>
-                <label>Seconds / frame<input id="animateSeriesSeconds" type="number" min="0.1" max="10" step="0.1" value="0.8" /></label>
+                <label>Time between images (seconds)<input id="animateSeriesSeconds" type="number" min="0.1" max="10" step="0.1" value="0.8" /></label>
+                <label class="animate-popover-check"><input id="animateSeriesLoop" type="checkbox" checked />Loop</label>
                 <div class="animate-popover-actions">
-                  <button id="animateSeriesRunBtn" type="button">Render MP4</button>
-                  <button id="animateSeriesCloseBtn" type="button" class="ghost tiny">Close</button>
+                  <button id="animateSeriesRunBtn" type="button">OK</button>
+                  <button id="animateSeriesCloseBtn" type="button" class="ghost tiny">Cancel</button>
                 </div>
-                <p id="animateSeriesStatus" class="meta">Select 2+ images in the carousel, then render.</p>
+                <p id="animateSeriesStatus" class="meta">Select 2+ visible images in the carousel, then press OK.</p>
               </div>
               <div id="generateSeriesReportPopover" class="report-popover" role="dialog" aria-label="Generate selected report">
                 <h4>Generate Report</h4>
@@ -297,6 +387,31 @@
         <button id="ctxCopyLatLon" class="ctx-coord-btn">Lat/Lon: --, --</button>
         <button id="ctxCreateAnimation">Create Animation</button>
         <button id="ctxTaskImage">Task New Image</button>
+      </div>
+
+      <div id="taskingTypeMenu" class="map-context-menu tasking-type-menu">
+        <button id="taskingTypePoint" type="button">Point Target</button>
+        <button id="taskingTypeArea" type="button">Area</button>
+      </div>
+
+      <div id="taskingFormPopover" class="tasking-form-popover" role="dialog" aria-label="Task image">
+        <h4 id="taskingFormTitle">Task Image</h4>
+        <p id="taskingGeometryHint" class="meta">Target geometry not selected.</p>
+        <form id="taskingForm">
+          <label>Order Name<input id="taskingOrderName" type="text" required /></label>
+          <label>Project<input id="taskingProjectName" type="text" list="taskingProjectSuggestions" required /></label>
+          <datalist id="taskingProjectSuggestions"></datalist>
+          <label>Product<select id="taskingProduct" required></select></label>
+          <div class="grid two">
+            <label>Start<input id="taskingStart" type="datetime-local" required /></label>
+            <label>End<input id="taskingEnd" type="datetime-local" required /></label>
+          </div>
+          <label id="taskingCadenceLabel">Revisit / Remapping Period (optional)<input id="taskingCadence" type="text" placeholder="P15D" /></label>
+          <div class="actions">
+            <button id="taskingConfirmBtn" type="submit">Confirm</button>
+            <button id="taskingCancelBtn" type="button" class="ghost">Cancel</button>
+          </div>
+        </form>
       </div>
 
       <dialog id="animationDialog" class="animation-dialog">

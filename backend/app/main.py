@@ -10,7 +10,8 @@ import re
 import threading
 import uuid
 import zipfile
-from urllib.parse import urlparse
+import xml.etree.ElementTree as ET
+from urllib.parse import quote, urlparse
 from io import BytesIO
 
 import requests
@@ -26,10 +27,14 @@ from .geoagent import generate_geo_report
 from .models import (
     AnimationSearchRequest,
     AnimationRequest,
+    CueCreateRequest,
     DownloadBundleRequest,
     GeoAgentRequest,
     GeoAgentResponse,
     HealthResponse,
+    MonitoringEventAckRequest,
+    MonitoringEventCreateRequest,
+    MonitoringSubscriptionCreateRequest,
     Mp4AnimationJobRequest,
     PoiSetCreateRequest,
     RunCreateRequest,
@@ -39,9 +44,13 @@ from .models import (
     SearchResponse,
     SearchResultItem,
     SubscriptionCreateRequest,
+    TaskingOrderCreateRequest,
     WorkflowDefinitionPayload,
 )
-from .satellogic_client import SatellogicClient, normalize_item
+from .monitoring_store import MonitoringStore
+from .merlin_sentinel2_client import MerlinSentinel2Client
+from .satellogic_client import SatellogicClient
+from .source_manager import DEFAULT_SOURCE_ID, SOURCE_MERLIN_S2, SOURCE_SATELLOGIC, SourceManager
 from .services import (
     make_animation_gif,
     make_capture_mosaic_animation,
@@ -54,6 +63,8 @@ logger = logging.getLogger("image_mate")
 
 app = FastAPI(title="image-mate", version="0.1.0")
 client = SatellogicClient()
+merlin_client = MerlinSentinel2Client()
+sources = SourceManager(client, merlin_client)
 TRANSPARENT_PNG_1X1 = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII="
 )
@@ -71,11 +82,16 @@ app.state.item_cache = {}
 app.state.asset_cache = {}
 app.state.asset_cache_stats = {"hits": 0, "misses": 0}
 app.state.tile_cache_stats = {"hits": 0, "misses": 0}
+app.state.tile_delivery_stats = {
+    "newsat": {"requests": 0, "errors": 0, "bytes": 0, "ms": 0},
+    "merlin": {"requests": 0, "errors": 0, "bytes": 0, "ms": 0},
+}
 app.state.archive_search_stats = {"total": 0, "by_collection": {}}
 app.state.mp4_jobs = {}
 app.state.mp4_jobs_lock = threading.Lock()
 app.state.workbench = None
 app.state.workbench_lock = threading.Lock()
+app.state.monitoring_store = MonitoringStore(settings.monitoring_db_path)
 
 
 @app.on_event("startup")
@@ -97,6 +113,18 @@ def startup_event():
                 logger.warning("startup token refresh returned no token auth_mode=%s", auth_mode)
         except Exception as exc:
             logger.warning("startup token refresh failed auth_mode=%s error=%s", auth_mode, exc)
+    if settings.merlin_s2_enabled and settings.cdse_client_id and settings.cdse_client_secret:
+        try:
+            refreshed, expiry = merlin_client.refresh_access_token()
+            if refreshed:
+                logger.info(
+                    "startup CDSE token refresh ok expires_at=%s",
+                    expiry.isoformat() if expiry else "unknown",
+                )
+            else:
+                logger.warning("startup CDSE token refresh returned no token")
+        except Exception as exc:
+            logger.warning("startup CDSE token refresh failed error=%s", exc)
     try:
         _ensure_workbench()
     except Exception as exc:
@@ -213,7 +241,7 @@ def _run_mp4_animation_job(job_id: str, payload: dict[str, Any]):
         result = make_selected_extent_mp4(
             frames=payload.get("frames", []),
             viewport_geometry=payload.get("viewport_geometry"),
-            downloader=lambda url: client.download_bytes(url, contract_id=contract_id),
+            downloader=lambda url: _download_bytes_for_url(url, contract_id=contract_id),
             seconds_per_frame=float(payload.get("seconds_per_frame") or 0.8),
             output_dir=settings.output_dir,
             filename_prefix=payload.get("filename_prefix") or "selected_extent_animation",
@@ -315,6 +343,41 @@ def _asset_short(url: str) -> str:
     return parsed.netloc[:120]
 
 
+def _normalize_source_id(source_id: str | None) -> str:
+    return sources.normalize_source_id(source_id)
+
+
+def _source_from_item_id(item_id: str, source_hint: str | None = None) -> tuple[str, str]:
+    if source_hint:
+        return _normalize_source_id(source_hint), item_id
+    return sources.split_item_id(item_id)
+
+
+def _source_from_url(url: str, source_hint: str | None = None) -> str:
+    return sources.infer_source_id_from_url(url, source_hint=source_hint)
+
+
+def _infer_mp4_tile_source_id(tile: dict[str, Any]) -> str | None:
+    raw_item_id = str(tile.get("item_id") or "").strip()
+    if raw_item_id:
+        try:
+            source_id, _ = _source_from_item_id(raw_item_id)
+            return _normalize_source_id(source_id)
+        except Exception:
+            pass
+    raw_url = str(tile.get("url") or "").strip()
+    if raw_url:
+        try:
+            return _source_from_url(raw_url)
+        except Exception:
+            return None
+    return None
+
+
+def _download_bytes_for_url(url: str, contract_id: str | None = None, source_hint: str | None = None) -> bytes:
+    return sources.download_bytes(url, contract_id=contract_id, source_hint=source_hint)
+
+
 def _prune_asset_cache(max_entries: int = 120):
     cache = app.state.asset_cache
     if len(cache) <= max_entries:
@@ -323,6 +386,22 @@ def _prune_asset_cache(max_entries: int = 120):
     overflow = len(cache) - max_entries
     for key in list(cache.keys())[:overflow]:
         cache.pop(key, None)
+
+
+def _tile_delivery_bucket(source_key: str) -> dict[str, int]:
+    key = (source_key or "unknown").strip().lower()
+    if key not in app.state.tile_delivery_stats:
+        app.state.tile_delivery_stats[key] = {"requests": 0, "errors": 0, "bytes": 0, "ms": 0}
+    return app.state.tile_delivery_stats[key]
+
+
+def _record_tile_delivery(source_key: str, byte_count: int, elapsed_ms: int, *, error: bool = False) -> None:
+    bucket = _tile_delivery_bucket(source_key)
+    bucket["requests"] = int(bucket.get("requests", 0)) + 1
+    bucket["bytes"] = int(bucket.get("bytes", 0)) + max(0, int(byte_count or 0))
+    bucket["ms"] = int(bucket.get("ms", 0)) + max(0, int(elapsed_ms or 0))
+    if error:
+        bucket["errors"] = int(bucket.get("errors", 0)) + 1
 
 
 def _safe_filename(name: str, fallback: str = "asset.bin") -> str:
@@ -359,6 +438,122 @@ def _dedupe_name(name: str, used: set[str]) -> str:
         i += 1
 
 
+TASKING_PRODUCTS = [
+    {
+        "sku": "TSKPOI-M",
+        "label": "Point Target (single attempt)",
+        "target_types": ["point"],
+        "notes": "Single point-target acquisition attempt.",
+    },
+    {
+        "sku": "TSKRSH-M.15.01",
+        "label": "Point Revisit 15-day (1 revisit)",
+        "target_types": ["point"],
+        "notes": "Point target with revisit schedule.",
+    },
+    {
+        "sku": "TSKRSH-M.15.15",
+        "label": "Point Revisit 15-day (15 revisits)",
+        "target_types": ["point"],
+        "notes": "Point target with revisit schedule.",
+    },
+    {
+        "sku": "TSKRSH-M.30.30",
+        "label": "Point Revisit 30-day (30 revisits)",
+        "target_types": ["point"],
+        "notes": "Point target with revisit schedule.",
+    },
+    {
+        "sku": "TSKARE-M",
+        "label": "Area Tasking (single attempt)",
+        "target_types": ["area"],
+        "notes": "Single area tasking request.",
+    },
+    {
+        "sku": "TSKRRD-M.15.01",
+        "label": "Area Revisit 15-day (1 revisit)",
+        "target_types": ["area"],
+        "notes": "Area tasking with remapping schedule.",
+    },
+    {
+        "sku": "TSKRRD-M.15.15",
+        "label": "Area Revisit 15-day (15 revisits)",
+        "target_types": ["area"],
+        "notes": "Area tasking with remapping schedule.",
+    },
+    {
+        "sku": "TSKRRD-M.30.30",
+        "label": "Area Revisit 30-day (30 revisits)",
+        "target_types": ["area"],
+        "notes": "Area tasking with remapping schedule.",
+    },
+]
+
+
+def _normalize_tasking_order(raw: dict[str, Any]) -> dict[str, Any]:
+    props = raw.get("properties")
+    properties = props if isinstance(props, dict) else {}
+    params = properties.get("parameters")
+    parameters = params if isinstance(params, dict) else {}
+    geometry = raw.get("geometry")
+    geometry_obj = geometry if isinstance(geometry, dict) else {}
+    order_id = raw.get("id") or properties.get("order_id") or properties.get("id")
+    sku = (
+        properties.get("sku")
+        or properties.get("product")
+        or properties.get("product_name")
+        or properties.get("product_id")
+    )
+    return {
+        "id": order_id,
+        "status": properties.get("status") or raw.get("status") or "unknown",
+        "order_name": properties.get("order_name") or properties.get("name") or "",
+        "project_name": properties.get("project_name") or "",
+        "sku": sku,
+        "created_at": properties.get("created") or raw.get("created") or raw.get("created_at"),
+        "start": parameters.get("start") or parameters.get("from"),
+        "end": parameters.get("end") or parameters.get("to"),
+        "revisit_period": parameters.get("revisit_period"),
+        "remapping_period": parameters.get("remapping_period"),
+        "geometry_type": geometry_obj.get("type"),
+        "geometry": geometry_obj,
+        "parameters": parameters,
+        "raw": raw,
+    }
+
+
+def _is_tasking_sku(value: Any) -> bool:
+    text = str(value or "").strip().upper()
+    return text.startswith("TSK")
+
+
+def _collect_tasking_orders(contract_id: str | None, limit: int) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    next_url: str | None = None
+    pages = 0
+    while len(rows) < limit and pages < 6:
+        page_limit = min(100, max(1, limit - len(rows)))
+        payload = client.list_orders(contract_id=contract_id, limit=page_limit, next_url=next_url)
+        results = payload.get("results")
+        if not isinstance(results, list):
+            break
+        for row in results:
+            if not isinstance(row, dict):
+                continue
+            normalized = _normalize_tasking_order(row)
+            if _is_tasking_sku(normalized.get("sku")):
+                rows.append(normalized)
+                if len(rows) >= limit:
+                    break
+        next_val = payload.get("next")
+        next_url = str(next_val) if next_val else None
+        pages += 1
+        if not next_url:
+            break
+    rows.sort(key=lambda row: str(row.get("created_at") or ""), reverse=True)
+    return rows[:limit]
+
+
 if settings.frontend_dir.exists():
     app.mount("/app", StaticFiles(directory=str(settings.frontend_dir), html=True), name="app")
 
@@ -369,6 +564,14 @@ def root():
     if index.exists():
         return FileResponse(index)
     return JSONResponse({"status": "ok", "message": "frontend not found"})
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    icon_path = settings.frontend_dir / "favicon.ico"
+    if icon_path.exists():
+        return FileResponse(icon_path)
+    return Response(status_code=204)
 
 
 @app.get("/api/health", response_model=HealthResponse)
@@ -388,6 +591,27 @@ def debug_stats():
     by_collection = search_stats.get("by_collection") if isinstance(search_stats, dict) else {}
     if not isinstance(by_collection, dict):
         by_collection = {}
+    tile_delivery_raw = app.state.tile_delivery_stats if isinstance(app.state.tile_delivery_stats, dict) else {}
+    tile_delivery: dict[str, dict[str, Any]] = {}
+    for source_key, row in tile_delivery_raw.items():
+        if not isinstance(row, dict):
+            continue
+        requests_count = int(row.get("requests", 0))
+        errors_count = int(row.get("errors", 0))
+        bytes_count = int(row.get("bytes", 0))
+        ms_count = int(row.get("ms", 0))
+        avg_ms = (ms_count / requests_count) if requests_count else 0.0
+        mb_total = bytes_count / (1024 * 1024)
+        mbps_avg = (mb_total / (ms_count / 1000.0)) if ms_count else 0.0
+        tile_delivery[str(source_key)] = {
+            "requests": requests_count,
+            "errors": errors_count,
+            "bytes": bytes_count,
+            "ms": ms_count,
+            "avg_ms": round(avg_ms, 2),
+            "mb_total": round(mb_total, 3),
+            "mbps_avg": round(mbps_avg, 3),
+        }
     return {
         "archive_search": {
             "total": int(search_stats.get("total", 0)),
@@ -406,14 +630,19 @@ def debug_stats():
             "total": tile_total,
             "hit_rate": round(tile_hit_rate, 4),
             "cache_entries": len(app.state.asset_cache),
-        }
+        },
+        "tile_delivery": tile_delivery,
     }
 
 
 @app.get("/api/contracts")
-def contracts():
+def contracts(source_id: str | None = Query(default=DEFAULT_SOURCE_ID)):
     try:
-        raw_contracts = client.list_contracts()
+        source = _normalize_source_id(source_id)
+        if not sources.has_source(source):
+            raise HTTPException(status_code=400, detail=f"Unknown source_id '{source_id}'")
+
+        raw_contracts = sources.list_contracts(source)
         contracts_list = []
         for record in raw_contracts:
             contract_id = record.get("id") or record.get("contract_id")
@@ -422,16 +651,31 @@ def contracts():
             if contract_id:
                 contracts_list.append({"id": contract_id, "name": name, "status": status, "raw": record})
 
-        default_contract_id = settings.satellogic_contract_id or (contracts_list[0]["id"] if contracts_list else None)
-        return {"count": len(contracts_list), "default_contract_id": default_contract_id, "contracts": contracts_list}
+        default_contract_id = settings.satellogic_contract_id if source == SOURCE_SATELLOGIC else None
+        if not default_contract_id and contracts_list:
+            default_contract_id = contracts_list[0]["id"]
+        return {
+            "source_id": source,
+            "count": len(contracts_list),
+            "default_contract_id": default_contract_id,
+            "contracts": contracts_list,
+        }
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Contract discovery failed: {exc}") from exc
 
 
 @app.get("/api/collections")
-def collections(contract_id: str | None = Query(default=None)):
+def collections(
+    source_id: str | None = Query(default=DEFAULT_SOURCE_ID),
+    contract_id: str | None = Query(default=None),
+    sentinel_only: bool = Query(default=False),
+):
     try:
-        raw_collections = client.list_collections(contract_id=contract_id)
+        source = _normalize_source_id(source_id)
+        if not sources.has_source(source):
+            raise HTTPException(status_code=400, detail=f"Unknown source_id '{source_id}'")
+
+        raw_collections = sources.list_collections(source, contract_id=contract_id)
         collection_list = []
         for record in raw_collections:
             if not isinstance(record, dict):
@@ -439,6 +683,10 @@ def collections(contract_id: str | None = Query(default=None)):
             collection_id = record.get("id")
             if not collection_id:
                 continue
+            if source == SOURCE_MERLIN_S2 and sentinel_only:
+                cid_norm = str(collection_id).strip().lower()
+                if not cid_norm.startswith("sentinel-2"):
+                    continue
             title = record.get("title") or collection_id
             description = record.get("description")
             collection_list.append({
@@ -448,14 +696,446 @@ def collections(contract_id: str | None = Query(default=None)):
             })
 
         collection_list.sort(key=lambda item: item["id"])
-        default_collection_id = settings.satellogic_collection_id or (collection_list[0]["id"] if collection_list else None)
+        if source == SOURCE_MERLIN_S2:
+            default_collection_id = settings.cdse_sentinel2_collections[0] if settings.cdse_sentinel2_collections else None
+        else:
+            default_collection_id = settings.satellogic_collection_id or None
+        if not default_collection_id and collection_list:
+            default_collection_id = collection_list[0]["id"]
         return {
+            "source_id": source,
             "count": len(collection_list),
             "default_collection_id": default_collection_id,
             "collections": collection_list,
         }
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Collection discovery failed: {exc}") from exc
+
+
+@app.get("/api/sources")
+def list_sources():
+    rows = sources.list_sources()
+    enabled = [row for row in rows if bool(row.get("enabled"))]
+    return {
+        "count": len(enabled),
+        "default_source_id": DEFAULT_SOURCE_ID,
+        "sources": enabled,
+    }
+
+
+WMTS_NAMESPACES = {
+    "wmts": "http://www.opengis.net/wmts/1.0",
+    "ows": "http://www.opengis.net/ows/1.1",
+}
+
+
+def _preferred_wmts_layer(available_layers: list[str], requested_layer_id: str) -> str:
+    requested = (requested_layer_id or "").strip()
+    if requested and requested in set(available_layers):
+        return requested
+    for candidate in ("NATURAL-COLOR", "TRUE-COLOR", "TRUE-COLOR-S2L2A"):
+        if candidate in set(available_layers):
+            return candidate
+    return available_layers[0]
+
+
+def _parse_wmts_capabilities(xml_text: str) -> dict[str, Any]:
+    parsed: dict[str, Any] = {
+        "layers": [],
+        "layer_tile_matrix_sets": {},
+        "layer_time_defaults": {},
+    }
+    if not xml_text:
+        return parsed
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError:
+        return parsed
+
+    layer_nodes = root.findall(".//wmts:Contents/wmts:Layer", WMTS_NAMESPACES)
+    for layer_node in layer_nodes:
+        identifier = layer_node.findtext("ows:Identifier", default="", namespaces=WMTS_NAMESPACES).strip()
+        if not identifier:
+            continue
+        parsed["layers"].append(identifier)
+
+        matrix_sets = []
+        for link_node in layer_node.findall("wmts:TileMatrixSetLink", WMTS_NAMESPACES):
+            matrix_id = link_node.findtext("wmts:TileMatrixSet", default="", namespaces=WMTS_NAMESPACES).strip()
+            if matrix_id and matrix_id not in matrix_sets:
+                matrix_sets.append(matrix_id)
+        if matrix_sets:
+            parsed["layer_tile_matrix_sets"][identifier] = matrix_sets
+
+        for dimension in layer_node.findall("wmts:Dimension", WMTS_NAMESPACES):
+            dim_id = dimension.findtext("ows:Identifier", default="", namespaces=WMTS_NAMESPACES).strip().lower()
+            if dim_id != "time":
+                continue
+            default_time = dimension.findtext("wmts:Default", default="", namespaces=WMTS_NAMESPACES).strip()
+            if default_time:
+                parsed["layer_time_defaults"][identifier] = default_time
+            break
+
+    return parsed
+
+
+def _extract_ows_exception_text(xml_text: str) -> str:
+    match = re.search(
+        r"<(?:ows:)?ExceptionText>\s*(.*?)\s*</(?:ows:)?ExceptionText>",
+        xml_text or "",
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if match:
+        return str(match.group(1)).strip()
+    match = re.search(
+        r"<ServiceException>\s*(.*?)\s*</ServiceException>",
+        xml_text or "",
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if match:
+        return str(match.group(1)).strip()
+    return ""
+
+
+@app.get("/api/layers/sentinel/wmts")
+def sentinel_wmts_layer(layer_id: str | None = Query(default=None)):
+    base_url = (settings.cdse_wmts_base_url or "").strip().rstrip("/")
+    instance_id = (settings.cdse_wmts_instance_id or "").strip()
+    configured_layer_id = (settings.cdse_wmts_layer_id or "TRUE-COLOR").strip()
+    requested_layer_id = (layer_id or configured_layer_id or "TRUE-COLOR").strip()
+    image_format = (settings.cdse_wmts_format or "image/png").strip()
+    tile_matrix_set = (settings.cdse_wmts_tile_matrix_set or "PopularWebMercator256").strip()
+
+    if not settings.merlin_s2_enabled:
+        logger.info("sentinel_wmts unavailable reason=merlin_source_disabled")
+        return {"available": False, "reason": "Merlin Sentinel-2 source is disabled."}
+    if not base_url:
+        logger.info("sentinel_wmts unavailable reason=missing_base_url")
+        return {"available": False, "reason": "CDSE_WMTS_BASE_URL is not configured."}
+    if not instance_id:
+        logger.info("sentinel_wmts unavailable reason=missing_instance_id")
+        return {"available": False, "reason": "CDSE_WMTS_INSTANCE_ID is not configured."}
+    if not requested_layer_id:
+        logger.info("sentinel_wmts unavailable reason=missing_layer_id")
+        return {"available": False, "reason": "CDSE_WMTS_LAYER_ID is not configured."}
+
+    selected_layer_id = requested_layer_id
+    selected_tile_matrix_set = tile_matrix_set
+    available_layers: list[str] = []
+    layer_tile_matrix_sets: dict[str, list[str]] = {}
+    layer_time_defaults: dict[str, str] = {}
+    warning_parts: list[str] = []
+    capabilities_url = (
+        f"{base_url}/{quote(instance_id, safe='')}"
+        "?SERVICE=WMTS&REQUEST=GetCapabilities&VERSION=1.0.0"
+    )
+    try:
+        cap_resp = requests.get(capabilities_url, timeout=4)
+        if cap_resp.status_code < 400:
+            parsed = _parse_wmts_capabilities(cap_resp.text or "")
+            available_layers = list(parsed.get("layers") or [])
+            layer_tile_matrix_sets = dict(parsed.get("layer_tile_matrix_sets") or {})
+            layer_time_defaults = dict(parsed.get("layer_time_defaults") or {})
+            if available_layers and selected_layer_id not in set(available_layers):
+                selected_layer_id = _preferred_wmts_layer(available_layers, requested_layer_id)
+                warning_parts.append(
+                    f"Configured layer '{requested_layer_id}' was not in WMTS capabilities. "
+                    f"Using '{selected_layer_id}'."
+                )
+        else:
+            warning_parts.append(f"WMTS capabilities probe returned status {cap_resp.status_code}.")
+    except Exception as exc:
+        warning_parts.append(f"WMTS capabilities probe skipped: {exc}")
+
+    supported_matrix_sets = layer_tile_matrix_sets.get(selected_layer_id) or []
+    if supported_matrix_sets and selected_tile_matrix_set not in set(supported_matrix_sets):
+        fallback_matrix = (
+            "PopularWebMercator256" if "PopularWebMercator256" in set(supported_matrix_sets)
+            else ("PopularWebMercator512" if "PopularWebMercator512" in set(supported_matrix_sets) else supported_matrix_sets[0])
+        )
+        warning_parts.append(
+            f"Configured tile matrix set '{tile_matrix_set}' not available for layer '{selected_layer_id}'. "
+            f"Using '{fallback_matrix}'."
+        )
+        selected_tile_matrix_set = fallback_matrix
+    default_time = layer_time_defaults.get(selected_layer_id)
+
+    upstream_template_url = (
+        f"{base_url}/{quote(instance_id, safe='')}"
+        f"?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0"
+        f"&LAYER={quote(selected_layer_id, safe='')}"
+        f"&TILEMATRIXSET={quote(selected_tile_matrix_set, safe='')}"
+        f"&TILEMATRIX={{z}}&TILEROW={{y}}&TILECOL={{x}}"
+        f"&FORMAT={quote(image_format, safe='')}"
+    )
+    if default_time:
+        upstream_template_url = f"{upstream_template_url}&TIME={quote(default_time, safe=':/')}"
+
+    proxy_template_url = (
+        f"/api/layers/sentinel/wmts/tiles/{{z}}/{{x}}/{{y}}"
+        f"?layer_id={quote(selected_layer_id, safe='')}"
+        f"&tile_matrix_set={quote(selected_tile_matrix_set, safe='')}"
+        f"&format={quote(image_format, safe='')}"
+    )
+    if default_time:
+        proxy_template_url = f"{proxy_template_url}&time={quote(default_time, safe=':/')}"
+
+    probe_url = (
+        upstream_template_url
+        .replace("{z}", "1")
+        .replace("{x}", "1")
+        .replace("{y}", "1")
+    )
+    probe_failure_reason: str | None = None
+    try:
+        probe_resp = requests.get(probe_url, timeout=5)
+        probe_ctype = (probe_resp.headers.get("content-type") or "").lower()
+        if probe_resp.status_code >= 400 or "xml" in probe_ctype:
+            extracted = _extract_ows_exception_text(probe_resp.text or "")
+            probe_failure_reason = extracted or f"HTTP {probe_resp.status_code}"
+    except Exception as exc:
+        warning_parts.append(f"WMTS tile probe skipped: {exc}")
+
+    warning = " ".join(part.strip() for part in warning_parts if part.strip()) or None
+    if probe_failure_reason:
+        reason = f"WMTS tile probe failed: {probe_failure_reason}"
+        warning = f"{warning} {reason}".strip() if warning else reason
+        logger.warning(
+            "sentinel_wmts unavailable instance_id=%s requested_layer=%s resolved_layer=%s matrix=%s reason=%s",
+            instance_id,
+            requested_layer_id,
+            selected_layer_id,
+            selected_tile_matrix_set,
+            reason,
+        )
+        return {
+            "available": False,
+            "reason": reason,
+            "provider": "Copernicus Data Space Ecosystem",
+            "layer_id": selected_layer_id,
+            "requested_layer_id": requested_layer_id,
+            "available_layers": available_layers,
+            "tile_matrix_set": selected_tile_matrix_set,
+            "requested_tile_matrix_set": tile_matrix_set,
+            "format": image_format,
+            "capabilities_url": capabilities_url,
+            "default_time": default_time,
+            "warning": warning,
+            "template_url": proxy_template_url,
+            "upstream_template_url": upstream_template_url,
+            "attribution": "Copernicus Sentinel data via CDSE",
+        }
+
+    logger.info(
+        "sentinel_wmts available instance_id=%s requested_layer=%s resolved_layer=%s matrix=%s warning=%s",
+        instance_id,
+        requested_layer_id,
+        selected_layer_id,
+        selected_tile_matrix_set,
+        warning or "",
+    )
+
+    return {
+        "available": True,
+        "provider": "Copernicus Data Space Ecosystem",
+        "layer_id": selected_layer_id,
+        "requested_layer_id": requested_layer_id,
+        "available_layers": available_layers,
+        "tile_matrix_set": selected_tile_matrix_set,
+        "requested_tile_matrix_set": tile_matrix_set,
+        "format": image_format,
+        "capabilities_url": capabilities_url,
+        "default_time": default_time,
+        "warning": warning,
+        "template_url": proxy_template_url,
+        "upstream_template_url": upstream_template_url,
+        "attribution": "Copernicus Sentinel data via CDSE",
+    }
+
+
+@app.get("/api/layers/sentinel/wmts/tiles/{z}/{x}/{y}")
+def sentinel_wmts_tile_proxy(
+    z: int,
+    x: int,
+    y: int,
+    layer_id: str = Query(..., min_length=1),
+    tile_matrix_set: str | None = Query(default=None),
+    format: str | None = Query(default=None),
+    time_param: str | None = Query(default=None, alias="time"),
+):
+    if z < 0 or x < 0 or y < 0:
+        raise HTTPException(status_code=400, detail="Invalid WMTS tile coordinates")
+    if not settings.merlin_s2_enabled:
+        raise HTTPException(status_code=404, detail="Merlin Sentinel-2 source is disabled")
+
+    base_url = (settings.cdse_wmts_base_url or "").strip().rstrip("/")
+    instance_id = (settings.cdse_wmts_instance_id or "").strip()
+    if not base_url or not instance_id:
+        raise HTTPException(status_code=400, detail="WMTS base URL or instance ID is not configured")
+
+    selected_layer_id = (layer_id or "").strip()
+    selected_matrix = (tile_matrix_set or settings.cdse_wmts_tile_matrix_set or "PopularWebMercator256").strip()
+    selected_format = (format or settings.cdse_wmts_format or "image/png").strip()
+    selected_time = (time_param or "").strip()
+
+    upstream_url = (
+        f"{base_url}/{quote(instance_id, safe='')}"
+        f"?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0"
+        f"&LAYER={quote(selected_layer_id, safe='')}"
+        f"&TILEMATRIXSET={quote(selected_matrix, safe='')}"
+        f"&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}"
+        f"&FORMAT={quote(selected_format, safe='')}"
+    )
+    if selected_time:
+        upstream_url = f"{upstream_url}&TIME={quote(selected_time, safe=':/')}"
+
+    started = time.perf_counter()
+    now = time.time()
+    cache_key = (
+        f"wmts:{selected_layer_id}:{selected_matrix}:{selected_format}:{selected_time}:{z}:{x}:{y}"
+    )
+    cache_entry = app.state.asset_cache.get(cache_key)
+    if cache_entry and cache_entry["expires_at"] > now:
+        app.state.tile_cache_stats["hits"] += 1
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        payload = cache_entry["content"]
+        _record_tile_delivery("merlin", len(payload), elapsed_ms)
+        logger.info(
+            "wmts_tile_proxy cache=hit layer=%s zxy=%s/%s/%s bytes=%s ms=%s",
+            selected_layer_id,
+            z,
+            x,
+            y,
+            len(payload),
+            elapsed_ms,
+        )
+        return Response(
+            content=payload,
+            media_type=cache_entry.get("media_type", "image/png"),
+            headers={"Cache-Control": "public, max-age=300", "X-Proxy-Cache": "hit"},
+        )
+    if cache_entry:
+        app.state.asset_cache.pop(cache_key, None)
+    app.state.tile_cache_stats["misses"] += 1
+
+    try:
+        upstream = requests.get(upstream_url, timeout=12)
+    except Exception as exc:
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        _record_tile_delivery("merlin", 0, elapsed_ms, error=True)
+        raise HTTPException(status_code=502, detail=f"WMTS tile request failed: {exc}") from exc
+
+    upstream_ctype = (upstream.headers.get("Content-Type") or "").lower()
+    if upstream.status_code >= 400 or "xml" in upstream_ctype:
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        _record_tile_delivery("merlin", 0, elapsed_ms, error=True)
+        detail = _extract_ows_exception_text(upstream.text or "")
+        if not detail:
+            detail = (upstream.text or "").strip().replace("\n", " ")[:220]
+        raise HTTPException(
+            status_code=upstream.status_code if upstream.status_code >= 400 else 502,
+            detail=f"WMTS tile failed upstream: {detail or upstream.status_code}",
+        )
+
+    payload = upstream.content
+    media_type = upstream.headers.get("Content-Type", selected_format or "image/png")
+    if len(payload) <= 2_000_000:
+        app.state.asset_cache[cache_key] = {
+            "content": payload,
+            "media_type": media_type,
+            "expires_at": now + 300,
+        }
+        _prune_asset_cache()
+
+    elapsed_ms = int((time.perf_counter() - started) * 1000)
+    _record_tile_delivery("merlin", len(payload), elapsed_ms)
+    logger.info(
+        "wmts_tile_proxy cache=miss layer=%s zxy=%s/%s/%s bytes=%s ms=%s",
+        selected_layer_id,
+        z,
+        x,
+        y,
+        len(payload),
+        elapsed_ms,
+    )
+    return Response(
+        content=payload,
+        media_type=media_type,
+        headers={"Cache-Control": "public, max-age=300", "X-Proxy-Cache": "miss"},
+    )
+
+
+@app.get("/api/tasking/products")
+def tasking_products():
+    return {"count": len(TASKING_PRODUCTS), "products": TASKING_PRODUCTS}
+
+
+@app.get("/api/tasking/projects")
+def tasking_projects(
+    contract_id: str | None = Query(default=None),
+    limit: int = Query(default=120, ge=1, le=500),
+):
+    try:
+        orders = _collect_tasking_orders(contract_id=contract_id, limit=limit)
+        projects = sorted({
+            str(order.get("project_name") or "").strip()
+            for order in orders
+            if str(order.get("project_name") or "").strip()
+        })
+        return {"count": len(projects), "projects": projects}
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Tasking project list failed: {exc}") from exc
+
+
+@app.get("/api/tasking/orders")
+def tasking_orders(
+    contract_id: str | None = Query(default=None),
+    limit: int = Query(default=120, ge=1, le=500),
+):
+    try:
+        orders = _collect_tasking_orders(contract_id=contract_id, limit=limit)
+        return {"count": len(orders), "orders": orders}
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Tasking order list failed: {exc}") from exc
+
+
+@app.post("/api/tasking/orders")
+def tasking_orders_create(request: TaskingOrderCreateRequest):
+    geometry_type = (request.geometry or {}).get("type") if isinstance(request.geometry, dict) else None
+    if request.target_type == "point" and geometry_type != "Point":
+        raise HTTPException(status_code=400, detail="Point target requires Point geometry")
+    if request.target_type == "area" and geometry_type != "Polygon":
+        raise HTTPException(status_code=400, detail="Area target requires Polygon geometry")
+
+    parameters: dict[str, Any] = {
+        "start": request.start_date,
+        "end": request.end_date,
+    }
+    if request.target_type == "point" and request.revisit_period:
+        parameters["revisit_period"] = request.revisit_period
+    if request.target_type == "area" and request.remapping_period:
+        parameters["remapping_period"] = request.remapping_period
+    for key, value in (request.additional_parameters or {}).items():
+        if value is None:
+            continue
+        parameters[str(key)] = value
+
+    feature = {
+        "type": "Feature",
+        "geometry": request.geometry,
+        "properties": {
+            "order_name": request.order_name.strip(),
+            "project_name": request.project_name.strip(),
+            "sku": request.sku.strip(),
+            "parameters": parameters,
+        },
+    }
+
+    try:
+        created = client.create_order(feature, contract_id=request.contract_id)
+        return {"accepted": True, "order": _normalize_tasking_order(created), "raw": created}
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Tasking create failed: {exc}") from exc
 
 
 @app.post("/api/download/zip")
@@ -484,7 +1164,7 @@ def download_zip(request: DownloadBundleRequest):
                 filename = _dedupe_name(safe_name, used_names)
 
                 try:
-                    content = client.download_bytes(url, contract_id=request.contract_id)
+                    content = _download_bytes_for_url(url, contract_id=request.contract_id)
                     zf.writestr(filename, content)
                     downloaded_count += 1
                 except Exception as exc:
@@ -517,14 +1197,26 @@ def download_zip(request: DownloadBundleRequest):
 def asset_proxy(
     url: str = Query(...),
     contract_id: str | None = Query(default=None),
+    source_hint: str | None = Query(default=None),
     render: bool = Query(default=False),
 ):
     try:
         started = time.perf_counter()
         parsed = urlparse(url)
         if parsed.scheme not in ("http", "https"):
+            logger.warning(
+                "asset_proxy reject invalid_scheme source_hint=%s scheme=%s url=%s",
+                source_hint or "",
+                parsed.scheme or "",
+                _asset_short(url),
+            )
             raise HTTPException(status_code=400, detail="Asset URL must use http/https")
         if not parsed.netloc:
+            logger.warning(
+                "asset_proxy reject invalid_host source_hint=%s url=%s",
+                source_hint or "",
+                _asset_short(url),
+            )
             raise HTTPException(status_code=400, detail="Asset URL host is invalid")
 
         cache_key = _asset_cache_key(url, contract_id, render)
@@ -558,8 +1250,41 @@ def asset_proxy(
             app.state.asset_cache.pop(cache_key, None)
 
         app.state.asset_cache_stats["misses"] += 1
-        upstream = requests.get(url, headers=client.auth_headers(contract_id=contract_id), timeout=120)
+        headers = sources.auth_headers_for_url(url, contract_id=contract_id, source_hint=source_hint)
+        upstream = requests.get(url, headers=headers, timeout=120)
+        if upstream.status_code == 401:
+            inferred_source = sources.infer_source_id_from_url(url, source_hint=source_hint)
+            if inferred_source == SOURCE_MERLIN_S2:
+                try:
+                    prefer_download = not merlin_client._requires_download_token_for_url(url)
+                    retry_headers = merlin_client.auth_headers(download=prefer_download)
+                    if retry_headers != headers:
+                        retried = requests.get(url, headers=retry_headers, timeout=120)
+                        retry_mode = "download" if prefer_download else "client_credentials"
+                        if retried.status_code < 400:
+                            logger.info(
+                                "asset_proxy merlin_retry ok mode=%s status=%s url=%s",
+                                retry_mode,
+                                retried.status_code,
+                                _asset_short(url),
+                            )
+                            upstream = retried
+                        else:
+                            logger.warning(
+                                "asset_proxy merlin_retry failed mode=%s status=%s url=%s",
+                                retry_mode,
+                                retried.status_code,
+                                _asset_short(url),
+                            )
+                except Exception as retry_exc:
+                    logger.warning("asset_proxy merlin_retry error=%s url=%s", retry_exc, _asset_short(url))
         if upstream.status_code >= 400:
+            logger.warning(
+                "asset_proxy upstream_error source_hint=%s status=%s url=%s",
+                source_hint or "",
+                upstream.status_code,
+                _asset_short(url),
+            )
             raise HTTPException(
                 status_code=upstream.status_code,
                 detail=f"Asset fetch failed upstream: {upstream.status_code}",
@@ -963,6 +1688,7 @@ def raster_cog_tile_proxy(
         if cache_entry and cache_entry["expires_at"] > now:
             app.state.tile_cache_stats["hits"] += 1
             elapsed_ms = int((time.perf_counter() - started) * 1000)
+            _record_tile_delivery("newsat", len(cache_entry["content"]), elapsed_ms)
             logger.info(
                 "tile_proxy cache=hit zxy=%s/%s/%s bytes=%s ms=%s",
                 z,
@@ -996,6 +1722,13 @@ def raster_cog_tile_proxy(
             )
             if upstream.status_code == 404:
                 elapsed_ms = int((time.perf_counter() - started) * 1000)
+                app.state.asset_cache[cache_key] = {
+                    "content": TRANSPARENT_PNG_1X1,
+                    "media_type": "image/png",
+                    "expires_at": now + 60,
+                }
+                _prune_asset_cache()
+                _record_tile_delivery("newsat", len(TRANSPARENT_PNG_1X1), elapsed_ms)
                 logger.info(
                     "tile_proxy empty zxy=%s/%s/%s ms=%s",
                     z,
@@ -1014,6 +1747,8 @@ def raster_cog_tile_proxy(
                 )
             if upstream.status_code >= 400:
                 detail = (upstream.text or "").strip().replace("\n", " ")[:220]
+                elapsed_ms = int((time.perf_counter() - started) * 1000)
+                _record_tile_delivery("newsat", 0, elapsed_ms, error=True)
                 logger.warning(
                     "tile_proxy upstream_error auth=%s zxy=%s/%s/%s status=%s detail=%s",
                     auth_mode,
@@ -1050,6 +1785,7 @@ def raster_cog_tile_proxy(
             _prune_asset_cache()
 
         elapsed_ms = int((time.perf_counter() - started) * 1000)
+        _record_tile_delivery("newsat", len(content), elapsed_ms)
         logger.info(
             "tile_proxy cache=miss auth=%s layer=%s zxy=%s/%s/%s bytes=%s ms=%s",
             auth_mode,
@@ -1073,29 +1809,66 @@ def raster_cog_tile_proxy(
 
 def _cache_items(items: list[dict[str, Any]]):
     for item in items:
-        app.state.item_cache[item["id"]] = item
+        item_id = str(item.get("id") or "").strip()
+        if not item_id:
+            continue
+        app.state.item_cache[item_id] = item
 
 
-def _resolve_item(item_id: str, contract_id: str | None = None) -> dict[str, Any] | None:
+def _resolve_item(
+    item_id: str,
+    contract_id: str | None = None,
+    source_id: str | None = None,
+    collection_id: str | None = None,
+) -> dict[str, Any] | None:
     cached = app.state.item_cache.get(item_id)
     if cached:
         return cached
 
-    # STAC item-by-id fallback.
-    item = client.item_by_id(item_id, contract_id=contract_id)
+    source, native_item_id = _source_from_item_id(item_id, source_hint=source_id)
+    item = sources.item_by_id(
+        native_item_id,
+        source_id=source,
+        contract_id=contract_id,
+        collection_id=collection_id,
+    )
+    if not item and collection_id:
+        # Some providers/collections return incomplete results for strict collection + id lookups.
+        # Retry once without collection pinning to reduce false 404s on previously-discovered ids.
+        item = sources.item_by_id(
+            native_item_id,
+            source_id=source,
+            contract_id=contract_id,
+            collection_id=None,
+        )
+        if item:
+            logger.info(
+                "resolve_item fallback_without_collection source=%s item=%s requested_collection=%s resolved_collection=%s",
+                source,
+                native_item_id,
+                collection_id,
+                item.get("collection") if isinstance(item, dict) else "",
+            )
     if not item:
         return None
-    normalized = normalize_item(item)
-    _cache_items([normalized])
-    return normalized
+    _cache_items([item])
+    return item
 
 
-def _workbench_search_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
-    features = client.search(
+def _search_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    source_id = _normalize_source_id(payload.get("source_id"))
+    collection_id = str(payload.get("collection_id") or "").strip()
+    if source_id == SOURCE_MERLIN_S2 and collection_id == settings.satellogic_collection_id:
+        collection_id = ""
+    if not collection_id:
+        collection_id = settings.cdse_sentinel2_collections[0] if source_id == SOURCE_MERLIN_S2 and settings.cdse_sentinel2_collections else settings.satellogic_collection_id
+
+    items = sources.search(
+        source_id=source_id,
         geometry=payload.get("geometry"),
         start_date=payload.get("start_date"),
         end_date=payload.get("end_date"),
-        collection_id=payload.get("collection_id") or "l1d-sr",
+        collection_id=collection_id,
         contract_id=payload.get("contract_id"),
         limit=int(payload.get("limit") or 300),
         max_cloud_cover=payload.get("max_cloud_cover"),
@@ -1103,9 +1876,12 @@ def _workbench_search_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
         min_gsd=payload.get("min_gsd"),
         max_gsd=payload.get("max_gsd"),
     )
-    items = [normalize_item(feature) for feature in features]
     _cache_items(items)
     return items
+
+
+def _workbench_search_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    return _search_items(payload)
 
 
 def _ensure_workbench() -> GeoWorkbenchEngine:
@@ -1120,7 +1896,7 @@ def _ensure_workbench() -> GeoWorkbenchEngine:
             root_dir=settings.output_dir,
             search_items_fn=_workbench_search_items,
             resolve_item_fn=_resolve_item,
-            download_bytes_fn=lambda url, contract_id=None: client.download_bytes(url, contract_id=contract_id),
+            download_bytes_fn=lambda url, contract_id=None: _download_bytes_for_url(url, contract_id=contract_id),
         )
         engine.start()
         app.state.workbench = engine
@@ -1131,24 +1907,30 @@ def _ensure_workbench() -> GeoWorkbenchEngine:
 def archive_search(request: SearchRequest):
     try:
         started = time.perf_counter()
-        features = client.search(
-            geometry=request.geometry,
-            start_date=request.start_date,
-            end_date=request.end_date,
-            collection_id=request.collection_id,
-            contract_id=request.contract_id,
-            limit=request.limit,
-            max_cloud_cover=request.max_cloud_cover,
-            satellite_name=request.satellite_name,
-            min_gsd=request.min_gsd,
-            max_gsd=request.max_gsd,
+        source_id = _normalize_source_id(request.source_id)
+        collection_id = request.collection_id
+        if source_id == SOURCE_MERLIN_S2 and collection_id == settings.satellogic_collection_id:
+            collection_id = settings.cdse_sentinel2_collections[0] if settings.cdse_sentinel2_collections else "sentinel-2-l2a"
+        items = _search_items(
+            {
+                "source_id": source_id,
+                "geometry": request.geometry,
+                "start_date": request.start_date,
+                "end_date": request.end_date,
+                "collection_id": collection_id,
+                "contract_id": request.contract_id,
+                "limit": request.limit,
+                "max_cloud_cover": request.max_cloud_cover,
+                "satellite_name": request.satellite_name,
+                "min_gsd": request.min_gsd,
+                "max_gsd": request.max_gsd,
+            }
         )
-        items = [normalize_item(feature) for feature in features]
-        _cache_items(items)
 
         typed_items = [
             SearchResultItem(
                 id=item["id"],
+                source_id=item.get("source_id") or source_id,
                 collection=item.get("collection"),
                 datetime=item.get("datetime"),
                 outcome_id=item.get("outcome_id"),
@@ -1161,10 +1943,23 @@ def archive_search(request: SearchRequest):
             )
             for item in items
         ]
+        if source_id == SOURCE_MERLIN_S2 and items:
+            first = items[0] or {}
+            first_assets = first.get("assets") or {}
+            first_raw_assets = ((first.get("raw") or {}).get("assets") or {})
+            logger.info(
+                "merlin_asset_selection item=%s raw_keys=%s selected_visual=%s selected_visual_fullres=%s selected_preview=%s",
+                first.get("id") or "",
+                ",".join(sorted(str(k) for k in first_raw_assets.keys()))[:1000],
+                _asset_short(first_assets.get("visual") or ""),
+                _asset_short(first_assets.get("visual_fullres") or ""),
+                _asset_short(first_assets.get("preview") or ""),
+            )
         elapsed_ms = int((time.perf_counter() - started) * 1000)
         logger.info(
-            "archive_search collection=%s count=%s limit=%s ms=%s cloud=%s sat=%s gsd=[%s,%s]",
-            request.collection_id,
+            "archive_search source=%s collection=%s count=%s limit=%s ms=%s cloud=%s sat=%s gsd=[%s,%s]",
+            source_id,
+            collection_id,
             len(typed_items),
             request.limit,
             elapsed_ms,
@@ -1176,11 +1971,79 @@ def archive_search(request: SearchRequest):
         search_stats = app.state.archive_search_stats
         search_stats["total"] = int(search_stats.get("total", 0)) + 1
         by_collection = search_stats.setdefault("by_collection", {})
-        collection_key = request.collection_id or "unknown"
+        if source_id == SOURCE_SATELLOGIC:
+            collection_key = collection_id or "unknown"
+        else:
+            collection_key = f"{source_id}:{collection_id or 'unknown'}"
         by_collection[collection_key] = int(by_collection.get(collection_key, 0)) + 1
         return SearchResponse(count=len(typed_items), items=typed_items)
     except Exception as exc:
+        logger.exception(
+            "archive_search failed source=%s collection=%s contract=%s error=%s",
+            request.source_id,
+            request.collection_id,
+            request.contract_id or "",
+            exc,
+        )
         raise HTTPException(status_code=400, detail=f"Archive search failed: {exc}") from exc
+
+
+@app.get("/api/archive/item-assets")
+def archive_item_assets(
+    item_id: str = Query(..., min_length=1),
+    source_id: str | None = Query(default=None),
+    collection_id: str | None = Query(default=None),
+    contract_id: str | None = Query(default=None),
+):
+    try:
+        item = _resolve_item(
+            item_id=item_id,
+            source_id=source_id,
+            contract_id=contract_id,
+            collection_id=collection_id,
+        )
+        if not item:
+            raise HTTPException(status_code=404, detail="Item not found")
+        raw = item.get("raw") or {}
+        raw_assets = raw.get("assets") if isinstance(raw, dict) else {}
+        rows: list[dict[str, Any]] = []
+        if isinstance(raw_assets, dict):
+            for key, asset in raw_assets.items():
+                if isinstance(asset, dict):
+                    alt = asset.get("alternate")
+                    alt_keys = sorted(str(k) for k in alt.keys()) if isinstance(alt, dict) else []
+                    alternates: dict[str, str] = {}
+                    if isinstance(alt, dict):
+                        for alt_key, alt_row in alt.items():
+                            if isinstance(alt_row, dict):
+                                alt_href = str(alt_row.get("href") or "").strip()
+                                if alt_href:
+                                    alternates[str(alt_key)] = alt_href
+                    rows.append(
+                        {
+                            "key": str(key),
+                            "href": str(asset.get("href") or ""),
+                            "type": str(asset.get("type") or ""),
+                            "title": str(asset.get("title") or ""),
+                            "roles": [str(r) for r in (asset.get("roles") or []) if str(r)],
+                            "alternate_keys": alt_keys,
+                            "alternates": alternates,
+                        }
+                    )
+                else:
+                    rows.append({"key": str(key), "value_type": type(asset).__name__})
+        return {
+            "id": item.get("id"),
+            "collection": item.get("collection"),
+            "source_id": item.get("source_id") or source_id,
+            "selected_assets": item.get("assets") or {},
+            "raw_asset_count": len(rows),
+            "raw_assets": rows,
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Item asset inspection failed: {exc}") from exc
 
 
 @app.post("/api/archive/animate")
@@ -1197,7 +2060,7 @@ def archive_animate(request: AnimationRequest):
     try:
         result = make_animation_gif(
             frames=frames,
-            downloader=lambda url: client.download_bytes(url, contract_id=request.contract_id),
+            downloader=lambda url: _download_bytes_for_url(url, contract_id=request.contract_id),
             seconds_per_frame=request.seconds_per_frame,
             output_dir=settings.output_dir,
         )
@@ -1209,33 +2072,38 @@ def archive_animate(request: AnimationRequest):
 @app.post("/api/archive/animate/search")
 def archive_animate_search(request: AnimationSearchRequest):
     try:
-        features = []
+        items: list[dict[str, Any]] = []
+        source_id = _normalize_source_id(request.source_id)
+        collection_id = request.collection_id
+        if source_id == SOURCE_MERLIN_S2 and collection_id == settings.satellogic_collection_id:
+            collection_id = settings.cdse_sentinel2_collections[0] if settings.cdse_sentinel2_collections else "sentinel-2-l2a"
         for lim in (1200, 600, 300, 200):
             try:
-                features = client.search(
-                    geometry=request.geometry,
-                    start_date=request.start_date,
-                    end_date=request.end_date,
-                    collection_id=request.collection_id,
-                    contract_id=request.contract_id,
-                    limit=lim,
-                    max_cloud_cover=request.max_cloud_cover,
-                    satellite_name=request.satellite_name,
-                    min_gsd=request.min_gsd,
-                    max_gsd=request.max_gsd,
+                items = _search_items(
+                    {
+                        "source_id": source_id,
+                        "geometry": request.geometry,
+                        "start_date": request.start_date,
+                        "end_date": request.end_date,
+                        "collection_id": collection_id,
+                        "contract_id": request.contract_id,
+                        "limit": lim,
+                        "max_cloud_cover": request.max_cloud_cover,
+                        "satellite_name": request.satellite_name,
+                        "min_gsd": request.min_gsd,
+                        "max_gsd": request.max_gsd,
+                    }
                 )
                 break
             except Exception:
-                features = []
+                items = []
                 continue
 
-        items = [normalize_item(feature) for feature in features]
         items = [item for item in items if item.get("id")]
-        _cache_items(items)
 
         result = make_capture_mosaic_animation(
             items=items,
-            downloader=lambda url: client.download_bytes(url, contract_id=request.contract_id),
+            downloader=lambda url: _download_bytes_for_url(url, contract_id=request.contract_id),
             seconds_per_frame=request.seconds_per_frame,
             output_dir=settings.output_dir,
             max_frames=request.max_frames,
@@ -1256,6 +2124,19 @@ def archive_animate_mp4_create_job(request: Mp4AnimationJobRequest):
     total_tiles = sum(len(frame.get("tiles", [])) for frame in frames)
     if total_tiles > 2400:
         raise HTTPException(status_code=400, detail="Too many selected tiles (max 2400)")
+
+    frame_sources: set[str] = set()
+    for frame in frames:
+        for tile in frame.get("tiles", []):
+            source_id = _infer_mp4_tile_source_id(tile)
+            if source_id:
+                frame_sources.add(source_id)
+    if len(frame_sources) > 1:
+        readable = ", ".join(sorted(frame_sources))
+        raise HTTPException(
+            status_code=400,
+            detail=f"MP4 animation requires a single source per run; mixed sources detected: {readable}",
+        )
 
     job_id = str(uuid.uuid4())
     created_at = _utc_now_iso()
@@ -1281,12 +2162,13 @@ def archive_animate_mp4_create_job(request: Mp4AnimationJobRequest):
         app.state.mp4_jobs[job_id] = job
     _prune_mp4_jobs()
     logger.info(
-        "mp4 animation job queued job_id=%s frames=%s total_tiles=%s seconds_per_frame=%.3f contract_id=%s",
+        "mp4 animation job queued job_id=%s frames=%s total_tiles=%s seconds_per_frame=%.3f contract_id=%s source_scope=%s",
         job_id,
         len(frames),
         total_tiles,
         float(request.seconds_per_frame),
         request.contract_id or "",
+        ",".join(sorted(frame_sources)) if frame_sources else "unknown",
     )
 
     payload = {
@@ -1340,21 +2222,26 @@ def archive_animate_mp4_job_download(job_id: str):
 @app.post("/api/geoagent/report", response_model=GeoAgentResponse)
 def geoagent_report(request: GeoAgentRequest):
     try:
-        features = client.search(
-            geometry=request.geometry,
-            start_date=request.start_date,
-            end_date=request.end_date,
-            collection_id=request.collection_id,
-            contract_id=request.contract_id,
-            limit=300,
-            max_cloud_cover=80,
-            satellite_name=request.satellite_name,
-            min_gsd=request.min_gsd,
-            max_gsd=request.max_gsd,
+        source_id = _normalize_source_id(request.source_id)
+        collection_id = request.collection_id
+        if source_id == SOURCE_MERLIN_S2 and collection_id == settings.satellogic_collection_id:
+            collection_id = settings.cdse_sentinel2_collections[0] if settings.cdse_sentinel2_collections else "sentinel-2-l2a"
+        items = _search_items(
+            {
+                "source_id": source_id,
+                "geometry": request.geometry,
+                "start_date": request.start_date,
+                "end_date": request.end_date,
+                "collection_id": collection_id,
+                "contract_id": request.contract_id,
+                "limit": 300,
+                "max_cloud_cover": 80,
+                "satellite_name": request.satellite_name,
+                "min_gsd": request.min_gsd,
+                "max_gsd": request.max_gsd,
+            }
         )
-        items = [normalize_item(feature) for feature in features]
         items = [item for item in items if item.get("id")]
-        _cache_items(items)
 
         if not items:
             raise HTTPException(status_code=404, detail="No imagery found for geoagent report")
@@ -1375,7 +2262,7 @@ def geoagent_report(request: GeoAgentRequest):
             prompt=request.prompt,
             frames=frames,
             latest_item=latest_item,
-            downloader=lambda url: client.download_bytes(url, contract_id=request.contract_id),
+            downloader=lambda url: _download_bytes_for_url(url, contract_id=request.contract_id, source_hint=source_id),
         )
 
         return GeoAgentResponse(
@@ -1395,23 +2282,34 @@ def runtime_info():
     return {
         "timestamp": datetime.utcnow().isoformat() + "Z",
         "auth_mode": getattr(client, "auth_mode", "unknown"),
+        "default_source_id": DEFAULT_SOURCE_ID,
+        "available_sources": [row.get("source_id") for row in sources.list_sources() if row.get("enabled")],
         "has_satl_credentials": bool(settings.satellogic_key_id and settings.satellogic_key_secret),
         "has_contract_id": bool(settings.satellogic_contract_id),
         "has_bearer_token": bool(settings.satellogic_bearer_token),
+        "merlin_s2_enabled": bool(settings.merlin_s2_enabled),
+        "has_cdse_credentials": bool(settings.cdse_client_id and settings.cdse_client_secret),
         "has_openai_key": bool(settings.openai_api_key),
         "collection_default": settings.satellogic_collection_id,
     }
 
 
 @app.post("/api/auth/refresh-token")
-def refresh_auth_token():
+def refresh_auth_token(source_id: str | None = Query(default=DEFAULT_SOURCE_ID)):
     try:
-        refreshed, expiry = client.refresh_access_token()
+        source = _normalize_source_id(source_id)
+        if source == SOURCE_MERLIN_S2:
+            refreshed, expiry = merlin_client.refresh_access_token()
+            mode = "oauth_client_credentials"
+        else:
+            refreshed, expiry = client.refresh_access_token()
+            mode = getattr(client, "auth_mode", "unknown")
         if not refreshed:
             raise HTTPException(status_code=503, detail="Token refresh returned empty token")
         return {
             "refreshed": True,
-            "auth_mode": getattr(client, "auth_mode", "unknown"),
+            "source_id": source,
+            "auth_mode": mode,
             "expires_at": expiry.isoformat() if expiry else None,
         }
     except HTTPException:
@@ -1575,3 +2473,102 @@ def events_feed(limit: int = Query(default=100, ge=1, le=1000)):
     wb = _ensure_workbench()
     rows = wb.events[-limit:]
     return {"count": len(rows), "events": rows}
+
+
+@app.post("/api/monitoring/subscriptions")
+def monitoring_subscriptions_create(payload: MonitoringSubscriptionCreateRequest):
+    source_id = _normalize_source_id(payload.source_id)
+    if source_id == SOURCE_MERLIN_S2 and not settings.merlin_s2_enabled:
+        raise HTTPException(status_code=400, detail="Merlin Sentinel-2 source is disabled")
+    if not sources.has_source(source_id):
+        raise HTTPException(status_code=400, detail=f"Unknown source_id '{payload.source_id}'")
+    try:
+        row = app.state.monitoring_store.create_subscription(
+            {
+                "source_id": source_id,
+                "name": payload.name,
+                "collection_ids": payload.collection_ids,
+                "geometry": payload.geometry,
+                "filters": payload.filters,
+                "enabled": payload.enabled,
+                "external_subscription_id": payload.external_subscription_id,
+                "cursor": payload.cursor,
+            }
+        )
+        return row
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Monitoring subscription create failed: {exc}") from exc
+
+
+@app.get("/api/monitoring/subscriptions")
+def monitoring_subscriptions_list():
+    rows = app.state.monitoring_store.list_subscriptions()
+    return {"count": len(rows), "subscriptions": rows}
+
+
+@app.post("/api/monitoring/events")
+def monitoring_events_create(payload: MonitoringEventCreateRequest):
+    source_id = _normalize_source_id(payload.source_id)
+    if not sources.has_source(source_id):
+        raise HTTPException(status_code=400, detail=f"Unknown source_id '{payload.source_id}'")
+    try:
+        row = app.state.monitoring_store.create_event(
+            {
+                "subscription_id": payload.subscription_id,
+                "source_id": source_id,
+                "scene_id": payload.scene_id,
+                "event_type": payload.event_type,
+                "status": payload.status,
+                "payload": payload.payload,
+            }
+        )
+        return row
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Monitoring event create failed: {exc}") from exc
+
+
+@app.get("/api/monitoring/events")
+def monitoring_events_list(
+    limit: int = Query(default=100, ge=1, le=1000),
+    status: str | None = Query(default=None),
+):
+    rows = app.state.monitoring_store.list_events(limit=limit, status=status)
+    return {"count": len(rows), "events": rows}
+
+
+@app.post("/api/monitoring/events/{event_id}/ack")
+def monitoring_events_ack(event_id: str, payload: MonitoringEventAckRequest):
+    row = app.state.monitoring_store.ack_event(event_id, status=payload.status)
+    if not row:
+        raise HTTPException(status_code=404, detail="Monitoring event not found")
+    return row
+
+
+@app.post("/api/cues")
+def cues_create(payload: CueCreateRequest):
+    source_id = _normalize_source_id(payload.source_id)
+    if not sources.has_source(source_id):
+        raise HTTPException(status_code=400, detail=f"Unknown source_id '{payload.source_id}'")
+    try:
+        row = app.state.monitoring_store.create_cue(
+            {
+                "event_id": payload.event_id,
+                "source_id": source_id,
+                "status": payload.status,
+                "priority": payload.priority,
+                "geometry": payload.geometry,
+                "payload": payload.payload,
+            }
+        )
+        return row
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Cue create failed: {exc}") from exc
+
+
+@app.get("/api/cues")
+def cues_list(
+    limit: int = Query(default=100, ge=1, le=1000),
+    status: str | None = Query(default=None),
+):
+    rows = app.state.monitoring_store.list_cues(limit=limit, status=status)
+    return {"count": len(rows), "cues": rows}

@@ -16,6 +16,7 @@ htmlcov/
 
 # Local secrets
 .env
+.env copy
 .env.local
 .env.*.local
 backend/data/annotations.json
