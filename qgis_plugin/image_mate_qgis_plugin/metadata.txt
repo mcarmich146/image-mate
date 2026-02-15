@@ -1,0 +1,17 @@
+[general]
+name=Image Mate QGIS Plugin
+qgisMinimumVersion=3.28
+qgisMaximumVersion=3.99
+description=Image Mate geospatial operations plugin for QGIS
+version=0.1.0
+author=Image Mate Team
+email=devnull@example.com
+about=Provides Image Mate workflows in a native QGIS dock workflow.
+category=Plugins
+icon=icons/image_mate.svg
+experimental=True
+deprecated=False
+tracker=
+repository=
+tags=imagery,satellite,geospatial,analysis
+homepage=
