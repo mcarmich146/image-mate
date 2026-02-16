@@ -176,7 +176,7 @@ class TaskingOrderCreateRequest(BaseModel):
     target_type: Literal["point", "area"]
     geometry: dict[str, Any]
     order_name: str = Field(min_length=1, max_length=120)
-    project_name: str = Field(min_length=1, max_length=120)
+    project_name: str | None = Field(default=None, max_length=120)
     sku: str = Field(min_length=1, max_length=80)
     start_date: str = Field(min_length=1, max_length=80)
     end_date: str = Field(min_length=1, max_length=80)

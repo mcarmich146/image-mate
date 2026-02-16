@@ -638,13 +638,25 @@ TASKING_PRODUCTS = [
 
 
 def _normalize_tasking_order(raw: dict[str, Any]) -> dict[str, Any]:
+    feature = raw.get("feature") if isinstance(raw.get("feature"), dict) else raw
     props = raw.get("properties")
+    if not isinstance(props, dict):
+        props = feature.get("properties") if isinstance(feature, dict) else None
     properties = props if isinstance(props, dict) else {}
     params = properties.get("parameters")
+    if not isinstance(params, dict):
+        params = feature.get("parameters") if isinstance(feature, dict) else None
     parameters = params if isinstance(params, dict) else {}
     geometry = raw.get("geometry")
+    if not isinstance(geometry, dict):
+        geometry = feature.get("geometry") if isinstance(feature, dict) else None
     geometry_obj = geometry if isinstance(geometry, dict) else {}
-    order_id = raw.get("id") or properties.get("order_id") or properties.get("id")
+    order_id = (
+        raw.get("id")
+        or (feature.get("id") if isinstance(feature, dict) else None)
+        or properties.get("order_id")
+        or properties.get("id")
+    )
     sku = (
         properties.get("sku")
         or properties.get("product")
@@ -657,7 +669,17 @@ def _normalize_tasking_order(raw: dict[str, Any]) -> dict[str, Any]:
         "order_name": properties.get("order_name") or properties.get("name") or "",
         "project_name": properties.get("project_name") or "",
         "sku": sku,
-        "created_at": properties.get("created") or raw.get("created") or raw.get("created_at"),
+        "created_at": (
+            properties.get("created_at")
+            or properties.get("created")
+            or raw.get("created_at")
+            or raw.get("created")
+        ),
+        "updated_at": (
+            properties.get("updated_at")
+            or raw.get("updated_at")
+            or raw.get("updated")
+        ),
         "start": parameters.get("start") or parameters.get("from"),
         "end": parameters.get("end") or parameters.get("to"),
         "revisit_period": parameters.get("revisit_period"),
@@ -674,6 +696,21 @@ def _is_tasking_sku(value: Any) -> bool:
     return text.startswith("TSK")
 
 
+def _tasking_rows_from_payload(payload: Any) -> list[dict[str, Any]]:
+    if isinstance(payload, dict):
+        features = payload.get("features")
+        if isinstance(features, list):
+            return [row for row in features if isinstance(row, dict)]
+        results = payload.get("results")
+        if isinstance(results, list):
+            return [row for row in results if isinstance(row, dict)]
+        if isinstance(payload.get("id"), str):
+            return [payload]
+    if isinstance(payload, list):
+        return [row for row in payload if isinstance(row, dict)]
+    return []
+
+
 def _collect_tasking_orders(contract_id: str | None, limit: int) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     next_url: str | None = None
@@ -681,12 +718,10 @@ def _collect_tasking_orders(contract_id: str | None, limit: int) -> list[dict[st
     while len(rows) < limit and pages < 6:
         page_limit = min(100, max(1, limit - len(rows)))
         payload = client.list_orders(contract_id=contract_id, limit=page_limit, next_url=next_url)
-        results = payload.get("results")
-        if not isinstance(results, list):
+        page_rows = _tasking_rows_from_payload(payload)
+        if not page_rows:
             break
-        for row in results:
-            if not isinstance(row, dict):
-                continue
+        for row in page_rows:
             normalized = _normalize_tasking_order(row)
             if _is_tasking_sku(normalized.get("sku")):
                 rows.append(normalized)
@@ -1230,6 +1265,10 @@ def tasking_projects(
             if str(order.get("project_name") or "").strip()
         })
         return {"count": len(projects), "projects": projects}
+    except requests.HTTPError as exc:
+        status_code = int(getattr(getattr(exc, "response", None), "status_code", 502) or 502)
+        detail = (getattr(getattr(exc, "response", None), "text", "") or str(exc)).strip()
+        raise HTTPException(status_code=status_code, detail=f"Tasking project list failed: {detail}") from exc
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Tasking project list failed: {exc}") from exc
 
@@ -1242,8 +1281,28 @@ def tasking_orders(
     try:
         orders = _collect_tasking_orders(contract_id=contract_id, limit=limit)
         return {"count": len(orders), "orders": orders}
+    except requests.HTTPError as exc:
+        status_code = int(getattr(getattr(exc, "response", None), "status_code", 502) or 502)
+        detail = (getattr(getattr(exc, "response", None), "text", "") or str(exc)).strip()
+        raise HTTPException(status_code=status_code, detail=f"Tasking order list failed: {detail}") from exc
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Tasking order list failed: {exc}") from exc
+
+
+@app.get("/api/tasking/orders/{order_id}")
+def tasking_order_detail(
+    order_id: str,
+    contract_id: str | None = Query(default=None),
+):
+    try:
+        row = client.get_order(order_id, contract_id=contract_id)
+        return {"order": _normalize_tasking_order(row), "raw": row}
+    except requests.HTTPError as exc:
+        status_code = int(getattr(getattr(exc, "response", None), "status_code", 502) or 502)
+        detail = (getattr(getattr(exc, "response", None), "text", "") or str(exc)).strip()
+        raise HTTPException(status_code=status_code, detail=f"Tasking order fetch failed: {detail}") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Tasking order fetch failed: {exc}") from exc
 
 
 @app.post("/api/tasking/orders")
@@ -1272,15 +1331,31 @@ def tasking_orders_create(request: TaskingOrderCreateRequest):
         "geometry": request.geometry,
         "properties": {
             "order_name": request.order_name.strip(),
-            "project_name": request.project_name.strip(),
             "sku": request.sku.strip(),
             "parameters": parameters,
         },
     }
+    project_name = (request.project_name or "").strip()
+    if project_name:
+        feature["properties"]["project_name"] = project_name
 
     try:
         created = client.create_order(feature, contract_id=request.contract_id)
+        rows = _tasking_rows_from_payload(created)
+        if rows:
+            normalized = [_normalize_tasking_order(row) for row in rows]
+            return {
+                "accepted": bool(normalized),
+                "count": len(normalized),
+                "order": normalized[0],
+                "orders": normalized,
+                "raw": created,
+            }
         return {"accepted": True, "order": _normalize_tasking_order(created), "raw": created}
+    except requests.HTTPError as exc:
+        status_code = int(getattr(getattr(exc, "response", None), "status_code", 502) or 502)
+        detail = (getattr(getattr(exc, "response", None), "text", "") or str(exc)).strip()
+        raise HTTPException(status_code=status_code, detail=f"Tasking create failed: {detail}") from exc
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Tasking create failed: {exc}") from exc
 

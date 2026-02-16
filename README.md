@@ -7,11 +7,13 @@
 - Updated `spotlite` auth flow (OAuth token + contract header support)
 - Archive search for small AOIs (e.g., air bases)
 - Contract discovery from account (`/contracts`) with UI dropdown selection
+- Tasking workflow support (products/projects/orders + order detail lookup)
 - Stack discovery and time-series playback
 - GIF animation builder from STAC previews
 - Before/after image comparison slider
 - Annotation capture and local persistence
 - AI GeoAgent report generation (latest frame + historical context + user prompt)
+- Workflow builder/workbench UX for orchestration and report runs
 - Map-driven AOI search (draw rectangle on map) with parameterized filters:
   - date range
   - cloud cover
@@ -161,8 +163,17 @@ The service samples historical frames, computes frame-to-frame change signals fr
 - For production deployment, move annotation storage from local JSON to a database.
 - If preview asset access is restricted, ensure contract + auth headers are valid.
 - Monitoring/cue state now persists in SQLite at `backend/output/monitoring.sqlite3` (Postgres-ready schema planned next).
+- Tasking API helper endpoints include:
+  - `GET /api/tasking/orders/{order_id}` for single-order detail polling
+  - resilient order list/create normalization for both `results` and `FeatureCollection` payload shapes
+- Repeatable tasking workflow smoke runner:
+  - `./.venv/bin/python backend/tests/tasking_smoke_runner.py --mode mock`
+  - live read-only check: `./.venv/bin/python backend/tests/tasking_smoke_runner.py --mode live`
+  - live create + poll: `./.venv/bin/python backend/tests/tasking_smoke_runner.py --mode live --create --project-name smoke-project`
 - CDSE now prefers the newer Catalog STAC endpoint (`https://sh.dataspace.copernicus.eu/api/v1/catalog/1.0.0`); older `stac.dataspace.copernicus.eu` examples in blogs may be outdated.
 - For Sentinel debugging, inspect raw STAC assets for a specific item via `GET /api/archive/item-assets?item_id=<id>&source_id=merlin-s2&collection_id=sentinel-2-l2a`.
 - To test direct Sentinel asset downloads into `/images`, run:
   - `./.venv/bin/python backend/scripts/download_sentinel_asset.py --item-id '<item-id>' --asset-key TCI_10m --source-id merlin-s2 --collection-id sentinel-2-l2a`
   - Full-resolution `TCI_10m` requires CDSE download credentials (`CDSE_DOWNLOAD_USERNAME` / `CDSE_DOWNLOAD_PASSWORD`), otherwise proxy calls may return `401/403`.
+- Plugin platform concept draft for extensibility planning:
+  - `docs/extensible-plugin-platform-concept.md`

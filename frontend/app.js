@@ -61,6 +61,7 @@ const state = {
   taskingProjects: [],
   taskingOrders: [],
   taskingRefreshAt: null,
+  taskingIgnoreOutsideClickUntil: 0,
   workflows: [],
   skills: [],
   providers: [],
@@ -2796,6 +2797,9 @@ function openTaskingForm({ targetType, geometry, containerPoint }) {
   taskingFormPopoverEl.style.left = `${x}px`;
   taskingFormPopoverEl.style.top = `${y}px`;
   taskingFormPopoverEl.classList.add("open");
+  // Ignore the originating map click so the document-level outside-click
+  // handler does not immediately cancel the newly opened tasking form.
+  state.taskingIgnoreOutsideClickUntil = Date.now() + 350;
 }
 
 function restoreTaskingDoubleClickZoom() {
@@ -7218,7 +7222,9 @@ document.addEventListener("click", (evt) => {
   if (mapContextMenuEl && !mapContextMenuEl.contains(evt.target)) hideContextMenu();
   if (taskingTypeMenuEl && !taskingTypeMenuEl.contains(evt.target)) hideTaskingTypeMenu();
   if (taskingFormPopoverEl && !taskingFormPopoverEl.contains(evt.target)) {
-    if (taskingFormPopoverEl.classList.contains("open")) cancelTaskingInteraction();
+    if (taskingFormPopoverEl.classList.contains("open") && Date.now() >= Number(state.taskingIgnoreOutsideClickUntil || 0)) {
+      cancelTaskingInteraction();
+    }
   }
   if (animateSeriesPopoverEl && animateSeriesBtnEl) {
     const target = evt.target;

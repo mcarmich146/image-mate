@@ -47,7 +47,19 @@ class TaskingApiTests(unittest.TestCase):
                 row = copy.deepcopy(order)
                 row.setdefault("properties", {})["status"] = status
                 out.append(row)
-            return {"results": out[:limit], "next": None}
+            return {
+                "type": "FeatureCollection",
+                "features": out[:limit],
+                "next": None,
+            }
+
+        def fake_get_order(order_id: str, contract_id: str | None = None) -> dict:
+            for row in store["orders"]:  # type: ignore[assignment]
+                if str(row.get("id")) == str(order_id):
+                    result = copy.deepcopy(row)
+                    result.setdefault("properties", {})["status"] = "programming"
+                    return result
+            raise RuntimeError("order not found")
 
         payload = {
             "target_type": "point",
@@ -65,7 +77,8 @@ class TaskingApiTests(unittest.TestCase):
         }
 
         with patch.object(main.client, "create_order", side_effect=fake_create_order) as mocked_create, \
-             patch.object(main.client, "list_orders", side_effect=fake_list_orders):
+             patch.object(main.client, "list_orders", side_effect=fake_list_orders), \
+             patch.object(main.client, "get_order", side_effect=fake_get_order):
             create_resp = self.api.post("/api/tasking/orders", json=payload)
             self.assertEqual(create_resp.status_code, 200, create_resp.text)
             create_body = create_resp.json()
@@ -85,6 +98,11 @@ class TaskingApiTests(unittest.TestCase):
             second_rows = second_list.json().get("orders", [])
             self.assertEqual(len(second_rows), 1)
             self.assertEqual(second_rows[0].get("status"), "programming")
+
+            detail = self.api.get("/api/tasking/orders/ord-001?contract_id=contract-123")
+            self.assertEqual(detail.status_code, 200, detail.text)
+            self.assertEqual(detail.json().get("order", {}).get("id"), "ord-001")
+            self.assertEqual(detail.json().get("order", {}).get("status"), "programming")
 
             projects_resp = self.api.get("/api/tasking/projects?limit=20&contract_id=contract-123")
             self.assertEqual(projects_resp.status_code, 200, projects_resp.text)
