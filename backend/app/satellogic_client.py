@@ -419,7 +419,7 @@ def normalize_item(feature: dict[str, Any]) -> dict[str, Any]:
 
 
 def _extract_gsd(props: dict[str, Any]) -> float | None:
-    for key in ("eo:gsd", "gsd", "satl:gsd"):
+    for key in ("satl:gsd", "gsd", "eo:gsd"):
         value = props.get(key)
         if value is None:
             continue
