@@ -289,6 +289,28 @@ class SourceService:
         contract = contract_id or (str(self._cfg.satellogic_contract_id or "").strip() or None)
         return self._manager.download_bytes(url, contract_id=contract, source_hint=source_hint)
 
+    def _normalize_contract_candidate(self, value: str | None) -> str:
+        raw = str(value or "").strip()
+        if not raw:
+            return ""
+        contracts = self.list_contracts("satellogic")
+        if not contracts:
+            return raw
+
+        by_id = {str(row.get("id") or "").strip().lower(): str(row.get("id") or "").strip() for row in contracts}
+        if raw.lower() in by_id and by_id[raw.lower()]:
+            return by_id[raw.lower()]
+
+        by_name = {
+            str(row.get("name") or "").strip().lower(): str(row.get("id") or "").strip()
+            for row in contracts
+            if str(row.get("name") or "").strip() and str(row.get("id") or "").strip()
+        }
+        mapped = by_name.get(raw.lower())
+        if mapped:
+            return mapped
+        return raw
+
     def fetch_satellogic_cog_tile(
         self,
         *,
@@ -314,8 +336,21 @@ class SourceService:
         if parsed.scheme not in {"s3", "http", "https"}:
             raise RuntimeError("COG source URL must use s3/http/https")
 
+        requested_contract_id = self._normalize_contract_candidate(contract_id) or None
+        effective_contract_id = (
+            requested_contract_id
+            or self._normalize_contract_candidate(str(getattr(sat_client, "contract_id", "") or "").strip())
+            or str(self.default_contract_id() or "").strip()
+            or None
+        )
+        if effective_contract_id:
+            try:
+                sat_client.contract_id = effective_contract_id
+            except Exception:
+                pass
+
         headers = sat_client.auth_headers(
-            contract_id=(contract_id or sat_client.contract_id or None),
+            contract_id=effective_contract_id,
             prefer_oauth=True,
             ignore_static_bearer=True,
         )
@@ -352,6 +387,26 @@ class SourceService:
                     retry_params = [entry for entry in params if entry[0] != "buffer"]
                     response = requests.get(upstream_url, headers=headers, params=retry_params, timeout=timeout)
                 status = int(response.status_code)
+                if (
+                    status == 401
+                    and (attempt + 1) < attempts
+                ):
+                    detail = str(getattr(response, "text", "") or "").lower()
+                    if "contract" in detail:
+                        fallback_contract = self._normalize_contract_candidate(self.default_contract_id()) or None
+                        if fallback_contract and fallback_contract != effective_contract_id:
+                            effective_contract_id = fallback_contract
+                            try:
+                                sat_client.contract_id = fallback_contract
+                            except Exception:
+                                pass
+                            headers = sat_client.auth_headers(
+                                contract_id=effective_contract_id,
+                                prefer_oauth=True,
+                                ignore_static_bearer=True,
+                            )
+                            time.sleep(0.2)
+                            continue
                 if status in retryable_codes and attempt + 1 < attempts:
                     time.sleep(0.35 * (attempt + 1))
                     continue
@@ -508,22 +563,42 @@ class SourceService:
 
     def default_contract_id(self) -> str:
         sat_client = getattr(self._manager, "satellogic_client", None) if self._manager else None
+        cfg_value = str(self._cfg.satellogic_contract_id or "").strip()
+        env_value = str(os.getenv("SATELLOGIC_CONTRACT_ID", "")).strip()
+
+        # Try configured/runtime values first, but normalize names -> ids when contract discovery is available.
+        for candidate in (
+            str(getattr(sat_client, "contract_id", "") or "").strip() if sat_client is not None else "",
+            env_value,
+            cfg_value,
+        ):
+            normalized = self._normalize_contract_candidate(candidate)
+            if normalized:
+                if sat_client is not None:
+                    sat_client.contract_id = normalized
+                return normalized
+
+        contracts = self.list_contracts("satellogic")
+        if contracts:
+            value = self._normalize_contract_candidate(str(contracts[0].get("id") or "").strip())
+            if value:
+                if sat_client is not None:
+                    sat_client.contract_id = value
+                return value
+
+        # Last fallback if discovery is unavailable.
         if sat_client is not None:
             value = str(getattr(sat_client, "contract_id", "") or "").strip()
             if value:
                 return value
-        env_value = str(os.getenv("SATELLOGIC_CONTRACT_ID", "")).strip()
         if env_value:
             if sat_client is not None:
                 sat_client.contract_id = env_value
             return env_value
-        contracts = self.list_contracts("satellogic")
-        if contracts:
-            value = str(contracts[0].get("id") or "").strip()
-            if value and sat_client is not None:
-                sat_client.contract_id = value
-            return value
-        return str(self._cfg.satellogic_contract_id or "").strip()
+        return cfg_value
+
+    def resolve_contract_id(self, contract_id: str | None) -> str:
+        return self._normalize_contract_candidate(contract_id)
 
     def runtime_summary(self):
         sat_auth_mode = str(self._cfg.satellogic_auth_mode or "").strip()

@@ -156,6 +156,9 @@ class ImageMateMainDock(QDockWidget):
     def current_source_id(self):
         return str(self.source_combo.currentData() or "").strip()
 
+    def create_new_layer_on_selection_enabled(self):
+        return bool(self.create_new_layer_on_selection.isChecked())
+
     def current_search_payload(self):
         return {
             "source_id": self.current_source_id(),
@@ -239,6 +242,12 @@ class ImageMateMainDock(QDockWidget):
         self.remove_existing_layers.setChecked(True)
         self.remove_existing_layers.setToolTip("Remove existing layers with names starting with 'Image Mate'.")
         btn_row.addWidget(self.remove_existing_layers)
+        self.create_new_layer_on_selection = QCheckBox("Create New Layer Per Selection")
+        self.create_new_layer_on_selection.setChecked(False)
+        self.create_new_layer_on_selection.setToolTip(
+            "When enabled, selecting a result adds a new imagery layer instead of replacing the previous one."
+        )
+        btn_row.addWidget(self.create_new_layer_on_selection)
         btn_row.addStretch(1)
 
         self.search_log = QTextEdit()

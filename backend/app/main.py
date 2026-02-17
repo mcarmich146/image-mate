@@ -7,17 +7,19 @@ import logging
 import time
 import base64
 import re
+import struct
 import threading
 import uuid
 import zipfile
 import xml.etree.ElementTree as ET
-from urllib.parse import quote, urlparse
+import zlib
+from urllib.parse import parse_qs, quote, urlparse
 from io import BytesIO
 
 import requests
 from PIL import Image
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -68,6 +70,45 @@ sources = SourceManager(client, merlin_client)
 TRANSPARENT_PNG_1X1 = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII="
 )
+_TRANSPARENT_TILE_CACHE: dict[int, bytes] = {}
+_TILE_CONTRACT_CACHE_LOCK = threading.Lock()
+_TILE_CONTRACT_CACHE = {
+    "value": "",
+    "fetched_at": 0.0,
+    "last_attempt": 0.0,
+    "last_error": "",
+}
+_TILE_CONTRACT_CACHE_TTL_SECONDS = 1800.0
+_TILE_CONTRACT_RETRY_SECONDS = 60.0
+
+
+def _png_chunk(tag: bytes, data: bytes) -> bytes:
+    chunk_type = bytes(tag or b"")
+    payload = bytes(data or b"")
+    checksum = zlib.crc32(chunk_type + payload) & 0xFFFFFFFF
+    return struct.pack("!I", len(payload)) + chunk_type + payload + struct.pack("!I", checksum)
+
+
+def _transparent_png_tile(size: int) -> bytes:
+    tile_size = max(1, int(size or 256))
+    cached = _TRANSPARENT_TILE_CACHE.get(tile_size)
+    if cached is not None:
+        return cached
+
+    row = b"\x00" + (b"\x00\x00\x00\x00" * tile_size)
+    raw = row * tile_size
+    compressed = zlib.compress(raw, level=9)
+    ihdr = struct.pack("!IIBBBBB", tile_size, tile_size, 8, 6, 0, 0, 0)
+    payload = b"".join(
+        [
+            b"\x89PNG\r\n\x1a\n",
+            _png_chunk(b"IHDR", ihdr),
+            _png_chunk(b"IDAT", compressed),
+            _png_chunk(b"IEND", b""),
+        ]
+    )
+    _TRANSPARENT_TILE_CACHE[tile_size] = payload
+    return payload
 
 if settings.cors_origins:
     app.add_middleware(
@@ -402,6 +443,112 @@ def _record_tile_delivery(source_key: str, byte_count: int, elapsed_ms: int, *, 
     bucket["ms"] = int(bucket.get("ms", 0)) + max(0, int(elapsed_ms or 0))
     if error:
         bucket["errors"] = int(bucket.get("errors", 0)) + 1
+
+
+def _short_contract_id(contract_id: str | None) -> str:
+    value = str(contract_id or "").strip()
+    if not value:
+        return ""
+    if len(value) <= 18:
+        return value
+    return f"{value[:10]}...{value[-6:]}"
+
+
+def _resolve_tile_contract_id(contract_id: str | None, *, force_refresh: bool = False) -> str | None:
+    requested = str(contract_id or "").strip()
+    if requested:
+        return requested
+
+    runtime_value = str(getattr(client, "contract_id", "") or "").strip()
+    if runtime_value:
+        return runtime_value
+
+    configured_value = str(getattr(settings, "satellogic_contract_id", "") or "").strip()
+    if configured_value:
+        try:
+            client.contract_id = configured_value
+        except Exception:
+            pass
+        return configured_value
+
+    now = time.time()
+    with _TILE_CONTRACT_CACHE_LOCK:
+        cached = str(_TILE_CONTRACT_CACHE.get("value") or "").strip()
+        fetched_at = float(_TILE_CONTRACT_CACHE.get("fetched_at") or 0.0)
+        last_attempt = float(_TILE_CONTRACT_CACHE.get("last_attempt") or 0.0)
+        if cached and not force_refresh and (now - fetched_at) <= _TILE_CONTRACT_CACHE_TTL_SECONDS:
+            return cached
+        if not force_refresh and (now - last_attempt) < _TILE_CONTRACT_RETRY_SECONDS:
+            return None
+        _TILE_CONTRACT_CACHE["last_attempt"] = now
+
+    resolved = ""
+    try:
+        rows = sources.list_contracts(SOURCE_SATELLOGIC)
+        for row in rows or []:
+            if not isinstance(row, dict):
+                continue
+            candidate = str(row.get("id") or row.get("contract_id") or "").strip()
+            if candidate:
+                resolved = candidate
+                break
+    except Exception as exc:
+        with _TILE_CONTRACT_CACHE_LOCK:
+            _TILE_CONTRACT_CACHE["last_error"] = str(exc)
+        logger.warning("tile_proxy contract auto-resolve failed error=%s", exc)
+        return None
+
+    with _TILE_CONTRACT_CACHE_LOCK:
+        _TILE_CONTRACT_CACHE["value"] = resolved
+        _TILE_CONTRACT_CACHE["fetched_at"] = now if resolved else 0.0
+        _TILE_CONTRACT_CACHE["last_error"] = ""
+
+    if not resolved:
+        logger.warning("tile_proxy contract auto-resolve returned no contracts")
+        return None
+
+    try:
+        client.contract_id = resolved
+    except Exception:
+        pass
+
+    logger.info("tile_proxy contract auto-resolved contract=%s", _short_contract_id(resolved))
+    return resolved
+
+
+def _extract_embedded_tile_options(url_value: str) -> tuple[str, dict[str, list[str]]]:
+    value = str(url_value or "").strip()
+    if not value or "&" not in value or "=" not in value:
+        return value, {}
+
+    base_url, sep, tail = value.partition("&")
+    if not sep or not tail or "=" not in tail:
+        return value, {}
+
+    parsed = parse_qs(tail, keep_blank_values=False)
+    if not parsed:
+        return value, {}
+
+    recognized = {
+        "tileMatrixSetId",
+        "format",
+        "scale",
+        "buffer",
+        "bidx",
+        "contract_id",
+        "render_layer",
+        "cloud_mask_url",
+    }
+    embedded: dict[str, list[str]] = {}
+    for key in recognized:
+        values = parsed.get(key) or []
+        cleaned = [str(item).strip() for item in values if str(item).strip()]
+        if cleaned:
+            embedded[key] = cleaned
+
+    if not embedded:
+        return value, {}
+    return base_url, embedded
 
 
 def _safe_filename(name: str, fallback: str = "asset.bin") -> str:
@@ -1379,8 +1526,9 @@ def _cog_upstream_request(
         params.append(("bidx", str(band)))
 
     auth_mode = "oauth_client_credentials"
+    effective_contract_id = _resolve_tile_contract_id(contract_id)
     request_headers = client.auth_headers(
-        contract_id=contract_id,
+        contract_id=effective_contract_id,
         prefer_oauth=True,
         ignore_static_bearer=True,
     )
@@ -1388,20 +1536,43 @@ def _cog_upstream_request(
     if not auth_header.startswith("Bearer "):
         raise HTTPException(status_code=503, detail="OAuth client-credentials token is unavailable")
 
-    upstream = requests.get(
-        upstream_url,
-        headers=request_headers,
-        params=params,
-        timeout=90,
-    )
-    if upstream.status_code == 400 and buffer > 0:
-        retry_params = [entry for entry in params if entry[0] != "buffer"]
-        upstream = requests.get(
+    def _request_with_retry(headers: dict[str, str]) -> requests.Response:
+        response = requests.get(
             upstream_url,
-            headers=request_headers,
-            params=retry_params,
+            headers=headers,
+            params=params,
             timeout=90,
         )
+        if response.status_code == 400 and buffer > 0:
+            retry_params = [entry for entry in params if entry[0] != "buffer"]
+            response = requests.get(
+                upstream_url,
+                headers=headers,
+                params=retry_params,
+                timeout=90,
+            )
+        return response
+
+    upstream = _request_with_retry(request_headers)
+    if upstream.status_code == 401 and not str(contract_id or "").strip():
+        detail = str(upstream.text or "").lower()
+        if "contract" in detail:
+            refreshed_contract_id = _resolve_tile_contract_id(None, force_refresh=True)
+            if refreshed_contract_id and refreshed_contract_id != effective_contract_id:
+                logger.info(
+                    "tile_proxy retrying request after contract refresh old=%s new=%s zxy=%s/%s/%s",
+                    _short_contract_id(effective_contract_id),
+                    _short_contract_id(refreshed_contract_id),
+                    z,
+                    x,
+                    y,
+                )
+                request_headers = client.auth_headers(
+                    contract_id=refreshed_contract_id,
+                    prefer_oauth=True,
+                    ignore_static_bearer=True,
+                )
+                upstream = _request_with_retry(request_headers)
     return upstream, auth_mode
 
 
@@ -1636,13 +1807,14 @@ def _render_thematic_tile(
 
 @app.get("/api/raster/cog/tiles/{z}/{x}/{y}")
 def raster_cog_tile_proxy(
+    request: Request,
     z: int,
     x: int,
     y: int,
     url: str = Query(..., alias="url"),
     contract_id: str | None = Query(default=None),
-    scale: int = Query(default=2),
-    buffer: int = Query(default=0),
+    scale: int = Query(default=1),
+    buffer: int = Query(default=1),
     tileMatrixSetId: str = Query(default="WebMercatorQuad"),
     format: str = Query(default="png"),
     bidx: list[int] = Query(default=[1, 2, 3]),
@@ -1650,6 +1822,62 @@ def raster_cog_tile_proxy(
     cloud_mask_url: str | None = Query(default=None),
 ):
     try:
+        query_keys = set(request.query_params.keys())
+        extracted_url, embedded_options = _extract_embedded_tile_options(url)
+        if embedded_options:
+            url = extracted_url
+            if "contract_id" not in query_keys:
+                contract_values = embedded_options.get("contract_id") or []
+                if contract_values:
+                    contract_id = contract_values[0]
+            if "scale" not in query_keys:
+                scale_values = embedded_options.get("scale") or []
+                if scale_values:
+                    try:
+                        scale = max(1, int(scale_values[0]))
+                    except Exception:
+                        pass
+            if "buffer" not in query_keys:
+                buffer_values = embedded_options.get("buffer") or []
+                if buffer_values:
+                    try:
+                        buffer = max(0, int(buffer_values[0]))
+                    except Exception:
+                        pass
+            if "tileMatrixSetId" not in query_keys:
+                tile_values = embedded_options.get("tileMatrixSetId") or []
+                if tile_values:
+                    tileMatrixSetId = tile_values[0]
+            if "format" not in query_keys:
+                format_values = embedded_options.get("format") or []
+                if format_values:
+                    format = format_values[0]
+            if "render_layer" not in query_keys:
+                layer_values = embedded_options.get("render_layer") or []
+                if layer_values:
+                    render_layer = layer_values[0]
+            if "cloud_mask_url" not in query_keys:
+                mask_values = embedded_options.get("cloud_mask_url") or []
+                if mask_values:
+                    cloud_mask_url = mask_values[0]
+            if "bidx" not in query_keys:
+                band_values = embedded_options.get("bidx") or []
+                parsed_bidx: list[int] = []
+                for raw in band_values:
+                    try:
+                        parsed_bidx.append(int(raw))
+                    except Exception:
+                        continue
+                if parsed_bidx:
+                    bidx = parsed_bidx
+            logger.info(
+                "tile_proxy decoded_embedded_query zxy=%s/%s/%s keys=%s",
+                z,
+                x,
+                y,
+                ",".join(sorted(embedded_options.keys())),
+            )
+
         if z < 0 or x < 0 or y < 0:
             raise HTTPException(status_code=400, detail="Invalid tile coordinates")
         parsed = urlparse(url)
@@ -1720,45 +1948,44 @@ def raster_cog_tile_proxy(
                 image_format=format,
                 bidx=bidx,
             )
-            if upstream.status_code == 404:
+            if upstream.status_code >= 400:
+                upstream_status = int(upstream.status_code)
+                tile_size = 256 * max(1, int(scale or 1))
+                empty_tile = _transparent_png_tile(tile_size)
+                fallback_ttl = 60 if upstream_status == 404 else 20
                 elapsed_ms = int((time.perf_counter() - started) * 1000)
                 app.state.asset_cache[cache_key] = {
-                    "content": TRANSPARENT_PNG_1X1,
+                    "content": empty_tile,
                     "media_type": "image/png",
-                    "expires_at": now + 60,
+                    "expires_at": now + fallback_ttl,
                 }
                 _prune_asset_cache()
-                _record_tile_delivery("newsat", len(TRANSPARENT_PNG_1X1), elapsed_ms)
-                logger.info(
-                    "tile_proxy empty zxy=%s/%s/%s ms=%s",
-                    z,
-                    x,
-                    y,
-                    elapsed_ms,
-                )
+                is_error = upstream_status != 404
+                _record_tile_delivery("newsat", len(empty_tile), elapsed_ms, error=is_error)
+                detail = (upstream.text or "").strip().replace("\n", " ")[:220]
+                if upstream_status == 404:
+                    logger.info("tile_proxy empty zxy=%s/%s/%s ms=%s", z, x, y, elapsed_ms)
+                else:
+                    logger.warning(
+                        "tile_proxy upstream_error auth=%s zxy=%s/%s/%s status=%s detail=%s fallback=empty_png",
+                        auth_mode,
+                        z,
+                        x,
+                        y,
+                        upstream_status,
+                        detail,
+                    )
                 return Response(
-                    content=TRANSPARENT_PNG_1X1,
+                    content=empty_tile,
                     media_type="image/png",
                     headers={
-                        "Cache-Control": "public, max-age=60",
+                        "Cache-Control": f"public, max-age={fallback_ttl}",
                         "X-Proxy-Cache": "miss",
                         "X-Tile-Empty": "1",
+                        "X-Tile-Size": str(tile_size),
+                        "X-Upstream-Status": str(upstream_status),
                     },
                 )
-            if upstream.status_code >= 400:
-                detail = (upstream.text or "").strip().replace("\n", " ")[:220]
-                elapsed_ms = int((time.perf_counter() - started) * 1000)
-                _record_tile_delivery("newsat", 0, elapsed_ms, error=True)
-                logger.warning(
-                    "tile_proxy upstream_error auth=%s zxy=%s/%s/%s status=%s detail=%s",
-                    auth_mode,
-                    z,
-                    x,
-                    y,
-                    upstream.status_code,
-                    detail,
-                )
-                raise HTTPException(status_code=upstream.status_code, detail=f"Tile fetch failed upstream: {upstream.status_code}")
 
             media_type = upstream.headers.get("Content-Type", "image/png")
             content = upstream.content

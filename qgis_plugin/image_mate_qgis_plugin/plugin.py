@@ -11,9 +11,11 @@ from urllib.request import urlopen
 from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtCore import QTimer
 from qgis.PyQt.QtCore import QVariant
+from qgis.PyQt.QtCore import QStandardPaths
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import QAction
 from qgis.core import (
+    QgsApplication,
     Qgis,
     QgsCoordinateReferenceSystem,
     QgsCoordinateTransform,
@@ -62,6 +64,7 @@ class ImageMatePlugin:
         self._auto_stream_enabled = True
         self._auto_stream_zoom_threshold = 13
         self._satellogic_highres_zoom_threshold = 17
+        self._satellogic_max_stream_sources = 8
         self._last_auto_stream_at = 0.0
         self._last_auto_stream_item_id = ""
         self._map_extent_signal_connected = False
@@ -74,6 +77,11 @@ class ImageMatePlugin:
         self._stream_progress_baseline = {}
         self._stream_progress_last_tuple = None
         self._stream_progress_idle_ticks = 0
+        self._stream_progress_last_summary_key = ""
+        self._stream_progress_last_summary_at = 0.0
+        self._stream_progress_last_error_key = ""
+        self._stream_progress_last_error_at = 0.0
+        self._stream_last_setup_key = ""
         self._last_search_request = None
         self._sat_detail_items = []
         self._sat_detail_index = {
@@ -84,6 +92,12 @@ class ImageMatePlugin:
         }
         self._sat_detail_fetch_key = ""
         self._sat_detail_fetch_at = 0.0
+        self._disk_log_path = ""
+        self._disk_log_fp = None
+        self._show_debug_on_screen = False
+        self._show_search_log_on_screen = False
+        self._message_log_connected = False
+        self.local_tile_proxy.set_event_logger(self._on_local_proxy_event)
 
     def initGui(self):
         icon_path = str(self.plugin_dir / "icons" / "image_mate.svg")
@@ -97,6 +111,13 @@ class ImageMatePlugin:
         if canvas is not None and not self._map_extent_signal_connected:
             canvas.extentsChanged.connect(self._on_map_extent_changed)
             self._map_extent_signal_connected = True
+        self._init_disk_log()
+        if not self._message_log_connected:
+            try:
+                QgsApplication.messageLog().messageReceived.connect(self._on_qgis_message_logged)
+                self._message_log_connected = True
+            except Exception:
+                self._message_log_connected = False
         self._log_info("Plugin initialized")
 
     def unload(self):
@@ -118,7 +139,14 @@ class ImageMatePlugin:
         self._close_dock()
         if self.local_tile_proxy is not None:
             self.local_tile_proxy.stop()
+        if self._message_log_connected:
+            try:
+                QgsApplication.messageLog().messageReceived.disconnect(self._on_qgis_message_logged)
+            except Exception:
+                pass
+            self._message_log_connected = False
         self._log_info("Plugin unloaded")
+        self._close_disk_log()
 
     def show_dock(self):
         if self.dock is None:
@@ -174,18 +202,15 @@ class ImageMatePlugin:
         request_payload = None
         if self.dock is not None:
             self.dock.set_search_enabled(False)
-        if self.dock is not None:
-            self.dock.append_search_log("Starting search against provider...")
+        self._append_search_log("Starting search against provider...")
         try:
             remove_existing_layers = bool(payload.get("remove_existing_layers"))
             if remove_existing_layers:
                 removed_count = self._remove_existing_image_mate_layers()
-                if self.dock is not None:
-                    self.dock.append_search_log(f"Removed {removed_count} existing Image Mate layer(s).")
+                self._append_search_log(f"Removed {removed_count} existing Image Mate layer(s).")
             geometry = self._current_extent_geometry_wgs84()
             request_payload = self.search_controller.build_search_request(payload, geometry)
-            if self.dock is not None:
-                self.dock.append_search_log(json.dumps(request_payload, indent=2))
+            self._append_search_log(json.dumps(request_payload, indent=2))
             self._last_search_request = dict(request_payload)
             items = self._search_with_satellogic_detail_parity(request_payload)
             self.search_items = {str(item.get("id") or ""): item for item in items or []}
@@ -195,9 +220,9 @@ class ImageMatePlugin:
             self._on_map_extent_changed()
             if self.dock is not None:
                 self.dock.set_results(items)
-                self.dock.append_search_log(
-                    f"Search returned {len(items)} items for source={request_payload.get('source_id')} collection={request_payload.get('collection_id')}"
-                )
+            self._append_search_log(
+                f"Search returned {len(items)} items for source={request_payload.get('source_id')} collection={request_payload.get('collection_id')}"
+            )
             self.iface.messageBar().pushMessage(
                 "Image Mate",
                 f"Search completed: {len(items)} items",
@@ -205,10 +230,9 @@ class ImageMatePlugin:
                 duration=5,
             )
         except Exception as exc:
-            if self.dock is not None:
-                if request_payload:
-                    self.dock.append_search_log(json.dumps(request_payload, indent=2))
-                self.dock.append_search_log(f"Search failed: {exc}")
+            if request_payload:
+                self._append_search_log(json.dumps(request_payload, indent=2), level=Qgis.Warning)
+            self._append_search_log(f"Search failed: {exc}", level=Qgis.Warning)
             self.iface.messageBar().pushMessage("Image Mate", f"Search failed: {exc}", level=Qgis.Critical, duration=10)
         finally:
             if self.dock is not None:
@@ -223,28 +247,48 @@ class ImageMatePlugin:
             return
         source_id = str(item.get("source_id") or "").strip().lower()
         detail_mode = self._is_detail_zoom()
+        create_new_layer_on_select = bool(
+            self.dock is not None and self.dock.create_new_layer_on_selection_enabled()
+        )
 
         self._stop_stream_progress_monitor()
+        self._append_search_log(f"Loading imagery for selection: {item_key}")
         if self.dock is not None:
-            self.dock.append_search_log(f"Loading imagery for selection: {item_key}")
             self.dock.set_stream_status(f"Stream status: preparing {source_id or 'source'} item {item_key}")
         try:
             stream_item = item
             if source_id == "satellogic" and detail_mode:
                 stream_item = self._resolve_satellogic_stream_item(item)
-            if stream_item is not item and self.dock is not None:
-                self.dock.append_search_log(
+            stream_source_urls = None
+            if source_id == "satellogic":
+                stream_source_urls = self._satellogic_stream_source_urls(stream_item, overview_item=item)
+                if len(stream_source_urls or []) > 1:
+                    self._append_debug_log(
+                        "Satellogic stream candidates resolved: "
+                        f"item={item.get('id')} strips={len(stream_source_urls)}"
+                    )
+            if stream_item is not item:
+                self._append_search_log(
                     "Resolved selection to l1d-sr detail item "
                     f"{stream_item.get('id')} (from {item.get('id')})."
                 )
-            layer = self._build_stream_layer_for_item(stream_item)
+            layer = self._build_stream_layer_for_item(stream_item, source_urls=stream_source_urls)
             if layer is not None:
-                self._replace_preview_layer(layer)
-                if self.dock is not None:
-                    self.dock.append_search_log(f"Loaded streaming raster layer: {layer.name()}")
+                self._replace_preview_layer(layer, replace_existing=not create_new_layer_on_select)
+                if create_new_layer_on_select:
+                    self._append_search_log(f"Loaded streaming raster layer (new layer): {layer.name()}")
+                else:
+                    self._append_search_log(f"Loaded streaming raster layer: {layer.name()}")
                 self._last_auto_stream_item_id = item_key
                 if source_id == "satellogic":
-                    self._start_stream_progress_monitor(item_key)
+                    using_local_proxy = (
+                        self.local_tile_proxy.is_running()
+                        and self.local_tile_proxy.base_url in str(layer.source() or "")
+                    )
+                    if using_local_proxy:
+                        self._start_stream_progress_monitor(item_key)
+                    else:
+                        self._set_stream_status("Stream status: active (satellogic via backend proxy)")
                 else:
                     self._set_stream_status(f"Stream status: active ({source_id})")
                 self.iface.messageBar().pushMessage(
@@ -256,15 +300,16 @@ class ImageMatePlugin:
                 return
 
             layer = self._load_item_imagery_layer(item)
-            self._replace_preview_layer(layer)
-            if self.dock is not None:
-                self.dock.append_search_log(f"Loaded raster layer: {layer.name()}")
+            self._replace_preview_layer(layer, replace_existing=not create_new_layer_on_select)
+            if create_new_layer_on_select:
+                self._append_search_log(f"Loaded raster layer (new layer): {layer.name()}")
+            else:
+                self._append_search_log(f"Loaded raster layer: {layer.name()}")
             self._last_auto_stream_item_id = item_key
             self._set_stream_status(f"Stream status: fallback download loaded for {item_key}")
             self.iface.messageBar().pushMessage("Image Mate", f"Imagery loaded for {item_key}", level=Qgis.Success, duration=5)
         except Exception as exc:
-            if self.dock is not None:
-                self.dock.append_search_log(f"Imagery load failed for {item_key}: {exc}")
+            self._append_search_log(f"Imagery load failed for {item_key}: {exc}", level=Qgis.Warning)
             self._set_stream_status(f"Stream status: failed for {item_key} ({exc})")
             self.iface.messageBar().pushMessage("Image Mate", f"Imagery load failed: {exc}", level=Qgis.Warning, duration=8)
 
@@ -307,6 +352,7 @@ class ImageMatePlugin:
         lines = [
             f"Repo root used: {runtime.get('repo_root_used') or 'not resolved'}",
             f"Env file used: {runtime.get('env_file_used') or 'not found'}",
+            f"Debug log file: {self._disk_log_path or 'not initialized'}",
             f"Backend API base URL: {self._backend_api_base_url()}",
             f"Local tile proxy: {self.local_tile_proxy.base_url if self.local_tile_proxy.is_running() else 'unavailable'}",
             f"Satellogic auth mode: {runtime['satellogic_auth_mode']}",
@@ -330,6 +376,121 @@ class ImageMatePlugin:
     def _set_stream_status(self, text):
         if self.dock is not None:
             self.dock.set_stream_status(str(text or "").strip() or "Stream status: idle")
+
+    def _append_search_log(self, text, level=Qgis.Info):
+        message = str(text or "").strip()
+        if not message:
+            return
+        self._write_disk_log(message, level=level, tag="search")
+        if self._show_search_log_on_screen and self.dock is not None:
+            self.dock.append_search_log(message)
+
+    def _append_debug_log(self, text, level=Qgis.Info):
+        message = str(text or "").strip()
+        if not message:
+            return
+        self._write_disk_log(message, level=level, tag="debug")
+        if self._show_debug_on_screen and self.dock is not None:
+            self.dock.append_search_log(message)
+
+    def _init_disk_log(self):
+        if self._disk_log_fp is not None:
+            return
+        base_dir = str(QStandardPaths.writableLocation(QStandardPaths.AppDataLocation) or "").strip()
+        if not base_dir:
+            base_dir = str(self.temp_dir)
+        log_dir = Path(base_dir) / "image_mate_logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now(tz=timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        log_path = log_dir / f"image_mate_qgis_{stamp}.log"
+        self._disk_log_fp = log_path.open("a", encoding="utf-8")
+        self._disk_log_path = str(log_path)
+        self._prune_disk_logs(log_dir, keep_count=20)
+        self._write_disk_log("disk log initialized", level=Qgis.Info, tag="plugin")
+
+    def _close_disk_log(self):
+        fp = self._disk_log_fp
+        self._disk_log_fp = None
+        if fp is None:
+            return
+        try:
+            fp.flush()
+        except Exception:
+            pass
+        try:
+            fp.close()
+        except Exception:
+            pass
+
+    @staticmethod
+    def _prune_disk_logs(log_dir, keep_count=20):
+        try:
+            files = sorted(
+                [path for path in Path(log_dir).glob("image_mate_qgis_*.log") if path.is_file()],
+                key=lambda path: path.stat().st_mtime,
+                reverse=True,
+            )
+            for stale in files[int(max(1, keep_count)):]:
+                try:
+                    stale.unlink()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    @staticmethod
+    def _level_name(level):
+        try:
+            value = int(level)
+        except Exception:
+            return "INFO"
+        if value == int(Qgis.Warning):
+            return "WARN"
+        if value == int(Qgis.Critical):
+            return "CRIT"
+        if value == int(Qgis.Success):
+            return "OK"
+        return "INFO"
+
+    def _write_disk_log(self, message, *, level=Qgis.Info, tag="plugin"):
+        text = str(message or "").rstrip()
+        if not text:
+            return
+        if self._disk_log_fp is None:
+            try:
+                self._init_disk_log()
+            except Exception:
+                return
+        now = datetime.now(tz=timezone.utc).isoformat()
+        level_name = self._level_name(level)
+        safe_tag = str(tag or "plugin").strip() or "plugin"
+        line = f"{now} [{level_name}] [{safe_tag}] {text}"
+        try:
+            self._disk_log_fp.write(line + "\n")
+            self._disk_log_fp.flush()
+        except Exception:
+            pass
+
+    def _on_qgis_message_logged(self, message, tag, level):
+        source_tag = str(tag or "").strip() or "qgis"
+        # Capture actionable warnings/errors and WMS diagnostics to disk for offline debugging.
+        if source_tag == "ImageMate":
+            return
+        keep = source_tag == "WMS"
+        if not keep:
+            try:
+                keep = int(level) >= int(Qgis.Warning)
+            except Exception:
+                keep = False
+        if keep:
+            self._write_disk_log(str(message or "").strip(), level=level, tag=source_tag)
+
+    def _on_local_proxy_event(self, message, level="info"):
+        text = str(message or "").strip()
+        if not text:
+            return
+        lvl = Qgis.Warning if str(level).strip().lower() in {"warn", "warning", "error", "critical"} else Qgis.Info
+        self._write_disk_log(text, level=lvl, tag="local-proxy")
 
     @staticmethod
     def _normalize_collection_id(collection_id):
@@ -364,16 +525,15 @@ class ImageMatePlugin:
             detail_request["limit"] = max(300, int(request_payload.get("limit") or 250))
             try:
                 detail_items = self.source_service.search(detail_request)
-                if self.dock is not None:
-                    self.dock.append_search_log(
-                        f"Detail parity fetch (l1d-sr) returned {len(detail_items)} items for streaming."
-                    )
+                self._append_search_log(
+                    f"Detail parity fetch (l1d-sr) returned {len(detail_items)} items for streaming."
+                )
             except Exception as exc:
                 detail_items = []
-                if self.dock is not None:
-                    self.dock.append_search_log(
-                        f"Detail parity fetch (l1d-sr) failed, using primary collection only: {exc}"
-                    )
+                self._append_search_log(
+                    f"Detail parity fetch (l1d-sr) failed, using primary collection only: {exc}",
+                    level=Qgis.Warning,
+                )
 
         self._sat_detail_items = list(detail_items or [])
         self._rebuild_sat_detail_index()
@@ -460,6 +620,89 @@ class ImageMatePlugin:
 
         return item
 
+    def _satellogic_detail_candidates_for_item(self, item):
+        if not isinstance(item, dict):
+            return []
+        if str(item.get("source_id") or "").strip().lower() != "satellogic":
+            return []
+        if not self._sat_detail_items:
+            return []
+
+        by_outcome = self._sat_detail_index.get("by_outcome", {})
+        by_datetime = self._sat_detail_index.get("by_datetime", {})
+        by_day = self._sat_detail_index.get("by_day", {})
+
+        outcome = self._item_outcome_key(item)
+        if outcome and by_outcome.get(outcome):
+            return list(by_outcome.get(outcome) or [])
+
+        dt = self._item_datetime_key(item)
+        if dt and by_datetime.get(dt):
+            return list(by_datetime.get(dt) or [])
+        if dt and len(dt) >= 10 and by_day.get(dt[:10]):
+            return list(by_day.get(dt[:10]) or [])
+        return []
+
+    def _satellogic_item_cog_source_url(self, item):
+        assets = item.get("assets") or {}
+        return self._extract_cog_source_url(
+            str(assets.get("visual_fullres") or "").strip()
+            or str(assets.get("visual") or "").strip()
+            or str(assets.get("analytic") or "").strip()
+        )
+
+    def _satellogic_stream_source_urls(self, stream_item, overview_item=None):
+        if str(stream_item.get("source_id") or "").strip().lower() != "satellogic":
+            return []
+
+        urls = []
+        seen = set()
+
+        def append_from(candidate):
+            if not isinstance(candidate, dict):
+                return
+            source_url = self._satellogic_item_cog_source_url(candidate)
+            if source_url and source_url not in seen:
+                seen.add(source_url)
+                urls.append(source_url)
+
+        append_from(stream_item)
+        if isinstance(overview_item, dict):
+            append_from(overview_item)
+
+        candidates = self._satellogic_detail_candidates_for_item(overview_item if isinstance(overview_item, dict) else stream_item)
+        if not candidates and isinstance(overview_item, dict):
+            candidates = self._satellogic_detail_candidates_for_item(stream_item)
+
+        if candidates:
+            extent_geom = self._geometry_from_geojson(self._current_extent_geometry_wgs84())
+            intersecting = []
+            others = []
+            for candidate in candidates:
+                geom_payload = candidate.get("geometry")
+                candidate_geom = self._geometry_from_geojson(geom_payload) if isinstance(geom_payload, dict) else None
+                if (
+                    extent_geom is not None
+                    and not extent_geom.isEmpty()
+                    and candidate_geom is not None
+                    and not candidate_geom.isEmpty()
+                    and candidate_geom.intersects(extent_geom)
+                ):
+                    intersecting.append(candidate)
+                else:
+                    others.append(candidate)
+            for candidate in intersecting + others:
+                append_from(candidate)
+
+        max_sources = max(1, int(self._satellogic_max_stream_sources or 1))
+        if len(urls) > max_sources:
+            self._append_debug_log(
+                f"Capped Satellogic stream candidates from {len(urls)} to {max_sources} for responsive tile loading."
+            )
+            urls = urls[:max_sources]
+
+        return urls
+
     def _refresh_satellogic_detail_pool_for_viewport(self):
         request_payload = self._last_search_request or {}
         if str(request_payload.get("source_id") or "").strip().lower() != "satellogic":
@@ -506,13 +749,11 @@ class ImageMatePlugin:
             detail_items = self.source_service.search(detail_request)
             self._sat_detail_items = list(detail_items or [])
             self._rebuild_sat_detail_index()
-            if self.dock is not None:
-                self.dock.append_search_log(
-                    f"Viewport detail refresh (l1d-sr) loaded {len(self._sat_detail_items)} items."
-                )
+            self._append_search_log(
+                f"Viewport detail refresh (l1d-sr) loaded {len(self._sat_detail_items)} items."
+            )
         except Exception as exc:
-            if self.dock is not None:
-                self.dock.append_search_log(f"Viewport detail refresh failed: {exc}")
+            self._append_search_log(f"Viewport detail refresh failed: {exc}", level=Qgis.Warning)
 
     def _current_extent_geometry_wgs84(self):
         canvas = self.iface.mapCanvas()
@@ -607,14 +848,14 @@ class ImageMatePlugin:
         path.write_bytes(data)
         return path
 
-    def _build_stream_layer_for_item(self, item):
+    def _build_stream_layer_for_item(self, item, source_urls=None):
         source_id = str(item.get("source_id") or "").strip().lower()
         if source_id == "merlin-s2":
             layer = self._build_merlin_wmts_stream_layer(item)
             if layer is not None:
                 return layer
         if source_id == "satellogic":
-            layer = self._build_satellogic_proxy_stream_layer(item)
+            layer = self._build_satellogic_proxy_stream_layer(item, source_urls=source_urls)
             if layer is not None:
                 return layer
         return None
@@ -649,22 +890,35 @@ class ImageMatePlugin:
         layer = self._make_xyz_layer(xyz_url, layer_name, zmin=0, zmax=19)
         return layer if layer is not None and layer.isValid() else None
 
-    def _build_satellogic_proxy_stream_layer(self, item):
-        assets = item.get("assets") or {}
-        source_url = self._extract_cog_source_url(
-            str(assets.get("visual_fullres") or "").strip()
-            or str(assets.get("visual") or "").strip()
-            or str(assets.get("analytic") or "").strip()
-        )
-        if not source_url:
+    def _build_satellogic_proxy_stream_layer(self, item, source_urls=None):
+        resolved_sources = []
+        seen_sources = set()
+
+        for value in source_urls or []:
+            source = self._extract_cog_source_url(str(value or "").strip())
+            if source and source not in seen_sources:
+                seen_sources.add(source)
+                resolved_sources.append(source)
+
+        if not resolved_sources:
+            source = self._satellogic_item_cog_source_url(item)
+            if source:
+                resolved_sources.append(source)
+
+        if not resolved_sources:
             return None
+
         stream_base = self._satellogic_stream_base_url()
+        if len(resolved_sources) > 1 and self.local_tile_proxy.is_running():
+            stream_base = self.local_tile_proxy.base_url
+        if len(resolved_sources) > 1 and stream_base != self.local_tile_proxy.base_url:
+            resolved_sources = resolved_sources[:1]
         if not stream_base:
             return None
         scale = self._satellogic_tile_scale()
-        contract_id = str(item.get("contract_id") or "").strip() or self.source_service.default_contract_id()
+        raw_contract_id = str(item.get("contract_id") or "").strip() or self.source_service.default_contract_id()
+        contract_id = self.source_service.resolve_contract_id(raw_contract_id)
         params = [
-            ("url", source_url),
             ("tileMatrixSetId", "WebMercatorQuad"),
             ("format", "png"),
             ("scale", str(scale)),
@@ -674,9 +928,14 @@ class ImageMatePlugin:
             ("bidx", "2"),
             ("bidx", "3"),
         ]
+        for source in resolved_sources:
+            params.append(("url", source))
         if contract_id:
             params.append(("contract_id", contract_id))
         query = urlencode(params, doseq=True, safe=":/")
+        # QGIS datasource URI parsing splits on '&' at the provider URI level.
+        # Escape nested query separators so they remain inside the XYZ URL value.
+        query = query.replace("&", "%26")
         is_local_proxy = self.local_tile_proxy.is_running() and stream_base == self.local_tile_proxy.base_url
         if is_local_proxy:
             xyz_url = f"{stream_base}/satellogic/cog/tiles/{{z}}/{{x}}/{{y}}?{query}"
@@ -686,6 +945,26 @@ class ImageMatePlugin:
                 xyz_url = f"{base}/raster/cog/tiles/{{z}}/{{x}}/{{y}}?{query}"
             else:
                 xyz_url = f"{base}/api/raster/cog/tiles/{{z}}/{{x}}/{{y}}?{query}"
+        setup_key = "|".join(
+            [
+                str(stream_base),
+                str(scale),
+                str(contract_id or ""),
+                f"{len(resolved_sources)}:{resolved_sources[0]}:{resolved_sources[-1]}",
+                "local" if is_local_proxy else "backend",
+            ]
+        )
+        if setup_key != self._stream_last_setup_key:
+            self._stream_last_setup_key = setup_key
+            source_short = resolved_sources[0]
+            if len(source_short) > 180:
+                source_short = f"{source_short[:180]}..."
+            self._append_debug_log(
+                "Tile stream setup: "
+                f"mode={'local_proxy' if is_local_proxy else 'backend_proxy'} "
+                f"base={stream_base} scale={scale} contract={'set' if contract_id else 'missing'} "
+                f"sources={len(resolved_sources)} source={source_short}"
+            )
         layer_name = self._asset_layer_name(item, "stream")
         layer = self._make_xyz_layer(xyz_url, layer_name, zmin=0, zmax=22)
         return layer if layer is not None and layer.isValid() else None
@@ -718,10 +997,11 @@ class ImageMatePlugin:
         return ok
 
     def _satellogic_stream_base_url(self):
-        if self.local_tile_proxy.is_running():
-            return self.local_tile_proxy.base_url
+        # Keep parity with working frontend path: prefer backend COG tile proxy first.
         if self._backend_streaming_available():
             return self._backend_api_base_url()
+        if self.local_tile_proxy.is_running():
+            return self.local_tile_proxy.base_url
         return ""
 
     @staticmethod
@@ -780,6 +1060,10 @@ class ImageMatePlugin:
         self._stream_progress_baseline = self.local_tile_proxy.stats_snapshot()
         self._stream_progress_last_tuple = None
         self._stream_progress_idle_ticks = 0
+        self._stream_progress_last_summary_key = ""
+        self._stream_progress_last_summary_at = 0.0
+        self._stream_progress_last_error_key = ""
+        self._stream_progress_last_error_at = 0.0
         if not self._stream_progress_timer.isActive():
             self._stream_progress_timer.start()
         self._set_stream_status(f"Stream status: starting tile stream for {self._stream_progress_item_id}")
@@ -792,6 +1076,10 @@ class ImageMatePlugin:
         self._stream_progress_baseline = {}
         self._stream_progress_last_tuple = None
         self._stream_progress_idle_ticks = 0
+        self._stream_progress_last_summary_key = ""
+        self._stream_progress_last_summary_at = 0.0
+        self._stream_progress_last_error_key = ""
+        self._stream_progress_last_error_at = 0.0
         if self._stream_progress_timer.isActive():
             self._stream_progress_timer.stop()
         if final_text:
@@ -812,20 +1100,23 @@ class ImageMatePlugin:
         dreq = max(0, int(stats.get("requests_total") or 0) - int(base.get("requests_total") or 0))
         dhit = max(0, int(stats.get("cache_hits") or 0) - int(base.get("cache_hits") or 0))
         dsuccess = max(0, int(stats.get("served_success") or 0) - int(base.get("served_success") or 0))
+        dempty = max(0, int(stats.get("served_empty") or 0) - int(base.get("served_empty") or 0))
         dstale = max(0, int(stats.get("served_stale") or 0) - int(base.get("served_stale") or 0))
         derr = max(0, int(stats.get("upstream_errors") or 0) - int(base.get("upstream_errors") or 0))
         inflight = max(0, int(stats.get("inflight") or 0))
+        last_status = int(stats.get("last_status") or 0)
+        last_error = str(stats.get("last_error") or "").strip()
 
         if dreq <= 0:
             self._set_stream_status(f"Stream status: waiting for tile requests ({self._stream_progress_item_id})")
         else:
             self._set_stream_status(
                 "Stream status: "
-                f"{self._stream_progress_item_id} | tiles={dsuccess} stale={dstale} "
+                f"{self._stream_progress_item_id} | tiles={dsuccess} empty={dempty} stale={dstale} "
                 f"cache_hits={dhit} errors={derr} in_flight={inflight}"
             )
 
-        current_tuple = (dreq, dhit, dsuccess, dstale, derr, inflight)
+        current_tuple = (dreq, dhit, dsuccess, dempty, dstale, derr, inflight)
         if current_tuple == self._stream_progress_last_tuple and inflight == 0 and dreq > 0:
             self._stream_progress_idle_ticks += 1
         else:
@@ -833,6 +1124,34 @@ class ImageMatePlugin:
         self._stream_progress_last_tuple = current_tuple
 
         now = datetime.now(tz=timezone.utc).timestamp()
+        summary_key = f"{dreq}|{dhit}|{dsuccess}|{dempty}|{dstale}|{derr}|{inflight}"
+        if dreq > 0 and (
+            summary_key != self._stream_progress_last_summary_key
+            and now - float(self._stream_progress_last_summary_at or 0.0) >= 2.5
+        ):
+            self._stream_progress_last_summary_key = summary_key
+            self._stream_progress_last_summary_at = now
+            self._append_debug_log(
+                "Tile stream progress: "
+                f"item={self._stream_progress_item_id} requests={dreq} success={dsuccess} empty={dempty} "
+                f"stale={dstale} cache_hits={dhit} errors={derr} inflight={inflight}"
+            )
+
+        if last_error:
+            error_key = f"{last_status}|{last_error}|{derr}|{dempty}"
+            if (
+                error_key != self._stream_progress_last_error_key
+                or now - float(self._stream_progress_last_error_at or 0.0) >= 8.0
+            ):
+                self._stream_progress_last_error_key = error_key
+                self._stream_progress_last_error_at = now
+                self._append_debug_log(
+                    "Tile stream diagnostic: "
+                    f"item={self._stream_progress_item_id} last_status={last_status} last_error={last_error} "
+                    f"errors={derr} empty={dempty}",
+                    level=Qgis.Warning,
+                )
+
         if now - float(self._stream_progress_started_at or 0.0) > 90:
             self._stop_stream_progress_monitor(
                 f"Stream status: active with slow network ({self._stream_progress_item_id})"
@@ -841,7 +1160,7 @@ class ImageMatePlugin:
         if dreq > 0 and inflight == 0 and self._stream_progress_idle_ticks >= 2:
             self._stop_stream_progress_monitor(
                 "Stream status: complete "
-                f"({self._stream_progress_item_id}, tiles={dsuccess}, cache_hits={dhit}, errors={derr})"
+                f"({self._stream_progress_item_id}, tiles={dsuccess}, empty={dempty}, cache_hits={dhit}, errors={derr})"
             )
 
     def _on_map_extent_changed(self):
@@ -864,14 +1183,14 @@ class ImageMatePlugin:
         if not item:
             return
         stream_item = self._resolve_satellogic_stream_item(item)
-        layer = self._build_stream_layer_for_item(stream_item)
+        stream_source_urls = self._satellogic_stream_source_urls(stream_item, overview_item=item)
+        layer = self._build_stream_layer_for_item(stream_item, source_urls=stream_source_urls)
         if layer is None:
             return
         self._replace_preview_layer(layer)
         self._last_auto_stream_item_id = item_id
         self._set_stream_status(f"Stream status: auto-streamed latest visible item {item_id}")
-        if self.dock is not None:
-            self.dock.append_search_log(f"Auto-streamed visible item: {item_id}")
+        self._append_search_log(f"Auto-streamed visible item: {item_id}")
 
     def _latest_visible_item_id(self):
         extent_geojson = self._current_extent_geometry_wgs84()
@@ -926,8 +1245,9 @@ class ImageMatePlugin:
         item_id = str(item.get("id") or "").strip() or "item"
         return f"Image Mate {source_id} {dt} [{key}] {item_id}"
 
-    def _replace_preview_layer(self, new_layer):
-        self._remove_layer_by_id(self.preview_layer_id)
+    def _replace_preview_layer(self, new_layer, *, replace_existing=True):
+        if replace_existing:
+            self._remove_layer_by_id(self.preview_layer_id)
         QgsProject.instance().addMapLayer(new_layer)
         self.preview_layer_id = new_layer.id()
 
@@ -1025,6 +1345,7 @@ class ImageMatePlugin:
             return None
         return None
 
-    @staticmethod
-    def _log_info(message):
-        QgsMessageLog.logMessage(message, "ImageMate", Qgis.Info)
+    def _log_info(self, message):
+        self._write_disk_log(str(message or "").strip(), level=Qgis.Info, tag="plugin")
+        if self._show_debug_on_screen:
+            QgsMessageLog.logMessage(str(message or "").strip(), "ImageMate", Qgis.Info)

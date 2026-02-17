@@ -6,15 +6,95 @@ from __future__ import annotations
 from collections import OrderedDict
 import json
 import re
+import struct
 import threading
 import time
+import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
+_TRANSPARENT_TILE_CACHE: dict[int, bytes] = {}
+
+
+def _png_chunk(tag: bytes, data: bytes) -> bytes:
+    chunk_type = bytes(tag or b"")
+    payload = bytes(data or b"")
+    checksum = zlib.crc32(chunk_type + payload) & 0xFFFFFFFF
+    return struct.pack("!I", len(payload)) + chunk_type + payload + struct.pack("!I", checksum)
+
+
+def _transparent_png(size: int) -> bytes:
+    tile_size = max(1, int(size or 256))
+    cached = _TRANSPARENT_TILE_CACHE.get(tile_size)
+    if cached is not None:
+        return cached
+
+    # PNG filter byte per row + RGBA pixels.
+    row = b"\x00" + (b"\x00\x00\x00\x00" * tile_size)
+    raw = row * tile_size
+    compressed = zlib.compress(raw, level=9)
+    ihdr = struct.pack("!IIBBBBB", tile_size, tile_size, 8, 6, 0, 0, 0)
+    payload = b"".join(
+        [
+            b"\x89PNG\r\n\x1a\n",
+            _png_chunk(b"IHDR", ihdr),
+            _png_chunk(b"IDAT", compressed),
+            _png_chunk(b"IEND", b""),
+        ]
+    )
+    _TRANSPARENT_TILE_CACHE[tile_size] = payload
+    return payload
+
+
+def _is_valid_png(payload: bytes) -> bool:
+    data = bytes(payload or b"")
+    if len(data) < 33:
+        return False
+    if not data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return False
+    ihdr_len = struct.unpack("!I", data[8:12])[0]
+    if ihdr_len != 13:
+        return False
+    return data[12:16] == b"IHDR"
+
+
+def _extract_embedded_tile_options(url_value: str) -> tuple[str, dict[str, list[str]]]:
+    value = str(url_value or "").strip()
+    if not value or "&" not in value or "=" not in value:
+        return value, {}
+
+    base_url, sep, tail = value.partition("&")
+    if not sep or not tail or "=" not in tail:
+        return value, {}
+
+    parsed = parse_qs(tail, keep_blank_values=False)
+    if not parsed:
+        return value, {}
+
+    recognized = {
+        "tileMatrixSetId",
+        "format",
+        "scale",
+        "buffer",
+        "bidx",
+        "contract_id",
+    }
+    embedded: dict[str, list[str]] = {}
+    for key in recognized:
+        values = parsed.get(key) or []
+        cleaned = [str(item).strip() for item in values if str(item).strip()]
+        if cleaned:
+            embedded[key] = cleaned
+
+    if not embedded:
+        return value, {}
+    return base_url, embedded
+
 
 class LocalTileProxy:
-    def __init__(self, source_service):
+    def __init__(self, source_service, event_logger=None):
         self._source_service = source_service
+        self._event_logger = event_logger
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
         self._source_lock = threading.Lock()
@@ -24,11 +104,18 @@ class LocalTileProxy:
         self._cache_max_entries = 1400
         self._cache_ttl_seconds = 300
         self._stale_ttl_seconds = 3600
+        # Keep local proxy responsive for large AOIs:
+        # cap sibling-strip fanout and fail fast per tile request.
+        self._max_sources_per_request = 8
+        self._upstream_timeout_seconds = 10
+        self._upstream_max_attempts = 1
+        self._upstream_time_budget_seconds = 12.0
         self._stats = {
             "requests_total": 0,
             "cache_hits": 0,
             "cache_misses": 0,
             "served_success": 0,
+            "served_empty": 0,
             "served_stale": 0,
             "upstream_errors": 0,
             "inflight": 0,
@@ -40,6 +127,18 @@ class LocalTileProxy:
     def set_source_service(self, source_service) -> None:
         with self._source_lock:
             self._source_service = source_service
+
+    def set_event_logger(self, event_logger) -> None:
+        self._event_logger = event_logger
+
+    def _emit_event(self, message: str, *, level: str = "info") -> None:
+        callback = self._event_logger
+        if callback is None:
+            return
+        try:
+            callback(str(message or "").strip(), str(level or "info"))
+        except Exception:
+            return
 
     def start(self) -> None:
         if self._server is not None:
@@ -111,10 +210,56 @@ class LocalTileProxy:
                     return
 
                 qs = parse_qs(parsed.query or "", keep_blank_values=False)
-                source_url = str((qs.get("url") or [""])[0]).strip()
-                if not source_url:
+                raw_source_urls = [str(value).strip() for value in (qs.get("url") or []) if str(value).strip()]
+                if not raw_source_urls:
                     self._write(400, b'{"detail":"url query param is required"}', "application/json")
                     return
+
+                query_keys = set(qs.keys())
+                source_urls = []
+                seen_sources = set()
+                for raw_source in raw_source_urls:
+                    extracted_url, embedded_options = _extract_embedded_tile_options(raw_source)
+                    source_url = str(extracted_url or "").strip()
+                    if source_url and source_url not in seen_sources:
+                        seen_sources.add(source_url)
+                        source_urls.append(source_url)
+                    if embedded_options:
+                        if "contract_id" not in query_keys:
+                            contract_vals = embedded_options.get("contract_id") or []
+                            if contract_vals:
+                                qs["contract_id"] = [contract_vals[0]]
+                        if "scale" not in query_keys:
+                            scale_vals = embedded_options.get("scale") or []
+                            if scale_vals:
+                                qs["scale"] = [scale_vals[0]]
+                        if "buffer" not in query_keys:
+                            buffer_vals = embedded_options.get("buffer") or []
+                            if buffer_vals:
+                                qs["buffer"] = [buffer_vals[0]]
+                        if "tileMatrixSetId" not in query_keys:
+                            matrix_vals = embedded_options.get("tileMatrixSetId") or []
+                            if matrix_vals:
+                                qs["tileMatrixSetId"] = [matrix_vals[0]]
+                        if "format" not in query_keys:
+                            format_vals = embedded_options.get("format") or []
+                            if format_vals:
+                                qs["format"] = [format_vals[0]]
+                        if "bidx" not in query_keys and (embedded_options.get("bidx") or []):
+                            qs["bidx"] = list(embedded_options.get("bidx") or [])
+
+                if not source_urls:
+                    self._write(400, b'{"detail":"url query param is required"}', "application/json")
+                    return
+                source_count_total = len(source_urls)
+                max_sources = max(1, int(proxy._max_sources_per_request or 1))
+                if source_count_total > max_sources:
+                    source_urls = source_urls[:max_sources]
+                source_count_used = len(source_urls)
+                source_count_dropped = max(0, int(source_count_total) - int(source_count_used))
+                source_count_label = (
+                    f"{source_count_used}/{source_count_total}" if source_count_dropped > 0 else str(source_count_used)
+                )
 
                 contract_id = str((qs.get("contract_id") or [""])[0]).strip() or None
                 scale = _to_int((qs.get("scale") or ["2"])[0], 2)
@@ -132,7 +277,7 @@ class LocalTileProxy:
                     z=z,
                     x=x,
                     y=y,
-                    source_url=source_url,
+                    source_urls=source_urls,
                     contract_id=contract_id,
                     scale=scale,
                     buffer=buffer,
@@ -155,42 +300,139 @@ class LocalTileProxy:
 
                     with proxy._source_lock:
                         service = proxy._source_service
-                    status, content, media_type = service.fetch_satellogic_cog_tile(
-                        z=z,
-                        x=x,
-                        y=y,
-                        source_url=source_url,
-                        contract_id=contract_id,
-                        scale=scale,
-                        buffer=buffer,
-                        tile_matrix_set_id=tile_matrix_set_id,
-                        image_format=image_format,
-                        bidx=bands,
-                        max_attempts=3,
-                        request_timeout=75,
-                    )
-                    if int(status) >= 400:
+                    selected_source_url = ""
+                    selected_content = b""
+                    selected_media_type = "image/png"
+                    attempted_statuses = []
+                    fallback_status = 404
+                    fallback_content = b""
+                    fallback_source = source_urls[0]
+                    upstream_started = time.time()
+                    for source_url in source_urls:
+                        if (
+                            float(proxy._upstream_time_budget_seconds or 0.0) > 0.0
+                            and (time.time() - upstream_started) > float(proxy._upstream_time_budget_seconds)
+                        ):
+                            attempted_statuses.append("budget")
+                            break
+                        try:
+                            status, content, media_type = service.fetch_satellogic_cog_tile(
+                                z=z,
+                                x=x,
+                                y=y,
+                                source_url=source_url,
+                                contract_id=contract_id,
+                                scale=scale,
+                                buffer=buffer,
+                                tile_matrix_set_id=tile_matrix_set_id,
+                                image_format=image_format,
+                                bidx=bands,
+                                max_attempts=max(1, int(proxy._upstream_max_attempts or 1)),
+                                request_timeout=max(8, int(proxy._upstream_timeout_seconds or 8)),
+                            )
+                        except Exception as exc:
+                            attempted_statuses.append(f"exc:{exc.__class__.__name__}")
+                            if fallback_status == 404:
+                                fallback_status = 502
+                                fallback_content = str(exc).encode("utf-8", errors="replace")
+                                fallback_source = source_url
+                            continue
+                        status = int(status)
+                        media_type = str(media_type or "image/png").split(";")[0].strip() or "image/png"
+                        if status < 400 and media_type.lower() == "image/png" and not _is_valid_png(content):
+                            status = 502
+                            content = b'{"detail":"invalid PNG from upstream"}'
+                        if status >= 400:
+                            attempted_statuses.append(str(status))
+                            if fallback_status == 404 and status != 404:
+                                fallback_status = status
+                                fallback_content = content
+                                fallback_source = source_url
+                            elif not fallback_content:
+                                fallback_status = status
+                                fallback_content = content
+                                fallback_source = source_url
+                            continue
+                        selected_source_url = source_url
+                        selected_content = content
+                        selected_media_type = media_type
+                        break
+
+                    if not selected_source_url:
+                        status = int(fallback_status)
+                        content = bytes(fallback_content or b"")
                         stale = proxy._cache_get(cache_key, allow_stale=True)
                         if stale is not None:
                             proxy._stat_inc("served_stale")
                             proxy._set_last(status=200, error=f"served_stale_from_{status}")
+                            proxy._emit_event(
+                                (
+                                    f"served stale tile zxy={z}/{x}/{y} upstream_status={int(status)} "
+                                    f"sources={source_count_label} source={_short_source_url(fallback_source)}"
+                                ),
+                                level="warning",
+                            )
                             headers = {"Cache-Control": "public, max-age=120", "X-Proxy-Cache": "stale"}
                             self._write(200, stale["content"], stale["media_type"], headers=headers)
                             return
-                        proxy._stat_inc("upstream_errors")
-                        proxy._set_last(status=int(status), error=f"upstream_status_{status}")
-                        detail = {"detail": f"Upstream tile fetch failed ({status})"}
-                        self._write(int(status), json.dumps(detail).encode("utf-8"), "application/json")
+
+                        # Always serve a valid transparent tile on upstream failures so QGIS does not
+                        # retry indefinitely due malformed/error payloads for XYZ image requests.
+                        tile_size = 256 * max(1, int(scale or 1))
+                        empty_tile = _transparent_png(tile_size)
+                        fallback_ttl = 60 if int(status) == 404 else 20
+                        fallback_stale_ttl = max(120, fallback_ttl)
+                        proxy._cache_put(
+                            cache_key,
+                            empty_tile,
+                            "image/png",
+                            ttl_seconds=fallback_ttl,
+                            stale_ttl_seconds=fallback_stale_ttl,
+                        )
+                        proxy._stat_inc("served_success")
+                        proxy._stat_inc("served_empty")
+                        if int(status) != 404:
+                            proxy._stat_inc("upstream_errors")
+                        proxy._set_last(status=200, error=f"upstream_status_{status}_empty")
+                        detail = _payload_snippet(content)
+                        attempts = ",".join(attempted_statuses[:8])
+                        if len(attempted_statuses) > 8:
+                            attempts = f"{attempts},+{len(attempted_statuses) - 8}"
+                        proxy._emit_event(
+                            (
+                                f"served empty tile zxy={z}/{x}/{y} upstream_status={int(status)} "
+                                f"sources={source_count_label} source={_short_source_url(fallback_source)} "
+                                f"dropped={source_count_dropped} "
+                                f"attempts=[{attempts}] detail={detail}"
+                            ),
+                            level="warning",
+                        )
+                        headers = {
+                            "Cache-Control": f"public, max-age={fallback_ttl}",
+                            "X-Proxy-Cache": "empty",
+                            "X-Tile-Empty": "1",
+                            "X-Tile-Size": str(tile_size),
+                            "X-Upstream-Status": str(int(status)),
+                            "X-Upstream-Sources": str(source_count_label),
+                        }
+                        self._write(200, empty_tile, "image/png", headers=headers)
                         return
 
-                    proxy._cache_put(cache_key, content, media_type)
+                    proxy._cache_put(cache_key, selected_content, selected_media_type)
                     proxy._stat_inc("served_success")
                     proxy._set_last(status=200)
                     headers = {"Cache-Control": "public, max-age=300", "X-Proxy-Cache": "miss"}
-                    self._write(200, content, media_type, headers=headers)
+                    self._write(200, selected_content, selected_media_type, headers=headers)
                 except Exception as exc:
                     proxy._stat_inc("upstream_errors")
                     proxy._set_last(status=502, error=str(exc))
+                    proxy._emit_event(
+                        (
+                            f"tile proxy exception zxy={z}/{x}/{y} sources={source_count_label} "
+                            f"source={_short_source_url(source_urls[0])} error={exc}"
+                        ),
+                        level="warning",
+                    )
                     detail = {"detail": f"Tile proxy failed: {exc}"}
                     self._write(502, json.dumps(detail).encode("utf-8"), "application/json")
                 finally:
@@ -220,7 +462,7 @@ class LocalTileProxy:
         z: int,
         x: int,
         y: int,
-        source_url: str,
+        source_urls: list[str],
         contract_id: str | None,
         scale: int,
         buffer: int,
@@ -233,7 +475,7 @@ class LocalTileProxy:
                 str(z),
                 str(x),
                 str(y),
-                str(source_url),
+                ",".join([str(value) for value in (source_urls or [])]),
                 str(contract_id or ""),
                 str(scale),
                 str(buffer),
@@ -260,13 +502,25 @@ class LocalTileProxy:
             self._cache.pop(key, None)
             return None
 
-    def _cache_put(self, key: str, content: bytes, media_type: str) -> None:
+    def _cache_put(
+        self,
+        key: str,
+        content: bytes,
+        media_type: str,
+        *,
+        ttl_seconds: int | None = None,
+        stale_ttl_seconds: int | None = None,
+    ) -> None:
         now = time.time()
+        ttl = float(ttl_seconds) if ttl_seconds is not None else float(self._cache_ttl_seconds)
+        stale_ttl = float(stale_ttl_seconds) if stale_ttl_seconds is not None else float(self._stale_ttl_seconds)
+        ttl = max(1.0, ttl)
+        stale_ttl = max(ttl, stale_ttl)
         entry = {
             "content": bytes(content or b""),
             "media_type": str(media_type or "image/png"),
-            "expires_at": now + float(self._cache_ttl_seconds),
-            "stale_until": now + float(self._stale_ttl_seconds),
+            "expires_at": now + ttl,
+            "stale_until": now + stale_ttl,
         }
         with self._cache_lock:
             self._cache[key] = entry
@@ -298,3 +552,25 @@ def _to_int(value, fallback: int) -> int:
         return int(value)
     except Exception:
         return int(fallback)
+
+
+def _short_source_url(url: str) -> str:
+    value = str(url or "").strip()
+    if len(value) <= 180:
+        return value
+    return f"{value[:180]}..."
+
+
+def _payload_snippet(payload: bytes) -> str:
+    raw = bytes(payload or b"")
+    if not raw:
+        return ""
+    try:
+        text = raw.decode("utf-8", errors="replace").strip().replace("\n", " ")
+    except Exception:
+        text = ""
+    if not text:
+        return f"{len(raw)} bytes"
+    if len(text) > 220:
+        return f"{text[:220]}..."
+    return text
