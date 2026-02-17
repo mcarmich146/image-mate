@@ -30,3 +30,5 @@ backend/output/
 # Frontend
 node_modules/
 frontend/dist/
+../output/
+../docs/

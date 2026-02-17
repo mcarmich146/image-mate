@@ -111,6 +111,8 @@ const state = {
     },
     sentinelAnalytics: {},
   },
+  satellogicStripGsdByKey: new Map(),
+  satellogicStripGsdCacheSig: "",
   sentinelWmtsConfig: null,
   sentinelWmtsLayer: null,
   sentinelWmtsLayerTemplate: "",
@@ -841,6 +843,8 @@ function resetLayerSearchResults() {
     },
     sentinelAnalytics: {},
   };
+  state.satellogicStripGsdByKey = new Map();
+  state.satellogicStripGsdCacheSig = "";
 }
 
 function enabledSentinelAnalyticCollectionIds() {
@@ -912,8 +916,10 @@ function wmtsPlaybackWindow() {
   const end = shiftIsoDayByDays(anchor, -(offsetWeeks * 7));
   const days = Math.max(1, Number(state.sentinelWmtsPlayback?.windowDays || 7));
   const start = shiftIsoDayByDays(end, -(days - 1));
-  const timeParam = `${start}/${end}`;
-  return { anchor, start, end, timeParam, offsetWeeks };
+  const rangeParam = `${start}/${end}`;
+  // Use latest day only for WMTS tile requests (test mode).
+  const timeParam = end;
+  return { anchor, start, end, timeParam, rangeParam, offsetWeeks };
 }
 
 function wmtsPlaybackWindowMs() {
@@ -1025,6 +1031,7 @@ function applyLayerSearchResultsToState() {
   state.outlineItems = dedupeById(overviewItems.length ? overviewItems : items);
   state.carouselQuickviewCount = state.layerSearchResults.satellogicOverlay.overviewItems.length;
   state.carouselFilterActive = false;
+  refreshSatellogicStripGsdCache();
   refreshMapTimebarData();
 }
 
@@ -1913,8 +1920,74 @@ function formatGsdMeters(value) {
   return n.toFixed(2).replace(/\.?0+$/, "");
 }
 
+function positiveNumberOrNull(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return n;
+}
+
+function captureStripToken(item) {
+  const candidate = [item?.outcome_id, item?.id]
+    .filter((v) => typeof v === "string" && v.length > 0)
+    .join(" ");
+  const match = candidate.match(/\d{8}_\d{6}(?:_\d+)?_SN\d+/);
+  if (!match) return "";
+  return match[0].replace(/_\d+_SN/, "_SN");
+}
+
+function satellogicStripKey(item) {
+  if (!item || normalizeSourceId(sourceIdForItem(item)) !== "satellogic") return "";
+  const outcomeId = (item?.outcome_id || "").toString().trim();
+  if (outcomeId) return `outcome:${outcomeId}`;
+  const token = captureStripToken(item);
+  if (token) return `capture:${token}`;
+  const itemId = (item?.id || "").toString().trim();
+  if (itemId) return `id:${itemId}`;
+  return "";
+}
+
+function quickviewVisualRows() {
+  return Array.isArray(state.layerSearchResults?.satellogicQuickviewVisual?.items)
+    ? state.layerSearchResults.satellogicQuickviewVisual.items
+    : [];
+}
+
+function quickviewVisualGsdSignature(rows) {
+  return rows
+    .map((row) => `${row?.id || ""}|${row?.outcome_id || ""}|${row?.gsd ?? ""}`)
+    .join("~");
+}
+
+function refreshSatellogicStripGsdCache() {
+  const rows = quickviewVisualRows();
+  const nextSig = quickviewVisualGsdSignature(rows);
+  if (nextSig === state.satellogicStripGsdCacheSig) return;
+  const stripGsdMap = new Map();
+  rows.forEach((row) => {
+    const key = satellogicStripKey(row);
+    const gsd = positiveNumberOrNull(row?.gsd);
+    if (!key || gsd === null || stripGsdMap.has(key)) return;
+    stripGsdMap.set(key, gsd);
+  });
+  state.satellogicStripGsdByKey = stripGsdMap;
+  state.satellogicStripGsdCacheSig = nextSig;
+}
+
+function sampledSatellogicStripGsd(item) {
+  const key = satellogicStripKey(item);
+  if (!key) return null;
+  refreshSatellogicStripGsdCache();
+  const value = state.satellogicStripGsdByKey.get(key);
+  return positiveNumberOrNull(value);
+}
+
 function collectionGsdForOverviewItem(overviewItem) {
   if (!overviewItem) return null;
+  if (normalizeSourceId(sourceIdForItem(overviewItem)) === "satellogic") {
+    const stripGsd = sampledSatellogicStripGsd(overviewItem);
+    if (stripGsd !== null) return stripGsd;
+    if (quickviewVisualRows().length) return null;
+  }
   const collectionItems = Array.isArray(state.items) ? state.items : [];
   if (!collectionItems.length) return null;
   const matches = tilesForOverviewItem(collectionItems, overviewItem, false);
@@ -2109,14 +2182,18 @@ function timelineSensorName(sourceId) {
 
 function matchQuickviewVisualItem(item) {
   if (!item || normalizeSourceId(sourceIdForItem(item)) !== "satellogic") return null;
-  const rows = Array.isArray(state.layerSearchResults?.satellogicQuickviewVisual?.items)
-    ? state.layerSearchResults.satellogicQuickviewVisual.items
-    : [];
+  const rows = quickviewVisualRows();
   if (!rows.length) return null;
 
   if (item.outcome_id) {
     const byOutcome = rows.find((row) => row?.outcome_id && row.outcome_id === item.outcome_id);
     if (byOutcome) return byOutcome;
+  }
+
+  const stripKey = satellogicStripKey(item);
+  if (stripKey) {
+    const byStrip = rows.find((row) => satellogicStripKey(row) === stripKey);
+    if (byStrip) return byStrip;
   }
 
   const key = captureKey(item);
@@ -2140,7 +2217,12 @@ function matchQuickviewVisualItem(item) {
 function timelineMetadataItem(event) {
   const item = event?.item;
   if (!item) return null;
-  return matchQuickviewVisualItem(item) || item;
+  const matched = matchQuickviewVisualItem(item);
+  const stripGsd = sampledSatellogicStripGsd(item);
+  if (matched && stripGsd !== null) return { ...matched, gsd: stripGsd };
+  if (matched) return matched;
+  if (stripGsd !== null) return { ...item, gsd: stripGsd };
+  return item;
 }
 
 function timelineHoverHtml(ms, event) {
@@ -2217,10 +2299,10 @@ async function focusTimelineImageEvent(event) {
     return;
   }
   state.selectedCarouselIds.add(overviewItem.id);
-  setActiveCarouselCard(overviewItem.id);
+  setActiveCarouselCard(overviewItem.id, { autoScroll: true });
   syncCarouselCheckboxes();
   if (state.compareMode) updateCompareModeState(overviewItem.id);
-  await focusFromCarousel(overviewItem, { fitToFrame: true });
+  await focusFromCarousel(overviewItem, { fitToFrame: false, preserveViewport: true });
 }
 
 function setTimelineHoverFromClientPoint(clientX, clientY) {
@@ -3037,7 +3119,7 @@ function makeCarouselCard(item, idx) {
     setActiveCarouselCard(item.id);
     syncCarouselCheckboxes();
     if (state.compareMode) updateCompareModeState(item.id);
-    focusFromCarousel(item).catch((err) => toast(err.message));
+    focusFromCarousel(item, { preserveViewport: true }).catch((err) => toast(err.message));
   });
 
   const checkbox = card.querySelector('input[type="checkbox"]');
@@ -3058,7 +3140,7 @@ function makeCarouselCard(item, idx) {
       }
       syncCarouselCheckboxes();
       if (state.compareMode) updateCompareModeState(item.id);
-      await refreshMapMode(false);
+      await refreshMapMode(false, { renderCarousel: false });
     });
   }
   const img = card.querySelector("img[data-src]");
@@ -3182,7 +3264,8 @@ function findRenderedCarouselCard(itemId) {
   return Array.from(timeCarouselListEl.querySelectorAll(".carousel-card")).find((card) => card.dataset.itemId === itemId) || null;
 }
 
-function setActiveCarouselCard(itemId) {
+function setActiveCarouselCard(itemId, options = {}) {
+  const autoScroll = Boolean(options.autoScroll);
   state.selectedCarouselId = itemId;
   if (state.activeTab === "explore" && itemId && !findRenderedCarouselCard(itemId)) {
     let guard = 0;
@@ -3196,7 +3279,9 @@ function setActiveCarouselCard(itemId) {
     const selected = state.selectedCarouselIds.has(card.dataset.itemId);
     if (card.dataset.itemId === itemId) {
       card.classList.add("active");
-      card.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      if (autoScroll) {
+        card.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      }
     } else {
       card.classList.toggle("active", selected);
     }
@@ -3616,6 +3701,7 @@ function updateActiveFrameOverlay(item) {
   if (state.mapMode === "detail") return;
 
   if (!item || !item.geometry) return;
+  if (isSatellogicItem(item)) return;
   if (isSentinelItem(item) && !state.layerControl.sentinelStacOverlayEnabled) return;
   const raw = state.mapMode === "detail" ? detailVisualUrl(item) : previewUrl(item);
   const src = assetProxyUrl(raw, {
@@ -3718,6 +3804,11 @@ function drawResults(items, mode = "overview", fitToBounds = false, options = {}
     overlaySourceItems = latestStripPerArea(overlaySourceItems);
   }
   const shouldRenderOverlayForItem = (item) => {
+    if (isSatellogicItem(item)) {
+      // Never render Satellogic thumbnail/preview overlays on map.
+      // Satellogic map imagery must come from COG tiles in detail mode.
+      return mode === "detail";
+    }
     if (!isSentinelItem(item)) return true;
     if (!state.layerControl.sentinelStacOverlayEnabled) return false;
     return isSelectedItem(item);
@@ -4066,6 +4157,7 @@ function prefetchCompareTilesAroundIndex(index) {
 async function focusFromCarousel(overviewItem, options = {}) {
   if (!overviewItem) return;
   const fitToFrame = Boolean(options.fitToFrame);
+  const preserveViewport = Boolean(options.preserveViewport);
   const sourceId = sourceIdForItem(overviewItem);
   const isSatellogicFocus = sourceId === "satellogic";
   const targetSatellogicCollection = isSatellogicFocus
@@ -4090,14 +4182,14 @@ async function focusFromCarousel(overviewItem, options = {}) {
       if (fitToFrame) {
         state.skipMapRefreshEvents = Math.min(6, state.skipMapRefreshEvents + 2);
         map.fitBounds(bounds, { padding: [20, 20], maxZoom: 17 });
-      } else if (map.getZoom() < DETAIL_ZOOM_THRESHOLD) {
+      } else if (!preserveViewport && map.getZoom() < DETAIL_ZOOM_THRESHOLD) {
         state.skipMapRefreshEvents = Math.min(6, state.skipMapRefreshEvents + 2);
         map.setZoom(DETAIL_ZOOM_THRESHOLD);
         state.skipMapRefreshEvents = Math.min(6, state.skipMapRefreshEvents + 2);
         map.panTo(bounds.getCenter(), { animate: true, duration: 0.35 });
       }
     }
-    await refreshMapMode(false);
+    await refreshMapMode(false, { renderCarousel: false });
     toast("Sentinel-2 STAC selected. Enable step 2 overlay toggle to render STAC imagery.");
     return;
   }
@@ -4145,7 +4237,7 @@ async function focusFromCarousel(overviewItem, options = {}) {
     return;
   }
 
-  if (map.getZoom() < DETAIL_ZOOM_THRESHOLD) {
+  if (!preserveViewport && map.getZoom() < DETAIL_ZOOM_THRESHOLD) {
     state.skipMapRefreshEvents = Math.min(6, state.skipMapRefreshEvents + 2);
     map.setZoom(DETAIL_ZOOM_THRESHOLD);
   }
@@ -4165,7 +4257,7 @@ async function focusFromCarousel(overviewItem, options = {}) {
     if (fitToFrame) {
       state.skipMapRefreshEvents = Math.min(6, state.skipMapRefreshEvents + 2);
       map.fitBounds(bounds, { padding: [20, 20], maxZoom: 17 });
-    } else {
+    } else if (!preserveViewport) {
       state.skipMapRefreshEvents = Math.min(6, state.skipMapRefreshEvents + 2);
       map.panTo(bounds.getCenter(), { animate: true, duration: 0.4 });
     }
@@ -4461,7 +4553,8 @@ function latestStripPerArea(items) {
   return [...chosen.values()].sort((a, b) => (b.datetime || "").localeCompare(a.datetime || ""));
 }
 
-async function refreshMapMode(force = false) {
+async function refreshMapMode(force = false, options = {}) {
+  const renderCarousel = options.renderCarousel !== false;
   if (!state.searchParams && !state.items.length) return;
   const viewportBounds = map.getBounds();
 
@@ -4552,7 +4645,7 @@ async function refreshMapMode(force = false) {
       });
       state.lastMapRenderSignature = renderSig;
     }
-    renderTimeCarouselForViewport(viewportBounds);
+    if (renderCarousel) renderTimeCarouselForViewport(viewportBounds);
     const sel = state.selectedCarouselIds.size;
     searchMetaEl.textContent = `Mode: detail (zoom ${map.getZoom()}) • strips: ${detailVisible.length} • overlays(latest-visible per source): ${overlayItems.length} • policy: ${state.browseTilePolicy} • layer: ${detailLayerLabel()}${sel ? ` • selected: ${sel}` : ""}`;
     syncCarouselCheckboxes();
@@ -4572,7 +4665,7 @@ async function refreshMapMode(force = false) {
     });
     state.lastMapRenderSignature = overviewSig;
   }
-  renderTimeCarouselForViewport(viewportBounds);
+  if (renderCarousel) renderTimeCarouselForViewport(viewportBounds);
   const mapReadyThumbs = overviewVisible.filter((item) => Boolean(item.geometry && thumbnailUrl(item))).length;
   const sel = state.selectedCarouselIds.size;
   searchMetaEl.textContent = `Mode: overview • ${overviewVisible.length} visible (${mapReadyThumbs} thumbnails) • zoom to ${DETAIL_ZOOM_THRESHOLD}+ for detail${sel ? ` • selected: ${sel}` : ""}`;
@@ -6964,7 +7057,7 @@ lockSelectionBtnEl.addEventListener("click", async () => {
   state.selectedCarouselId = null;
   syncCarouselCheckboxes();
   if (state.compareMode) setCompareMode(false);
-  await refreshMapMode(false);
+  await refreshMapMode(false, { renderCarousel: false });
   toast("Selections cleared");
 });
 
