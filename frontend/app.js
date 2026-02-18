@@ -30,6 +30,7 @@ const state = {
   lastDetailCoverageBounds: null,
   lastDetailCoverageZoom: null,
   lastDetailContextKey: null,
+  detailFetchController: null,
   prefetchTileUrlSeen: new Set(),
   useCogTileProxy: true,
   tileProxyWarned: false,
@@ -61,6 +62,7 @@ const state = {
   taskingProjects: [],
   taskingOrders: [],
   taskingRefreshAt: null,
+  taskingIgnoreOutsideClickUntil: 0,
   workflows: [],
   skills: [],
   providers: [],
@@ -127,6 +129,8 @@ const state = {
     lastAppliedTimeParam: "",
     lastAppliedAtMs: 0,
   },
+  satellogicDetailTileLayerGroup: null,
+  satellogicDetailTileLayers: new Map(),
   sourcePickerOpen: false,
   preferredActionSource: "satellogic",
   enabledSources: {
@@ -200,7 +204,10 @@ function debugLog(message, meta = null) {
   else console.debug(`[GeoDebug] ${message}`);
 }
 
-const map = L.map("map", { zoomControl: true }).setView([37.6188, -122.375], 10);
+const map = L.map("map", {
+  zoomControl: true,
+  fadeAnimation: false,
+}).setView([37.6188, -122.375], 10);
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
   attribution: "&copy; OpenStreetMap contributors",
   maxZoom: 20,
@@ -2796,6 +2803,9 @@ function openTaskingForm({ targetType, geometry, containerPoint }) {
   taskingFormPopoverEl.style.left = `${x}px`;
   taskingFormPopoverEl.style.top = `${y}px`;
   taskingFormPopoverEl.classList.add("open");
+  // Ignore the originating map click so the document-level outside-click
+  // handler does not immediately cancel the newly opened tasking form.
+  state.taskingIgnoreOutsideClickUntil = Date.now() + 350;
 }
 
 function restoreTaskingDoubleClickZoom() {
@@ -3450,6 +3460,111 @@ function clearMapLayers() {
   state.activeFrameOverlay = null;
 }
 
+function clearSatellogicDetailTileLayers() {
+  const layerMap = state.satellogicDetailTileLayers instanceof Map ? state.satellogicDetailTileLayers : new Map();
+  layerMap.forEach((layer) => {
+    if (layer && map.hasLayer(layer)) map.removeLayer(layer);
+  });
+  layerMap.clear();
+  state.satellogicDetailTileLayers = layerMap;
+  if (state.satellogicDetailTileLayerGroup && map.hasLayer(state.satellogicDetailTileLayerGroup)) {
+    map.removeLayer(state.satellogicDetailTileLayerGroup);
+  }
+  state.satellogicDetailTileLayerGroup = null;
+}
+
+function overlayBoundsKey(bounds) {
+  if (!bounds) return "";
+  return [
+    bounds.getSouth().toFixed(6),
+    bounds.getWest().toFixed(6),
+    bounds.getNorth().toFixed(6),
+    bounds.getEast().toFixed(6),
+  ].join(",");
+}
+
+function satellogicTileLayerKey(descriptor) {
+  return [
+    descriptor.template,
+    descriptor.pane,
+    descriptor.zIndex,
+    descriptor.opacity,
+    overlayBoundsKey(descriptor.bounds),
+  ].join("|");
+}
+
+function buildSatellogicDetailTileLayer(descriptor) {
+  const tileLayer = L.tileLayer(descriptor.template, {
+    pane: descriptor.pane,
+    opacity: descriptor.opacity,
+    bounds: descriptor.bounds,
+    tileSize: 256,
+    className: "cog-tile-layer",
+    maxZoom: 22,
+    updateWhenIdle: true,
+    updateWhenZooming: false,
+    keepBuffer: 2,
+    zIndex: descriptor.zIndex,
+    crossOrigin: true,
+  });
+  tileLayer.on("tileerror", () => {
+    if (!state.useCogTileProxy) return;
+    if (!state.tileProxyWarned) {
+      state.tileProxyWarned = true;
+      toast("Satellogic COG tiles unavailable for this frame; thumbnail fallback is disabled.");
+    }
+  });
+  tileLayer.on("tileload", () => {
+    if (state.tileProxyErrorCount > 0) state.tileProxyErrorCount -= 1;
+  });
+  return tileLayer;
+}
+
+function syncSatellogicDetailTileLayers(desired) {
+  const desiredRows = Array.isArray(desired) ? desired : [];
+  if (!desiredRows.length) {
+    clearSatellogicDetailTileLayers();
+    return;
+  }
+  if (!state.satellogicDetailTileLayerGroup) {
+    state.satellogicDetailTileLayerGroup = L.layerGroup().addTo(map);
+  }
+  if (!(state.satellogicDetailTileLayers instanceof Map)) {
+    state.satellogicDetailTileLayers = new Map();
+  }
+
+  const desiredByKey = new Map();
+  desiredRows.forEach((row) => {
+    const key = satellogicTileLayerKey(row);
+    if (!desiredByKey.has(key)) desiredByKey.set(key, row);
+  });
+
+  const current = state.satellogicDetailTileLayers;
+  current.forEach((layer, key) => {
+    if (!desiredByKey.has(key)) {
+      state.satellogicDetailTileLayerGroup.removeLayer(layer);
+      current.delete(key);
+    }
+  });
+
+  desiredByKey.forEach((descriptor, key) => {
+    if (current.has(key)) return;
+    const layer = buildSatellogicDetailTileLayer(descriptor);
+    current.set(key, layer);
+    layer.addTo(state.satellogicDetailTileLayerGroup);
+  });
+}
+
+function cancelInFlightDetailFetch() {
+  if (!state.detailFetchController) return;
+  try {
+    state.detailFetchController.abort();
+  } catch (_) {
+    // ignore
+  }
+  state.detailFetchController = null;
+}
+
 function clearStackOutlines() {
   if (state.stackOutlineLayer) {
     map.removeLayer(state.stackOutlineLayer);
@@ -3720,6 +3835,7 @@ function updateActiveFrameOverlay(item) {
 
 function drawResults(items, mode = "overview", fitToBounds = false, options = {}) {
   clearMapLayers();
+  const desiredSatellogicTileLayers = [];
 
   const selectedOverview = selectedOverviewItems();
   const selectedIds = new Set(selectedOverview.map((item) => item?.id).filter(Boolean));
@@ -3890,6 +4006,16 @@ function drawResults(items, mode = "overview", fitToBounds = false, options = {}
       if (mode === "detail" && state.useCogTileProxy) {
         const tileTemplate = detailTileTemplateUrl(item, map.getZoom());
         if (tileTemplate) {
+          if (isSatellogicItem(item)) {
+            desiredSatellogicTileLayers.push({
+              template: tileTemplate,
+              pane: overlayPaneId,
+              opacity: overlayOpacity,
+              bounds,
+              zIndex,
+            });
+            return;
+          }
           const tileLayer = L.tileLayer(tileTemplate, {
             pane: overlayPaneId,
             opacity: overlayOpacity,
@@ -3905,14 +4031,6 @@ function drawResults(items, mode = "overview", fitToBounds = false, options = {}
           });
           tileLayer.on("tileerror", () => {
             if (!state.useCogTileProxy) return;
-            const itemSourceId = sourceIdForItem(item);
-            if (itemSourceId === "satellogic") {
-              if (!state.tileProxyWarned) {
-                state.tileProxyWarned = true;
-                toast("Satellogic COG tiles unavailable for this frame; thumbnail fallback is disabled.");
-              }
-              return;
-            }
             state.tileProxyErrorCount += 1;
             if (state.tileProxyErrorCount < DETAIL_TILE_PROXY_ERROR_THRESHOLD) return;
             state.useCogTileProxy = false;
@@ -3978,6 +4096,12 @@ function drawResults(items, mode = "overview", fitToBounds = false, options = {}
     marker.addTo(state.mapThumbMarkerLayer);
   });
 
+  if (mode === "detail" && state.useCogTileProxy) {
+    syncSatellogicDetailTileLayers(desiredSatellogicTileLayers);
+  } else {
+    clearSatellogicDetailTileLayers();
+  }
+
   if (state.mapVectorLayer) state.mapVectorLayer.bringToFront();
 
   if (fitToBounds && features.length > 0) {
@@ -4027,7 +4151,7 @@ function selectedFrameIds() {
   return state.items.slice(0, 12).map((item) => item.id);
 }
 
-async function fetchArchiveItems(payload) {
+async function fetchArchiveItems(payload, options = {}) {
   const started = performance.now();
   debugLog("archive search request", {
     source: payload.source_id,
@@ -4038,6 +4162,7 @@ async function fetchArchiveItems(payload) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
+    signal: options.signal,
   });
 
   const data = await res.json();
@@ -4590,16 +4715,28 @@ async function refreshMapMode(force = false, options = {}) {
     const canFetchNow = force || (Date.now() - state.lastDetailFetchAt >= DETAIL_FETCH_COOLDOWN_MS);
     if (needFetch && !coverageValid && canFetchNow && !skipSentinelDetailFetch) {
       debugLog("detail fetch", { zoom: map.getZoom(), requestKey });
+      cancelInFlightDetailFetch();
+      const detailFetchController = new AbortController();
+      state.detailFetchController = detailFetchController;
       try {
-        const items = await fetchArchiveItems(detailPayload);
+        const items = await fetchArchiveItems(detailPayload, { signal: detailFetchController.signal });
+        if (state.detailFetchController !== detailFetchController) return;
         state.detailItems = dedupeById(items);
       } catch (err) {
+        if (err?.name === "AbortError") {
+          debugLog("detail fetch aborted");
+          return;
+        }
         debugLog("detail fetch failed", {
           source: detailSourceId,
           collection: detailCollectionId,
           error: err?.message || String(err),
         });
         state.detailItems = [];
+      } finally {
+        if (state.detailFetchController === detailFetchController) {
+          state.detailFetchController = null;
+        }
       }
       state.lastDetailRequestKey = requestKey;
       state.lastDetailFetchAt = Date.now();
@@ -4752,6 +4889,7 @@ function stepCompareBy(delta) {
 }
 
 async function searchArchive() {
+  cancelInFlightDetailFetch();
   clearStackOutlines();
   const geometry = normalizeGeometryLongitudes(geometryFromBounds(map.getBounds()));
   updateSearchFieldsFromGeometry(geometry);
@@ -7218,7 +7356,9 @@ document.addEventListener("click", (evt) => {
   if (mapContextMenuEl && !mapContextMenuEl.contains(evt.target)) hideContextMenu();
   if (taskingTypeMenuEl && !taskingTypeMenuEl.contains(evt.target)) hideTaskingTypeMenu();
   if (taskingFormPopoverEl && !taskingFormPopoverEl.contains(evt.target)) {
-    if (taskingFormPopoverEl.classList.contains("open")) cancelTaskingInteraction();
+    if (taskingFormPopoverEl.classList.contains("open") && Date.now() >= Number(state.taskingIgnoreOutsideClickUntil || 0)) {
+      cancelTaskingInteraction();
+    }
   }
   if (animateSeriesPopoverEl && animateSeriesBtnEl) {
     const target = evt.target;
@@ -7338,6 +7478,7 @@ sourceSelectEl?.addEventListener("change", async () => {
     taskingOrdersMetaEl.textContent = "Tasking order panel is currently Satellogic-only.";
   }
   if (!state.searchParams) return;
+  cancelInFlightDetailFetch();
   state.lastDetailRequestKey = null;
   state.lastDetailCoverageBounds = null;
   state.lastDetailCoverageZoom = null;
@@ -7354,6 +7495,7 @@ contractSelectEl.addEventListener("change", () => {
   loadSatellogicCollections().catch((err) => toast(err.message));
   refreshTaskingPanel().catch(() => {});
   if (!state.searchParams) return;
+  cancelInFlightDetailFetch();
   state.lastDetailRequestKey = null;
   state.lastDetailCoverageBounds = null;
   state.lastDetailCoverageZoom = null;

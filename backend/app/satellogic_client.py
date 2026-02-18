@@ -93,6 +93,44 @@ class SatellogicClient:
         self._access_token: str | None = None
         self._access_token_expiry: datetime | None = None
 
+    def _request_with_auth_retry(
+        self,
+        method: str,
+        url: str,
+        *,
+        contract_id: str | None = None,
+        params: dict[str, Any] | None = None,
+        json_body: dict[str, Any] | None = None,
+        timeout: int = 60,
+    ) -> requests.Response:
+        headers = self.auth_headers(contract_id=contract_id)
+        response = requests.request(
+            method,
+            url,
+            headers=headers,
+            params=params,
+            json=json_body,
+            timeout=timeout,
+        )
+        auth_header = str(headers.get("authorizationToken") or "")
+        can_retry = (
+            response.status_code == 401
+            and auth_header.startswith("Bearer ")
+            and bool(self.key_id and self.key_secret)
+        )
+        if can_retry:
+            logger.warning("Auth retry with Key,Secret for %s %s after 401", method, url)
+            retry_headers = self.auth_headers(contract_id=contract_id, prefer_key_secret=True)
+            response = requests.request(
+                method,
+                url,
+                headers=retry_headers,
+                params=params,
+                json=json_body,
+                timeout=timeout,
+            )
+        return response
+
     def _get_access_token(self) -> str | None:
         if self._access_token and self._access_token_expiry and datetime.now(timezone.utc) < self._access_token_expiry:
             return self._access_token
@@ -238,15 +276,21 @@ class SatellogicClient:
         """
         if next_url:
             url = next_url if next_url.startswith("http") else f"{self.api_base_url}{next_url}"
-            response = requests.get(url, headers=self.auth_headers(contract_id=contract_id), timeout=60)
+            response = self._request_with_auth_retry(
+                "GET",
+                url,
+                contract_id=contract_id,
+                timeout=60,
+            )
         else:
             url = f"{self.api_base_url}/v2/orders/"
             params: dict[str, Any] = {"limit": int(max(1, min(limit, 500)))}
             if query:
                 params["query"] = query
-            response = requests.get(
+            response = self._request_with_auth_retry(
+                "GET",
                 url,
-                headers=self.auth_headers(contract_id=contract_id),
+                contract_id=contract_id,
                 params=params,
                 timeout=60,
             )
@@ -261,10 +305,31 @@ class SatellogicClient:
         Create a new v2 tasking order.
         """
         url = f"{self.api_base_url}/v2/orders/"
-        response = requests.post(
+        response = self._request_with_auth_retry(
+            "POST",
             url,
-            headers=self.auth_headers(contract_id=contract_id),
-            json=feature,
+            contract_id=contract_id,
+            json_body=feature,
+            timeout=60,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if isinstance(payload, dict):
+            return payload
+        return {"result": payload}
+
+    def get_order(self, order_id: str, contract_id: str | None = None) -> dict[str, Any]:
+        """
+        Return a single order from the v2 Order Management API.
+        """
+        target = (order_id or "").strip()
+        if not target:
+            raise ValueError("order_id is required")
+        url = f"{self.api_base_url}/v2/orders/{target}"
+        response = self._request_with_auth_retry(
+            "GET",
+            url,
+            contract_id=contract_id,
             timeout=60,
         )
         response.raise_for_status()
