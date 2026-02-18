@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from collections import OrderedDict
+import io
 import json
 import re
 import struct
@@ -14,6 +15,26 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 _TRANSPARENT_TILE_CACHE: dict[int, bytes] = {}
+
+try:
+    from PIL import Image
+
+    _HAS_PIL = True
+except Exception:
+    Image = None
+    _HAS_PIL = False
+
+try:
+    from qgis.PyQt.QtCore import QBuffer, QIODevice
+    from qgis.PyQt.QtGui import QImage, QPainter
+
+    _HAS_QIMAGE = True
+except Exception:
+    QBuffer = None
+    QIODevice = None
+    QImage = None
+    QPainter = None
+    _HAS_QIMAGE = False
 
 
 def _png_chunk(tag: bytes, data: bytes) -> bytes:
@@ -58,6 +79,68 @@ def _is_valid_png(payload: bytes) -> bool:
     return data[12:16] == b"IHDR"
 
 
+def _alpha_composite_png_payloads(png_payloads: list[bytes]) -> bytes | None:
+    layers = [bytes(payload or b"") for payload in (png_payloads or []) if payload]
+    if not layers:
+        return None
+    if len(layers) == 1 and _is_valid_png(layers[0]):
+        return layers[0]
+
+    if _HAS_PIL:
+        try:
+            composed = None
+            for payload in layers:
+                layer = Image.open(io.BytesIO(payload)).convert("RGBA")
+                if composed is None:
+                    composed = layer
+                else:
+                    composed = Image.alpha_composite(composed, layer)
+            if composed is None:
+                return None
+            out = io.BytesIO()
+            composed.save(out, format="PNG")
+            encoded = out.getvalue()
+            if _is_valid_png(encoded):
+                return encoded
+        except Exception:
+            pass
+
+    if _HAS_QIMAGE:
+        try:
+            composed_img = None
+            for payload in layers:
+                layer = QImage.fromData(payload, "PNG")
+                if layer.isNull():
+                    continue
+                if layer.format() != QImage.Format_ARGB32:
+                    layer = layer.convertToFormat(QImage.Format_ARGB32)
+                if composed_img is None:
+                    composed_img = QImage(layer)
+                    continue
+                painter = QPainter(composed_img)
+                try:
+                    painter.setCompositionMode(QPainter.CompositionMode_SourceOver)
+                    painter.drawImage(0, 0, layer)
+                finally:
+                    painter.end()
+            if composed_img is None or composed_img.isNull():
+                return None
+            buffer = QBuffer()
+            buffer.open(QIODevice.WriteOnly)
+            try:
+                if not composed_img.save(buffer, "PNG"):
+                    return None
+                encoded = bytes(buffer.data())
+            finally:
+                buffer.close()
+            if _is_valid_png(encoded):
+                return encoded
+        except Exception:
+            pass
+
+    return None
+
+
 def _extract_embedded_tile_options(url_value: str) -> tuple[str, dict[str, list[str]]]:
     value = str(url_value or "").strip()
     if not value or "&" not in value or "=" not in value:
@@ -91,6 +174,13 @@ def _extract_embedded_tile_options(url_value: str) -> tuple[str, dict[str, list[
     return base_url, embedded
 
 
+def _is_l1d_sr_source(source_url: str) -> bool:
+    value = str(source_url or "").strip().lower()
+    if not value:
+        return False
+    return "/l1d_sr/" in value or "/l1d-sr/" in value
+
+
 class LocalTileProxy:
     def __init__(self, source_service, event_logger=None):
         self._source_service = source_service
@@ -107,9 +197,15 @@ class LocalTileProxy:
         # Keep local proxy responsive for large AOIs:
         # cap sibling-strip fanout and fail fast per tile request.
         self._max_sources_per_request = 8
-        self._upstream_timeout_seconds = 10
+        self._max_sources_per_request_l1d_sr = 256
+        # Increased timeout to 2 minutes for large tiles on slow connections
+        self._upstream_timeout_seconds = 120
         self._upstream_max_attempts = 1
-        self._upstream_time_budget_seconds = 12.0
+        # Increased time budget to allow trying multiple sources with longer timeouts
+        self._upstream_time_budget_seconds = 150.0
+        self._perf_log_slow_tile_ms = 3000.0
+        self._perf_log_summary_every = 25
+        self._perf_log_every_tile = False
         self._stats = {
             "requests_total": 0,
             "cache_hits": 0,
@@ -121,6 +217,16 @@ class LocalTileProxy:
             "inflight": 0,
             "last_status": 0,
             "last_error": "",
+            "perf_samples": 0,
+            "perf_total_ms": 0.0,
+            "perf_max_ms": 0.0,
+            "perf_cache_hit_tiles": 0,
+            "perf_mosaic_tiles": 0,
+            "perf_fallback_tiles": 0,
+            "perf_composite_tiles": 0,
+            "perf_empty_tiles": 0,
+            "perf_stale_tiles": 0,
+            "perf_exception_tiles": 0,
             "started_at": time.time(),
         }
 
@@ -148,6 +254,18 @@ class LocalTileProxy:
         thread.start()
         self._server = server
         self._thread = thread
+        self._emit_event(
+            (
+                "tile perf config "
+                f"max_sources={int(self._max_sources_per_request or 0)} "
+                f"max_sources_l1d_sr={int(self._max_sources_per_request_l1d_sr or 0)} "
+                f"upstream_timeout_s={int(self._upstream_timeout_seconds or 0)} "
+                f"upstream_budget_s={float(self._upstream_time_budget_seconds or 0.0):.1f} "
+                f"slow_tile_ms={float(self._perf_log_slow_tile_ms or 0.0):.1f} "
+                f"summary_every={int(self._perf_log_summary_every or 0)}"
+            ),
+            level="info",
+        )
 
     def stop(self) -> None:
         server = self._server
@@ -195,6 +313,16 @@ class LocalTileProxy:
 
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):  # noqa: N802
+                tile_started = time.perf_counter()
+                cache_lookup_ms = 0.0
+                mosaic_ms = 0.0
+                fallback_ms = 0.0
+                compose_ms = 0.0
+                probes = 0
+                successful_layers_count = 0
+                attempted_statuses: list[str] = []
+                source_count_used = 0
+                source_count_total = 0
                 parsed = urlparse(self.path)
                 if parsed.path == "/health":
                     body = {"status": "ok", "running": proxy.is_running()}
@@ -253,6 +381,8 @@ class LocalTileProxy:
                     return
                 source_count_total = len(source_urls)
                 max_sources = max(1, int(proxy._max_sources_per_request or 1))
+                if any(_is_l1d_sr_source(url_value) for url_value in source_urls):
+                    max_sources = max(max_sources, int(proxy._max_sources_per_request_l1d_sr or max_sources))
                 if source_count_total > max_sources:
                     source_urls = source_urls[:max_sources]
                 source_count_used = len(source_urls)
@@ -288,11 +418,24 @@ class LocalTileProxy:
 
                 proxy._request_started()
                 try:
+                    cache_started = time.perf_counter()
                     cached = proxy._cache_get(cache_key, allow_stale=False)
+                    cache_lookup_ms = (time.perf_counter() - cache_started) * 1000.0
                     if cached is not None:
                         proxy._stat_inc("cache_hits")
                         proxy._stat_inc("served_success")
                         proxy._set_last(status=200)
+                        proxy._record_perf_sample(
+                            z=z,
+                            x=x,
+                            y=y,
+                            path="cache_hit",
+                            total_ms=(time.perf_counter() - tile_started) * 1000.0,
+                            source_count_used=source_count_used,
+                            source_count_total=source_count_total,
+                            cache_lookup_ms=cache_lookup_ms,
+                            attempted_statuses=attempted_statuses,
+                        )
                         headers = {"Cache-Control": "public, max-age=300", "X-Proxy-Cache": "hit"}
                         self._write(200, cached["content"], cached["media_type"], headers=headers)
                         return
@@ -303,60 +446,126 @@ class LocalTileProxy:
                     selected_source_url = ""
                     selected_content = b""
                     selected_media_type = "image/png"
-                    attempted_statuses = []
                     fallback_status = 404
                     fallback_content = b""
                     fallback_source = source_urls[0]
-                    upstream_started = time.time()
-                    for source_url in source_urls:
-                        if (
-                            float(proxy._upstream_time_budget_seconds or 0.0) > 0.0
-                            and (time.time() - upstream_started) > float(proxy._upstream_time_budget_seconds)
-                        ):
-                            attempted_statuses.append("budget")
-                            break
-                        try:
-                            status, content, media_type = service.fetch_satellogic_cog_tile(
-                                z=z,
-                                x=x,
-                                y=y,
-                                source_url=source_url,
-                                contract_id=contract_id,
-                                scale=scale,
-                                buffer=buffer,
-                                tile_matrix_set_id=tile_matrix_set_id,
-                                image_format=image_format,
-                                bidx=bands,
-                                max_attempts=max(1, int(proxy._upstream_max_attempts or 1)),
-                                request_timeout=max(8, int(proxy._upstream_timeout_seconds or 8)),
-                            )
-                        except Exception as exc:
-                            attempted_statuses.append(f"exc:{exc.__class__.__name__}")
-                            if fallback_status == 404:
-                                fallback_status = 502
-                                fallback_content = str(exc).encode("utf-8", errors="replace")
-                                fallback_source = source_url
-                            continue
-                        status = int(status)
-                        media_type = str(media_type or "image/png").split(";")[0].strip() or "image/png"
-                        if status < 400 and media_type.lower() == "image/png" and not _is_valid_png(content):
-                            status = 502
-                            content = b'{"detail":"invalid PNG from upstream"}'
-                        if status >= 400:
-                            attempted_statuses.append(str(status))
-                            if fallback_status == 404 and status != 404:
-                                fallback_status = status
-                                fallback_content = content
-                                fallback_source = source_url
-                            elif not fallback_content:
-                                fallback_status = status
-                                fallback_content = content
-                                fallback_source = source_url
-                            continue
-                        selected_source_url = source_url
+
+                    # Request mosaic first so strip boundaries are blended upstream.
+                    mosaic_started = time.perf_counter()
+                    try:
+                        status, content, media_type = service.fetch_satellogic_cog_tile(
+                            z=z,
+                            x=x,
+                            y=y,
+                            source_urls=source_urls,
+                            contract_id=contract_id,
+                            scale=scale,
+                            buffer=buffer,
+                            tile_matrix_set_id=tile_matrix_set_id,
+                            image_format=image_format,
+                            bidx=bands,
+                            max_attempts=max(1, int(proxy._upstream_max_attempts or 1)),
+                            request_timeout=max(8, int(proxy._upstream_timeout_seconds or 8)),
+                        )
+                    except Exception as exc:
+                        status = 502
+                        content = str(exc).encode("utf-8", errors="replace")
+                        media_type = "application/json"
+                        attempted_statuses.append(f"mosaic_exc:{exc.__class__.__name__}")
+                    mosaic_ms = (time.perf_counter() - mosaic_started) * 1000.0
+
+                    status = int(status)
+                    media_type = str(media_type or "image/png").split(";")[0].strip() or "image/png"
+                    if status < 400 and media_type.lower() == "image/png" and not _is_valid_png(content):
+                        status = 502
+                        content = b'{"detail":"invalid PNG from upstream"}'
+
+                    if status < 400:
+                        selected_source_url = f"mosaic:{source_count_used}"
                         selected_content = content
                         selected_media_type = media_type
-                        break
+                    else:
+                        attempted_statuses.append(f"mosaic:{status}")
+                        fallback_status = status
+                        fallback_content = content
+
+                    # Fallback path: probe individual sources to avoid full-tile failures if
+                    # the upstream mosaic request fails for this tile.
+                    if not selected_source_url and source_count_used > 1:
+                        upstream_started = time.time()
+                        fallback_started = time.perf_counter()
+                        successful_layers: list[tuple[str, bytes]] = []
+                        for source_url in source_urls:
+                            probes += 1
+                            if (
+                                float(proxy._upstream_time_budget_seconds or 0.0) > 0.0
+                                and (time.time() - upstream_started) > float(proxy._upstream_time_budget_seconds)
+                            ):
+                                attempted_statuses.append("budget")
+                                break
+                            try:
+                                status, content, media_type = service.fetch_satellogic_cog_tile(
+                                    z=z,
+                                    x=x,
+                                    y=y,
+                                    source_url=source_url,
+                                    contract_id=contract_id,
+                                    scale=scale,
+                                    buffer=buffer,
+                                    tile_matrix_set_id=tile_matrix_set_id,
+                                    image_format=image_format,
+                                    bidx=bands,
+                                    max_attempts=max(1, int(proxy._upstream_max_attempts or 1)),
+                                    request_timeout=max(8, int(proxy._upstream_timeout_seconds or 8)),
+                                )
+                            except Exception as exc:
+                                attempted_statuses.append(f"exc:{exc.__class__.__name__}")
+                                if fallback_status == 404:
+                                    fallback_status = 502
+                                    fallback_content = str(exc).encode("utf-8", errors="replace")
+                                    fallback_source = source_url
+                                continue
+                            status = int(status)
+                            media_type = str(media_type or "image/png").split(";")[0].strip() or "image/png"
+                            if status < 400 and media_type.lower() == "image/png" and not _is_valid_png(content):
+                                status = 502
+                                content = b'{"detail":"invalid PNG from upstream"}'
+                            if status >= 400:
+                                attempted_statuses.append(str(status))
+                                if fallback_status == 404 and status != 404:
+                                    fallback_status = status
+                                    fallback_content = content
+                                    fallback_source = source_url
+                                elif not fallback_content:
+                                    fallback_status = status
+                                    fallback_content = content
+                                fallback_source = source_url
+                                continue
+                            successful_layers.append((source_url, bytes(content or b"")))
+
+                        fallback_ms = (time.perf_counter() - fallback_started) * 1000.0
+                        successful_layers_count = len(successful_layers)
+                        if successful_layers:
+                            if len(successful_layers) == 1:
+                                selected_source_url = successful_layers[0][0]
+                                selected_content = successful_layers[0][1]
+                                selected_media_type = "image/png"
+                            else:
+                                compose_started = time.perf_counter()
+                                composed = _alpha_composite_png_payloads(
+                                    [payload for _source, payload in successful_layers]
+                                )
+                                compose_ms = (time.perf_counter() - compose_started) * 1000.0
+                                if composed is not None:
+                                    selected_source_url = f"composite:{len(successful_layers)}"
+                                    selected_content = composed
+                                    selected_media_type = "image/png"
+                                    attempted_statuses.append(f"composed:{len(successful_layers)}")
+                                else:
+                                    selected_source_url = successful_layers[0][0]
+                                    selected_content = successful_layers[0][1]
+                                    selected_media_type = "image/png"
+                                    attempted_statuses.append("compose_unavailable")
 
                     if not selected_source_url:
                         status = int(fallback_status)
@@ -368,11 +577,28 @@ class LocalTileProxy:
                             proxy._emit_event(
                                 (
                                     f"served stale tile zxy={z}/{x}/{y} upstream_status={int(status)} "
-                                    f"sources={source_count_label} source={_short_source_url(fallback_source)}"
+                                    f"sources={source_count_label} source={_short_source_url(fallback_source)} "
+                                    f"scale={scale} buffer={buffer} tms={tile_matrix_set_id} bands={bands}"
                                 ),
                                 level="warning",
                             )
                             headers = {"Cache-Control": "public, max-age=120", "X-Proxy-Cache": "stale"}
+                            proxy._record_perf_sample(
+                                z=z,
+                                x=x,
+                                y=y,
+                                path="stale",
+                                total_ms=(time.perf_counter() - tile_started) * 1000.0,
+                                source_count_used=source_count_used,
+                                source_count_total=source_count_total,
+                                cache_lookup_ms=cache_lookup_ms,
+                                mosaic_ms=mosaic_ms,
+                                fallback_ms=fallback_ms,
+                                compose_ms=compose_ms,
+                                probes=probes,
+                                successful_layers=successful_layers_count,
+                                attempted_statuses=attempted_statuses,
+                            )
                             self._write(200, stale["content"], stale["media_type"], headers=headers)
                             return
 
@@ -403,6 +629,7 @@ class LocalTileProxy:
                                 f"served empty tile zxy={z}/{x}/{y} upstream_status={int(status)} "
                                 f"sources={source_count_label} source={_short_source_url(fallback_source)} "
                                 f"dropped={source_count_dropped} "
+                                f"scale={scale} buffer={buffer} tms={tile_matrix_set_id} bands={bands} "
                                 f"attempts=[{attempts}] detail={detail}"
                             ),
                             level="warning",
@@ -415,21 +642,78 @@ class LocalTileProxy:
                             "X-Upstream-Status": str(int(status)),
                             "X-Upstream-Sources": str(source_count_label),
                         }
+                        proxy._record_perf_sample(
+                            z=z,
+                            x=x,
+                            y=y,
+                            path="empty",
+                            total_ms=(time.perf_counter() - tile_started) * 1000.0,
+                            source_count_used=source_count_used,
+                            source_count_total=source_count_total,
+                            cache_lookup_ms=cache_lookup_ms,
+                            mosaic_ms=mosaic_ms,
+                            fallback_ms=fallback_ms,
+                            compose_ms=compose_ms,
+                            probes=probes,
+                            successful_layers=successful_layers_count,
+                            attempted_statuses=attempted_statuses,
+                        )
                         self._write(200, empty_tile, "image/png", headers=headers)
                         return
 
                     proxy._cache_put(cache_key, selected_content, selected_media_type)
                     proxy._stat_inc("served_success")
                     proxy._set_last(status=200)
+                    path = "mosaic"
+                    if selected_source_url.startswith("composite:"):
+                        path = "composite"
+                    elif selected_source_url.startswith("mosaic:"):
+                        path = "mosaic"
+                    elif fallback_ms > 0.0:
+                        path = "fallback_single"
+                    proxy._record_perf_sample(
+                        z=z,
+                        x=x,
+                        y=y,
+                        path=path,
+                        total_ms=(time.perf_counter() - tile_started) * 1000.0,
+                        source_count_used=source_count_used,
+                        source_count_total=source_count_total,
+                        cache_lookup_ms=cache_lookup_ms,
+                        mosaic_ms=mosaic_ms,
+                        fallback_ms=fallback_ms,
+                        compose_ms=compose_ms,
+                        probes=probes,
+                        successful_layers=successful_layers_count,
+                        attempted_statuses=attempted_statuses,
+                    )
                     headers = {"Cache-Control": "public, max-age=300", "X-Proxy-Cache": "miss"}
                     self._write(200, selected_content, selected_media_type, headers=headers)
                 except Exception as exc:
                     proxy._stat_inc("upstream_errors")
                     proxy._set_last(status=502, error=str(exc))
+                    proxy._record_perf_sample(
+                        z=z,
+                        x=x,
+                        y=y,
+                        path="exception",
+                        total_ms=(time.perf_counter() - tile_started) * 1000.0,
+                        source_count_used=source_count_used,
+                        source_count_total=source_count_total,
+                        cache_lookup_ms=cache_lookup_ms,
+                        mosaic_ms=mosaic_ms,
+                        fallback_ms=fallback_ms,
+                        compose_ms=compose_ms,
+                        probes=probes,
+                        successful_layers=successful_layers_count,
+                        attempted_statuses=attempted_statuses,
+                    )
                     proxy._emit_event(
                         (
                             f"tile proxy exception zxy={z}/{x}/{y} sources={source_count_label} "
-                            f"source={_short_source_url(source_urls[0])} error={exc}"
+                            f"source={_short_source_url(source_urls[0])} "
+                            f"scale={scale} buffer={buffer} tms={tile_matrix_set_id} bands={bands} "
+                            f"error={exc}"
                         ),
                         level="warning",
                     )
@@ -545,6 +829,109 @@ class LocalTileProxy:
         with self._stats_lock:
             self._stats["last_status"] = int(status or 0)
             self._stats["last_error"] = str(error or "")
+
+    def _record_perf_sample(
+        self,
+        *,
+        z: int,
+        x: int,
+        y: int,
+        path: str,
+        total_ms: float,
+        source_count_used: int,
+        source_count_total: int,
+        cache_lookup_ms: float = 0.0,
+        mosaic_ms: float = 0.0,
+        fallback_ms: float = 0.0,
+        compose_ms: float = 0.0,
+        probes: int = 0,
+        successful_layers: int = 0,
+        attempted_statuses: list[str] | None = None,
+    ) -> None:
+        path_value = str(path or "unknown").strip() or "unknown"
+        sample_idx = 0
+        avg_ms = 0.0
+        max_ms = 0.0
+        perf_cache_hits = 0
+        perf_mosaic = 0
+        perf_fallback = 0
+        perf_composite = 0
+        perf_empty = 0
+        perf_stale = 0
+        perf_exception = 0
+        with self._stats_lock:
+            self._stats["perf_samples"] = int(self._stats.get("perf_samples") or 0) + 1
+            self._stats["perf_total_ms"] = float(self._stats.get("perf_total_ms") or 0.0) + float(total_ms or 0.0)
+            self._stats["perf_max_ms"] = max(
+                float(self._stats.get("perf_max_ms") or 0.0),
+                float(total_ms or 0.0),
+            )
+            if path_value == "cache_hit":
+                self._stats["perf_cache_hit_tiles"] = int(self._stats.get("perf_cache_hit_tiles") or 0) + 1
+            elif path_value == "mosaic":
+                self._stats["perf_mosaic_tiles"] = int(self._stats.get("perf_mosaic_tiles") or 0) + 1
+            elif path_value in {"fallback_single", "composite"}:
+                self._stats["perf_fallback_tiles"] = int(self._stats.get("perf_fallback_tiles") or 0) + 1
+            if path_value == "composite":
+                self._stats["perf_composite_tiles"] = int(self._stats.get("perf_composite_tiles") or 0) + 1
+            if path_value == "empty":
+                self._stats["perf_empty_tiles"] = int(self._stats.get("perf_empty_tiles") or 0) + 1
+            if path_value == "stale":
+                self._stats["perf_stale_tiles"] = int(self._stats.get("perf_stale_tiles") or 0) + 1
+            if path_value == "exception":
+                self._stats["perf_exception_tiles"] = int(self._stats.get("perf_exception_tiles") or 0) + 1
+            sample_idx = int(self._stats.get("perf_samples") or 0)
+            total_seen = float(self._stats.get("perf_total_ms") or 0.0)
+            avg_ms = total_seen / float(sample_idx or 1)
+            max_ms = float(self._stats.get("perf_max_ms") or 0.0)
+            perf_cache_hits = int(self._stats.get("perf_cache_hit_tiles") or 0)
+            perf_mosaic = int(self._stats.get("perf_mosaic_tiles") or 0)
+            perf_fallback = int(self._stats.get("perf_fallback_tiles") or 0)
+            perf_composite = int(self._stats.get("perf_composite_tiles") or 0)
+            perf_empty = int(self._stats.get("perf_empty_tiles") or 0)
+            perf_stale = int(self._stats.get("perf_stale_tiles") or 0)
+            perf_exception = int(self._stats.get("perf_exception_tiles") or 0)
+
+        statuses = [str(value).strip() for value in (attempted_statuses or []) if str(value).strip()]
+        attempts = ",".join(statuses[:6])
+        if len(statuses) > 6:
+            attempts = f"{attempts},+{len(statuses) - 6}"
+
+        should_log = bool(self._perf_log_every_tile)
+        if not should_log:
+            should_log = (
+                float(total_ms or 0.0) >= float(self._perf_log_slow_tile_ms or 0.0)
+                or float(fallback_ms or 0.0) > 0.0
+                or path_value in {"empty", "stale", "exception"}
+            )
+        if should_log:
+            level = "info"
+            if path_value in {"empty", "exception"}:
+                level = "warning"
+            elif float(total_ms or 0.0) >= float(self._perf_log_slow_tile_ms or 0.0) * 2.0:
+                level = "warning"
+            self._emit_event(
+                (
+                    f"tile perf zxy={z}/{x}/{y} path={path_value} "
+                    f"ms(total={float(total_ms):.1f},cache={float(cache_lookup_ms):.1f},"
+                    f"mosaic={float(mosaic_ms):.1f},fallback={float(fallback_ms):.1f},compose={float(compose_ms):.1f}) "
+                    f"sources={int(source_count_used)}/{int(source_count_total)} "
+                    f"probes={int(probes)} layers={int(successful_layers)} "
+                    f"attempts=[{attempts}]"
+                ),
+                level=level,
+            )
+
+        summary_every = max(0, int(self._perf_log_summary_every or 0))
+        if summary_every > 0 and sample_idx > 0 and sample_idx % summary_every == 0:
+            self._emit_event(
+                (
+                    f"tile perf summary samples={sample_idx} avg_ms={avg_ms:.1f} max_ms={max_ms:.1f} "
+                    f"paths(cache_hit={perf_cache_hits},mosaic={perf_mosaic},fallback={perf_fallback},"
+                    f"composite={perf_composite},stale={perf_stale},empty={perf_empty},exception={perf_exception})"
+                ),
+                level="info",
+            )
 
 
 def _to_int(value, fallback: int) -> int:

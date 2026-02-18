@@ -132,12 +132,34 @@ def bbox_geometry(bounds: tuple[float, float, float, float]) -> dict[str, Any]:
     }
 
 
-def _tile_xy(lat: float, lon: float, zoom: int) -> tuple[int, int]:
+def _tile_xy_float(lat: float, lon: float, zoom: int) -> tuple[float, float]:
+    """Return fractional Web Mercator tile coordinates for a lat/lon at zoom."""
     n = 2 ** zoom
-    x = int((lon + 180.0) / 360.0 * n)
+    x_float = (lon + 180.0) / 360.0 * n
     lat = max(-85.05112878, min(85.05112878, lat))
     lat_rad = math.radians(lat)
-    y = int((1.0 - math.log(math.tan(lat_rad) + (1.0 / math.cos(lat_rad))) / math.pi) / 2.0 * n)
+    y_float = (1.0 - math.log(math.tan(lat_rad) + (1.0 / math.cos(lat_rad))) / math.pi) / 2.0 * n
+    # Clamp to tile-space bounds so edge rounding stays inside [0, n].
+    x_float = max(0.0, min(float(n), x_float))
+    y_float = max(0.0, min(float(n), y_float))
+    return x_float, y_float
+
+
+def _tile_xy(lat: float, lon: float, zoom: int) -> tuple[int, int]:
+    """
+    Calculate tile coordinates for a given lat/lon at specified zoom level.
+    Uses floor for tile calculation - to get all tiles overlapping a geometry,
+    use floor(min_coord) through ceil(max_coord)-1.
+
+    Args:
+        lat: Latitude in degrees
+        lon: Longitude in degrees
+        zoom: Zoom level
+    """
+    n = 2 ** zoom
+    x_float, y_float = _tile_xy_float(lat, lon, zoom)
+    x = int(x_float)  # floor
+    y = int(y_float)  # floor
     return max(0, min(n - 1, x)), max(0, min(n - 1, y))
 
 
@@ -159,8 +181,20 @@ def geometry_quadkeys(geometry: dict[str, Any], zoom: int = 6) -> set[str]:
     if not bounds:
         return set()
     minx, miny, maxx, maxy = bounds
-    x0, y1 = _tile_xy(miny, minx, zoom)
-    x1, y0 = _tile_xy(maxy, maxx, zoom)
+    # Use fractional tile coordinates so max bounds include edge tiles.
+    # X increases eastward; Y increases southward in Web Mercator tile space.
+    x_min_f, y_min_f = _tile_xy_float(maxy, minx, zoom)  # NW corner
+    x_max_f, y_max_f = _tile_xy_float(miny, maxx, zoom)  # SE corner
+    n = 2 ** zoom
+    x0 = int(math.floor(min(x_min_f, x_max_f)))
+    x1 = int(math.ceil(max(x_min_f, x_max_f)) - 1)
+    y0 = int(math.floor(min(y_min_f, y_max_f)))
+    y1 = int(math.ceil(max(y_min_f, y_max_f)) - 1)
+    x0 = max(0, min(n - 1, x0))
+    x1 = max(0, min(n - 1, x1))
+    y0 = max(0, min(n - 1, y0))
+    y1 = max(0, min(n - 1, y1))
+    
     out: set[str] = set()
     for x in range(min(x0, x1), max(x0, x1) + 1):
         for y in range(min(y0, y1), max(y0, y1) + 1):

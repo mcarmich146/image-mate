@@ -1,0 +1,346 @@
+{
+  "log": "C:\\Users\\jo.man_satellogic\\AppData\\Roaming\\QGIS\\QGIS3\\image_mate_logs\\image_mate_qgis_20260218T000728Z.log",
+  "item_id": "20260215_022207_799_SN33_L1D_SR_MS_49N_560_1816_2_0_1",
+  "collection": "l1d-sr",
+  "stream_base": "http://127.0.0.1:50820",
+  "tile_template": "http://127.0.0.1:50820/satellogic/cog/tiles/{z}/{x}/{y}?tileMatrixSetId=WebMercatorQuad%26format=png%26scale=1%26buffer=1%26render_layer=raw%26bidx=1%26bidx=2%26bidx=3%26url=s3://satellogic-production-eo-backend-catalog/L1D_SR/435f51fd-8684-414c-be5f-b46d5a7f172d/2_0_1/20260215_022207_799_SN33_L1D_SR_MS_49N_560_1816_visual.tif%26contract_id=cont.eac744cc-2afe-4012-9621-35623feeb7a7",
+  "zoom": 19,
+  "buffer": 1,
+  "tile_bounds": {
+    "x0": 424617,
+    "x1": 424672,
+    "y0": 237834,
+    "y1": 237889
+  },
+  "elapsed_seconds": 0.24,
+  "results": {
+    "edges": {
+      "top": [
+        {
+          "z": 19,
+          "x": 424617,
+          "y": 237834,
+          "status": 400,
+          "empty": true,
+          "url": "http://127.0.0.1:50820/satellogic/cog/tiles/19/424617/237834?tileMatrixSetId=WebMercatorQuad%26format=png%26scale=1%26buffer=1%26render_layer=raw%26bidx=1%26bidx=2%26bidx=3%26url=s3://satellogic-production-eo-backend-catalog/L1D_SR/435f51fd-8684-414c-be5f-b46d5a7f172d/2_0_1/20260215_022207_799_SN33_L1D_SR_MS_49N_560_1816_visual.tif%26contract_id=cont.eac744cc-2afe-4012-9621-35623feeb7a7"
+        },
+        {
+          "z": 19,
+          "x": 424618,
+          "y": 237834,
+          "status": 400,
+          "empty": true,
+          "url": "http://127.0.0.1:50820/satellogic/cog/tiles/19/424618/237834?tileMatrixSetId=WebMercatorQuad%26format=png%26scale=1%26buffer=1%26render_layer=raw%26bidx=1%26bidx=2%26bidx=3%26url=s3://satellogic-production-eo-backend-catalog/L1D_SR/435f51fd-8684-414c-be5f-b46d5a7f172d/2_0_1/20260215_022207_799_SN33_L1D_SR_MS_49N_560_1816_visual.tif%26contract_id=cont.eac744cc-2afe-4012-9621-35623feeb7a7"
+        },
+        {
+          "z": 19,
+          "x": 424619,
+          "y": 237834,
+          "status": 400,
+          "empty": true,
+          "url": "http://127.0.0.1:50820/satellogic/cog/tiles/19/424619/237834?tileMatrixSetId=WebMercatorQuad%26format=png%26scale=1%26buffer=1%26render_layer=raw%26bidx=1%26bidx=2%26bidx=3%26url=s3://satellogic-production-eo-backend-catalog/L1D_SR/435f51fd-8684-414c-be5f-b46d5a7f172d/2_0_1/20260215_022207_799_SN33_L1D_SR_MS_49N_560_1816_visual.tif%26contract_id=cont.eac744cc-2afe-4012-9621-35623feeb7a7"
+        },
+        {
+          "z": 19,
+          "x": 424620,
+          "y": 237834,
+          "status": 400,
+          "empty": true,
+          "url": "http://127.0.0.1:50820/satellogic/cog/tiles/19/424620/237834?tileMatrixSetId=WebMercatorQuad%26format=png%26scale=1%26buffer=1%26render_layer=raw%26bidx=1%26bidx=2%26bidx=3%26url=s3://satellogic-production-eo-backend-catalog/L1D_SR/435f51fd-8684-414c-be5f-b46d5a7f172d/2_0_1/20260215_022207_799_SN33_L1D_SR_MS_49N_560_1816_visual.tif%26contract_id=cont.eac744cc-2afe-4012-9621-35623feeb7a7"
+        },
+        {
+          "z": 19,
+          "x": 424621,
+          "y": 237834,
+          "status": 400,
+          "empty": true,
+          "url": "http://127.0.0.1:50820/satellogic/cog/tiles/19/424621/237834?tileMatrixSetId=WebMercatorQuad%26format=png%26scale=1%26buffer=1%26render_layer=raw%26bidx=1%26bidx=2%26bidx=3%26url=s3://satellogic-production-eo-backend-catalog/L1D_SR/435f51fd-8684-414c-be5f-b46d5a7f172d/2_0_1/20260215_022207_799_SN33_L1D_SR_MS_49N_560_1816_visual.tif%26contract_id=cont.eac744cc-2afe-4012-9621-35623feeb7a7"
+        },
+        {
+          "z": 19,
+          "x": 424622,
+          "y": 237834,
+          "status": 400,
+          "empty": true,
+          "url": "http://127.0.0.1:50820/satellogic/cog/tiles/19/424622/237834?tileMatrixSetId=WebMercatorQuad%26format=png%26scale=1%26buffer=1%26render_layer=raw%26bidx=1%26bidx=2%26bidx=3%26url=s3://satellogic-production-eo-backend-catalog/L1D_SR/435f51fd-8684-414c-be5f-b46d5a7f172d/2_0_1/20260215_022207_799_SN33_L1D_SR_MS_49N_560_1816_visual.tif%26contract_id=cont.eac744cc-2afe-4012-9621-35623feeb7a7"
+        }
+      ],
+      "bottom": [
+        {
+          "z": 19,
+          "x": 424617,
+          "y": 237889,
+          "status": 400,
+          "empty": true,
+          "url": "http://127.0.0.1:50820/satellogic/cog/tiles/19/424617/237889?tileMatrixSetId=WebMercatorQuad%26format=png%26scale=1%26buffer=1%26render_layer=raw%26bidx=1%26bidx=2%26bidx=3%26url=s3://satellogic-production-eo-backend-catalog/L1D_SR/435f51fd-8684-414c-be5f-b46d5a7f172d/2_0_1/20260215_022207_799_SN33_L1D_SR_MS_49N_560_1816_visual.tif%26contract_id=cont.eac744cc-2afe-4012-9621-35623feeb7a7"
+        },
+        {
+          "z": 19,
+          "x": 424618,
+          "y": 237889,
+          "status": 400,
+          "empty": true,
+          "url": "http://127.0.0.1:50820/satellogic/cog/tiles/19/424618/237889?tileMatrixSetId=WebMercatorQuad%26format=png%26scale=1%26buffer=1%26render_layer=raw%26bidx=1%26bidx=2%26bidx=3%26url=s3://satellogic-production-eo-backend-catalog/L1D_SR/435f51fd-8684-414c-be5f-b46d5a7f172d/2_0_1/20260215_022207_799_SN33_L1D_SR_MS_49N_560_1816_visual.tif%26contract_id=cont.eac744cc-2afe-4012-9621-35623feeb7a7"
+        },
+        {
+          "z": 19,
+          "x": 424619,
+          "y": 237889,
+          "status": 400,
+          "empty": true,
+          "url": "http://127.0.0.1:50820/satellogic/cog/tiles/19/424619/237889?tileMatrixSetId=WebMercatorQuad%26format=png%26scale=1%26buffer=1%26render_layer=raw%26bidx=1%26bidx=2%26bidx=3%26url=s3://satellogic-production-eo-backend-catalog/L1D_SR/435f51fd-8684-414c-be5f-b46d5a7f172d/2_0_1/20260215_022207_799_SN33_L1D_SR_MS_49N_560_1816_visual.tif%26contract_id=cont.eac744cc-2afe-4012-9621-35623feeb7a7"
+        },
+        {
+          "z": 19,
+          "x": 424620,
+          "y": 237889,
+          "status": 400,
+          "empty": true,
+          "url": "http://127.0.0.1:50820/satellogic/cog/tiles/19/424620/237889?tileMatrixSetId=WebMercatorQuad%26format=png%26scale=1%26buffer=1%26render_layer=raw%26bidx=1%26bidx=2%26bidx=3%26url=s3://satellogic-production-eo-backend-catalog/L1D_SR/435f51fd-8684-414c-be5f-b46d5a7f172d/2_0_1/20260215_022207_799_SN33_L1D_SR_MS_49N_560_1816_visual.tif%26contract_id=cont.eac744cc-2afe-4012-9621-35623feeb7a7"
+        },
+        {
+          "z": 19,
+          "x": 424621,
+          "y": 237889,
+          "status": 400,
+          "empty": true,
+          "url": "http://127.0.0.1:50820/satellogic/cog/tiles/19/424621/237889?tileMatrixSetId=WebMercatorQuad%26format=png%26scale=1%26buffer=1%26render_layer=raw%26bidx=1%26bidx=2%26bidx=3%26url=s3://satellogic-production-eo-backend-catalog/L1D_SR/435f51fd-8684-414c-be5f-b46d5a7f172d/2_0_1/20260215_022207_799_SN33_L1D_SR_MS_49N_560_1816_visual.tif%26contract_id=cont.eac744cc-2afe-4012-9621-35623feeb7a7"
+        },
+        {
+          "z": 19,
+          "x": 424622,
+          "y": 237889,
+          "status": 400,
+          "empty": true,
+          "url": "http://127.0.0.1:50820/satellogic/cog/tiles/19/424622/237889?tileMatrixSetId=WebMercatorQuad%26format=png%26scale=1%26buffer=1%26render_layer=raw%26bidx=1%26bidx=2%26bidx=3%26url=s3://satellogic-production-eo-backend-catalog/L1D_SR/435f51fd-8684-414c-be5f-b46d5a7f172d/2_0_1/20260215_022207_799_SN33_L1D_SR_MS_49N_560_1816_visual.tif%26contract_id=cont.eac744cc-2afe-4012-9621-35623feeb7a7"
+        }
+      ],
+      "left": [
+        {
+          "z": 19,
+          "x": 424617,
+          "y": 237834,
+          "status": 400,
+          "empty": true,
+          "url": "http://127.0.0.1:50820/satellogic/cog/tiles/19/424617/237834?tileMatrixSetId=WebMercatorQuad%26format=png%26scale=1%26buffer=1%26render_layer=raw%26bidx=1%26bidx=2%26bidx=3%26url=s3://satellogic-production-eo-backend-catalog/L1D_SR/435f51fd-8684-414c-be5f-b46d5a7f172d/2_0_1/20260215_022207_799_SN33_L1D_SR_MS_49N_560_1816_visual.tif%26contract_id=cont.eac744cc-2afe-4012-9621-35623feeb7a7"
+        },
+        {
+          "z": 19,
+          "x": 424617,
+          "y": 237835,
+          "status": 400,
+          "empty": true,
+          "url": "http://127.0.0.1:50820/satellogic/cog/tiles/19/424617/237835?tileMatrixSetId=WebMercatorQuad%26format=png%26scale=1%26buffer=1%26render_layer=raw%26bidx=1%26bidx=2%26bidx=3%26url=s3://satellogic-production-eo-backend-catalog/L1D_SR/435f51fd-8684-414c-be5f-b46d5a7f172d/2_0_1/20260215_022207_799_SN33_L1D_SR_MS_49N_560_1816_visual.tif%26contract_id=cont.eac744cc-2afe-4012-9621-35623feeb7a7"
+        },
+        {
+          "z": 19,
+          "x": 424617,
+          "y": 237836,
+          "status": 400,
+          "empty": true,
+          "url": "http://127.0.0.1:50820/satellogic/cog/tiles/19/424617/237836?tileMatrixSetId=WebMercatorQuad%26format=png%26scale=1%26buffer=1%26render_layer=raw%26bidx=1%26bidx=2%26bidx=3%26url=s3://satellogic-production-eo-backend-catalog/L1D_SR/435f51fd-8684-414c-be5f-b46d5a7f172d/2_0_1/20260215_022207_799_SN33_L1D_SR_MS_49N_560_1816_visual.tif%26contract_id=cont.eac744cc-2afe-4012-9621-35623feeb7a7"
+        },
+        {
+          "z": 19,
+          "x": 424617,
+          "y": 237837,
+          "status": 400,
+          "empty": true,
+          "url": "http://127.0.0.1:50820/satellogic/cog/tiles/19/424617/237837?tileMatrixSetId=WebMercatorQuad%26format=png%26scale=1%26buffer=1%26render_layer=raw%26bidx=1%26bidx=2%26bidx=3%26url=s3://satellogic-production-eo-backend-catalog/L1D_SR/435f51fd-8684-414c-be5f-b46d5a7f172d/2_0_1/20260215_022207_799_SN33_L1D_SR_MS_49N_560_1816_visual.tif%26contract_id=cont.eac744cc-2afe-4012-9621-35623feeb7a7"
+        },
+        {
+          "z": 19,
+          "x": 424617,
+          "y": 237838,
+          "status": 400,
+          "empty": true,
+          "url": "http://127.0.0.1:50820/satellogic/cog/tiles/19/424617/237838?tileMatrixSetId=WebMercatorQuad%26format=png%26scale=1%26buffer=1%26render_layer=raw%26bidx=1%26bidx=2%26bidx=3%26url=s3://satellogic-production-eo-backend-catalog/L1D_SR/435f51fd-8684-414c-be5f-b46d5a7f172d/2_0_1/20260215_022207_799_SN33_L1D_SR_MS_49N_560_1816_visual.tif%26contract_id=cont.eac744cc-2afe-4012-9621-35623feeb7a7"
+        },
+        {
+          "z": 19,
+          "x": 424617,
+          "y": 237839,
+          "status": 400,
+          "empty": true,
+          "url": "http://127.0.0.1:50820/satellogic/cog/tiles/19/424617/237839?tileMatrixSetId=WebMercatorQuad%26format=png%26scale=1%26buffer=1%26render_layer=raw%26bidx=1%26bidx=2%26bidx=3%26url=s3://satellogic-production-eo-backend-catalog/L1D_SR/435f51fd-8684-414c-be5f-b46d5a7f172d/2_0_1/20260215_022207_799_SN33_L1D_SR_MS_49N_560_1816_visual.tif%26contract_id=cont.eac744cc-2afe-4012-9621-35623feeb7a7"
+        }
+      ],
+      "right": [
+        {
+          "z": 19,
+          "x": 424672,
+          "y": 237834,
+          "status": 400,
+          "empty": true,
+          "url": "http://127.0.0.1:50820/satellogic/cog/tiles/19/424672/237834?tileMatrixSetId=WebMercatorQuad%26format=png%26scale=1%26buffer=1%26render_layer=raw%26bidx=1%26bidx=2%26bidx=3%26url=s3://satellogic-production-eo-backend-catalog/L1D_SR/435f51fd-8684-414c-be5f-b46d5a7f172d/2_0_1/20260215_022207_799_SN33_L1D_SR_MS_49N_560_1816_visual.tif%26contract_id=cont.eac744cc-2afe-4012-9621-35623feeb7a7"
+        },
+        {
+          "z": 19,
+          "x": 424672,
+          "y": 237835,
+          "status": 400,
+          "empty": true,
+          "url": "http://127.0.0.1:50820/satellogic/cog/tiles/19/424672/237835?tileMatrixSetId=WebMercatorQuad%26format=png%26scale=1%26buffer=1%26render_layer=raw%26bidx=1%26bidx=2%26bidx=3%26url=s3://satellogic-production-eo-backend-catalog/L1D_SR/435f51fd-8684-414c-be5f-b46d5a7f172d/2_0_1/20260215_022207_799_SN33_L1D_SR_MS_49N_560_1816_visual.tif%26contract_id=cont.eac744cc-2afe-4012-9621-35623feeb7a7"
+        },
+        {
+          "z": 19,
+          "x": 424672,
+          "y": 237836,
+          "status": 400,
+          "empty": true,
+          "url": "http://127.0.0.1:50820/satellogic/cog/tiles/19/424672/237836?tileMatrixSetId=WebMercatorQuad%26format=png%26scale=1%26buffer=1%26render_layer=raw%26bidx=1%26bidx=2%26bidx=3%26url=s3://satellogic-production-eo-backend-catalog/L1D_SR/435f51fd-8684-414c-be5f-b46d5a7f172d/2_0_1/20260215_022207_799_SN33_L1D_SR_MS_49N_560_1816_visual.tif%26contract_id=cont.eac744cc-2afe-4012-9621-35623feeb7a7"
+        },
+        {
+          "z": 19,
+          "x": 424672,
+          "y": 237837,
+          "status": 400,
+          "empty": true,
+          "url": "http://127.0.0.1:50820/satellogic/cog/tiles/19/424672/237837?tileMatrixSetId=WebMercatorQuad%26format=png%26scale=1%26buffer=1%26render_layer=raw%26bidx=1%26bidx=2%26bidx=3%26url=s3://satellogic-production-eo-backend-catalog/L1D_SR/435f51fd-8684-414c-be5f-b46d5a7f172d/2_0_1/20260215_022207_799_SN33_L1D_SR_MS_49N_560_1816_visual.tif%26contract_id=cont.eac744cc-2afe-4012-9621-35623feeb7a7"
+        },
+        {
+          "z": 19,
+          "x": 424672,
+          "y": 237838,
+          "status": 400,
+          "empty": true,
+          "url": "http://127.0.0.1:50820/satellogic/cog/tiles/19/424672/237838?tileMatrixSetId=WebMercatorQuad%26format=png%26scale=1%26buffer=1%26render_layer=raw%26bidx=1%26bidx=2%26bidx=3%26url=s3://satellogic-production-eo-backend-catalog/L1D_SR/435f51fd-8684-414c-be5f-b46d5a7f172d/2_0_1/20260215_022207_799_SN33_L1D_SR_MS_49N_560_1816_visual.tif%26contract_id=cont.eac744cc-2afe-4012-9621-35623feeb7a7"
+        },
+        {
+          "z": 19,
+          "x": 424672,
+          "y": 237839,
+          "status": 400,
+          "empty": true,
+          "url": "http://127.0.0.1:50820/satellogic/cog/tiles/19/424672/237839?tileMatrixSetId=WebMercatorQuad%26format=png%26scale=1%26buffer=1%26render_layer=raw%26bidx=1%26bidx=2%26bidx=3%26url=s3://satellogic-production-eo-backend-catalog/L1D_SR/435f51fd-8684-414c-be5f-b46d5a7f172d/2_0_1/20260215_022207_799_SN33_L1D_SR_MS_49N_560_1816_visual.tif%26contract_id=cont.eac744cc-2afe-4012-9621-35623feeb7a7"
+        }
+      ]
+    },
+    "missing": [
+      {
+        "edge": "top",
+        "tiles": [
+          [
+            424617,
+            237834
+          ],
+          [
+            424618,
+            237834
+          ],
+          [
+            424619,
+            237834
+          ],
+          [
+            424620,
+            237834
+          ],
+          [
+            424621,
+            237834
+          ],
+          [
+            424622,
+            237834
+          ]
+        ]
+      },
+      {
+        "edge": "bottom",
+        "tiles": [
+          [
+            424617,
+            237889
+          ],
+          [
+            424618,
+            237889
+          ],
+          [
+            424619,
+            237889
+          ],
+          [
+            424620,
+            237889
+          ],
+          [
+            424621,
+            237889
+          ],
+          [
+            424622,
+            237889
+          ]
+        ]
+      },
+      {
+        "edge": "left",
+        "tiles": [
+          [
+            424617,
+            237834
+          ],
+          [
+            424617,
+            237835
+          ],
+          [
+            424617,
+            237836
+          ],
+          [
+            424617,
+            237837
+          ],
+          [
+            424617,
+            237838
+          ],
+          [
+            424617,
+            237839
+          ]
+        ]
+      },
+      {
+        "edge": "right",
+        "tiles": [
+          [
+            424672,
+            237834
+          ],
+          [
+            424672,
+            237835
+          ],
+          [
+            424672,
+            237836
+          ],
+          [
+            424672,
+            237837
+          ],
+          [
+            424672,
+            237838
+          ],
+          [
+            424672,
+            237839
+          ]
+        ]
+      }
+    ],
+    "center": {
+      "z": 19,
+      "x": 424644,
+      "y": 237861,
+      "status": 400,
+      "empty": true,
+      "url": "http://127.0.0.1:50820/satellogic/cog/tiles/19/424644/237861?tileMatrixSetId=WebMercatorQuad%26format=png%26scale=1%26buffer=1%26render_layer=raw%26bidx=1%26bidx=2%26bidx=3%26url=s3://satellogic-production-eo-backend-catalog/L1D_SR/435f51fd-8684-414c-be5f-b46d5a7f172d/2_0_1/20260215_022207_799_SN33_L1D_SR_MS_49N_560_1816_visual.tif%26contract_id=cont.eac744cc-2afe-4012-9621-35623feeb7a7"
+    }
+  }
+}

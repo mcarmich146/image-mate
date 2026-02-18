@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Source service backed by backend provider clients."""
+"""Source service backed by local provider clients."""
 
 from __future__ import annotations
 
@@ -12,42 +12,10 @@ import time
 import types
 from urllib.parse import urlparse
 
-
-def _ensure_repo_on_path() -> str:
-    candidates = []
-    env_root = str(os.getenv("IMAGE_MATE_ROOT") or "").strip()
-    if env_root:
-        candidates.append(Path(env_root))
-
-    plugin_local_root = Path(__file__).resolve().parents[3]
-    candidates.append(plugin_local_root)
-
-    cwd = Path.cwd().resolve()
-    candidates.append(cwd)
-    candidates.extend(list(cwd.parents))
-
-    home = Path.home().resolve()
-    candidates.extend(
-        [
-            home / "dev" / "image-mate",
-            home / "code" / "image-mate",
-            home / "src" / "image-mate",
-            home / "projects" / "image-mate",
-        ]
-    )
-
-    seen: set[str] = set()
-    for root in candidates:
-        root_str = str(root)
-        if not root_str or root_str in seen:
-            continue
-        seen.add(root_str)
-        marker = root / "backend" / "app" / "source_manager.py"
-        if marker.exists():
-            if root_str not in sys.path:
-                sys.path.insert(0, root_str)
-            return root_str
-    return ""
+from ..clients.merlin_sentinel2_client import MerlinSentinel2Client
+from ..clients.satellogic_client import SatellogicClient
+from ..clients.source_manager import SourceManager
+from ..clients.config import settings as backend_settings
 
 
 class SourceService:
@@ -58,26 +26,10 @@ class SourceService:
         self._manager = None
         self._init_error = ""
         self._backend_settings = None
-        self._repo_root_used = ""
-        self._env_file_used = ""
         self._contracts_cache: list[dict[str, Any]] = []
-        self._init_backend()
+        self._init_clients()
 
-    def _init_backend(self) -> None:
-        try:
-            self._repo_root_used = _ensure_repo_on_path()
-            self._ensure_dotenv_module()
-            self._env_file_used = self._load_repo_env(self._repo_root_used)
-            self._reload_backend_modules()
-            from backend.app.merlin_sentinel2_client import MerlinSentinel2Client
-            from backend.app.satellogic_client import SatellogicClient
-            from backend.app.source_manager import SourceManager
-            from backend.app.config import settings as backend_settings
-        except Exception as exc:
-            self._manager = None
-            self._init_error = f"Backend modules unavailable: {exc}"
-            return
-
+    def _init_clients(self) -> None:
         try:
             sat_client = SatellogicClient()
             merlin_client = MerlinSentinel2Client()
@@ -97,15 +49,16 @@ class SourceService:
         except Exception as exc:
             self._manager = None
             self._backend_settings = None
-            self._init_error = f"Backend source init failed: {exc}"
+            self._init_error = f"Client initialization failed: {exc}"
 
     @staticmethod
-    def _reload_backend_modules() -> None:
+    def _reload_client_modules() -> None:
+        # Reload client modules to pick up any changes during development
         for name in (
-            "backend.app.config",
-            "backend.app.satellogic_client",
-            "backend.app.merlin_sentinel2_client",
-            "backend.app.source_manager",
+            "image_mate_qgis_plugin.clients.config",
+            "image_mate_qgis_plugin.clients.satellogic_client",
+            "image_mate_qgis_plugin.clients.merlin_sentinel2_client",
+            "image_mate_qgis_plugin.clients.source_manager",
         ):
             module = sys.modules.get(name)
             if module is not None:
@@ -229,9 +182,19 @@ class SourceService:
                         )
                     )
                 if not has_credentials:
+                    # Get diagnostic info to help debug
+                    try:
+                        from ..clients.config import get_config_diagnostics
+                        diag = get_config_diagnostics()
+                        diag_msg = f" [Debug: env_file={diag.get('env_file_loaded')}, " \
+                                   f"bearer_in_env={diag.get('bearer_token_in_env')}, " \
+                                   f"key_in_env={diag.get('key_id_in_env')}]"
+                    except Exception:
+                        diag_msg = ""
+                    
                     raise RuntimeError(
                         "No Satellogic credentials were detected from .env. "
-                        "Set SATELLOGIC_BEARER_TOKEN or SATELLOGIC_KEY_ID/SATELLOGIC_KEY_SECRET."
+                        f"Set SATELLOGIC_BEARER_TOKEN or SATELLOGIC_KEY_ID/SATELLOGIC_KEY_SECRET.{diag_msg}"
                     )
                 effective_contract = contract_id or str(getattr(sat_client, "contract_id", "") or "").strip() or None
                 if not effective_contract:
@@ -317,7 +280,8 @@ class SourceService:
         z: int,
         x: int,
         y: int,
-        source_url: str,
+        source_url: str | None = None,
+        source_urls: list[str] | None = None,
         contract_id: str | None = None,
         scale: int = 2,
         buffer: int = 1,
@@ -332,9 +296,25 @@ class SourceService:
         sat_client = getattr(self._manager, "satellogic_client", None)
         if sat_client is None:
             raise RuntimeError("Satellogic client unavailable")
-        parsed = urlparse(str(source_url or "").strip())
-        if parsed.scheme not in {"s3", "http", "https"}:
-            raise RuntimeError("COG source URL must use s3/http/https")
+
+        source_candidates: list[str] = []
+        seen_sources: set[str] = set()
+        for raw_value in list(source_urls or []):
+            value = str(raw_value or "").strip()
+            if value and value not in seen_sources:
+                seen_sources.add(value)
+                source_candidates.append(value)
+        single_source = str(source_url or "").strip()
+        if single_source and single_source not in seen_sources:
+            seen_sources.add(single_source)
+            source_candidates.append(single_source)
+        if not source_candidates:
+            raise RuntimeError("COG source URL must be provided")
+
+        for value in source_candidates:
+            parsed = urlparse(value)
+            if parsed.scheme not in {"s3", "http", "https"}:
+                raise RuntimeError("COG source URL must use s3/http/https")
 
         requested_contract_id = self._normalize_contract_candidate(contract_id) or None
         effective_contract_id = (
@@ -362,9 +342,10 @@ class SourceService:
             ("scale", str(max(1, int(scale or 1)))),
             ("buffer", str(max(0, int(buffer or 0)))),
             ("tileMatrixSetId", str(tile_matrix_set_id or "WebMercatorQuad")),
-            ("url", str(source_url)),
             ("format", str(image_format or "png")),
         ]
+        for value in source_candidates:
+            params.append(("url", str(value)))
         bands = [int(value) for value in (bidx or [1, 2, 3])]
         for band in bands:
             params.append(("bidx", str(band)))
@@ -455,7 +436,7 @@ class SourceService:
                 min_gsd=request.get("min_gsd"),
                 max_gsd=request.get("max_gsd"),
             )
-            from backend.app.satellogic_client import normalize_item
+            from ..clients.satellogic_client import normalize_item
 
             items = [normalize_item(feature) for feature in features or []]
             for row in items:
@@ -472,94 +453,6 @@ class SourceService:
         if int(code or 0) == 401:
             return True
         return "401" in str(exc)
-
-    @staticmethod
-    def _ensure_dotenv_module() -> None:
-        try:
-            import dotenv  # noqa: F401
-            return
-        except Exception:
-            pass
-
-        def _fallback_load_dotenv(path=None, *args, **kwargs):
-            _ = (args, kwargs)
-            if not path:
-                return False
-            env_path = Path(path)
-            if not env_path.exists():
-                return False
-            return SourceService._manual_parse_env_file(env_path)
-
-        module = types.ModuleType("dotenv")
-        module.load_dotenv = _fallback_load_dotenv  # type: ignore[attr-defined]
-        module._IMAGE_MATE_FALLBACK = True  # type: ignore[attr-defined]
-        sys.modules["dotenv"] = module
-
-    @staticmethod
-    def _load_env_file(env_path: Path) -> bool:
-        try:
-            import dotenv  # type: ignore
-
-            if not bool(getattr(dotenv, "_IMAGE_MATE_FALLBACK", False)):
-                dotenv.load_dotenv(env_path, override=True)
-                return True
-        except Exception:
-            pass
-        return SourceService._manual_parse_env_file(env_path)
-
-    @staticmethod
-    def _manual_parse_env_file(env_path: Path) -> bool:
-        try:
-            text = env_path.read_text(encoding="utf-8")
-        except Exception:
-            return False
-        for raw in text.splitlines():
-            line = raw.strip()
-            if not line or line.startswith("#"):
-                continue
-            if line.startswith("export "):
-                line = line[len("export "):].strip()
-            if "=" not in line:
-                continue
-            key, value = line.split("=", 1)
-            key = key.strip()
-            value = value.strip()
-            if not key:
-                continue
-            if value and value[0] == value[-1] and value[0] in {"'", '"'}:
-                value = value[1:-1]
-            else:
-                hash_idx = value.find(" #")
-                if hash_idx >= 0:
-                    value = value[:hash_idx].strip()
-            os.environ[key] = value
-        return True
-
-    @staticmethod
-    def _load_repo_env(repo_root: str) -> str:
-        candidates: list[Path] = []
-        explicit_env = str(os.getenv("IMAGE_MATE_ENV_PATH") or "").strip()
-        if explicit_env:
-            candidates.append(Path(explicit_env).expanduser())
-        candidates.append(Path("~/dev/image-mate/.env").expanduser())
-        candidates.append(Path(__file__).resolve().parents[1] / ".env")
-        value = str(repo_root or "").strip()
-        if value:
-            candidates.append(Path(value) / ".env")
-
-        seen: set[str] = set()
-        selected = ""
-        for env_path in candidates:
-            env_str = str(env_path.resolve()) if env_path.exists() else str(env_path)
-            if env_str in seen:
-                continue
-            seen.add(env_str)
-            if not env_path.exists():
-                continue
-            if SourceService._load_env_file(env_path):
-                selected = str(env_path.resolve())
-                break
-        return selected
 
     def default_contract_id(self) -> str:
         sat_client = getattr(self._manager, "satellogic_client", None) if self._manager else None
@@ -651,8 +544,6 @@ class SourceService:
             "cdse_wmts_configured": wmts_configured,
             "cdse_credentials_detected": cdse_credential_detected,
             "cdse_authcfg_configured": bool(self._cfg.cdse_authcfg_id.strip()),
-            "backend_ready": bool(self._manager is not None),
-            "backend_error": self._init_error,
-            "repo_root_used": self._repo_root_used,
-            "env_file_used": self._env_file_used,
+            "clients_ready": bool(self._manager is not None),
+            "init_error": self._init_error,
         }

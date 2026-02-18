@@ -471,7 +471,7 @@ def _extract_satellite_name(props: dict[str, Any], item_id: str) -> str | None:
             return value.strip()
 
     if item_id:
-        match = re.search(r"_SN\\d+_", item_id)
+        match = re.search(r"_SN\d+_", item_id)
         if match:
             return match.group(0).strip("_")
     return None
@@ -484,7 +484,7 @@ def _capture_group_key(feature: dict[str, Any]) -> str:
         return f"outcome:{outcome}"
 
     item_id = feature.get("id", "") or ""
-    match = re.search(r"(\\d{8}_\\d{6}_\\d+_SN\\d+)", item_id)
+    match = re.search(r"(\d{8}_\d{6}_\d+_SN\d+)", item_id)
     if match:
         return f"capture:{match.group(1)}"
 

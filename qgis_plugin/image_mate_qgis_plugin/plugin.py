@@ -4,9 +4,11 @@
 from pathlib import Path
 import json
 import tempfile
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from urllib.parse import parse_qs, quote, urlencode, urlparse
 from urllib.request import urlopen
+import math
+import re
 
 from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtCore import QTimer
@@ -25,6 +27,7 @@ from qgis.core import (
     QgsMessageLog,
     QgsPointXY,
     QgsProject,
+    QgsRectangle,
     QgsRasterLayer,
     QgsVectorLayer,
 )
@@ -34,8 +37,12 @@ from .services.auth_service import AuthService
 from .services.local_tile_proxy import LocalTileProxy
 from .services.settings_service import SettingsService
 from .services.source_service import SourceService
+from .services.streaming_utils import (
+    build_satellogic_xyz_url,
+    extract_cog_source_url,
+    satellogic_item_cog_source_url,
+)
 from .ui.main_dock import ImageMateMainDock
-from .ui.settings_dialog import SettingsDialog
 
 
 class ImageMatePlugin:
@@ -82,6 +89,7 @@ class ImageMatePlugin:
         self._stream_progress_last_error_key = ""
         self._stream_progress_last_error_at = 0.0
         self._stream_last_setup_key = ""
+        self._last_snap_log_key = ""
         self._last_search_request = None
         self._sat_detail_items = []
         self._sat_detail_index = {
@@ -92,6 +100,7 @@ class ImageMatePlugin:
         }
         self._sat_detail_fetch_key = ""
         self._sat_detail_fetch_at = 0.0
+        self._sat_capture_group_fetch_state = {}
         self._disk_log_path = ""
         self._disk_log_fp = None
         self._show_debug_on_screen = False
@@ -153,13 +162,19 @@ class ImageMatePlugin:
             self.dock = ImageMateMainDock(self.iface.mainWindow())
             self.dock.setObjectName("imageMateMainDock")
             self.dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+            self.dock.setFeatures(
+                self.dock.DockWidgetMovable
+                | self.dock.DockWidgetFloatable
+                | self.dock.DockWidgetClosable
+            )
             self.dock.destroyed.connect(self._on_dock_destroyed)
             self.dock.validate_requested.connect(self.validate_setup)
-            self.dock.settings_requested.connect(self.open_settings)
+            self.dock.settings_saved.connect(self.save_settings_from_dock)
             self.dock.search_requested.connect(self.handle_search_request)
             self.dock.result_selected.connect(self.handle_result_selected)
             self.dock.source_combo.currentIndexChanged.connect(self._on_source_changed)
             self.dock.set_runtime_summary(self._runtime_summary_text())
+            self.dock.load_settings(self.provider_settings)
             self._bind_dock_data()
             self.iface.addDockWidget(Qt.RightDockWidgetArea, self.dock)
 
@@ -181,11 +196,10 @@ class ImageMatePlugin:
             self.dock.set_runtime_summary(self._runtime_summary_text(extra_line=message))
         self.iface.messageBar().pushMessage("Image Mate", message, level=Qgis.Info, duration=6)
 
-    def open_settings(self):
-        dialog = SettingsDialog(self.provider_settings, self.iface.mainWindow())
-        if dialog.exec_() != dialog.Accepted:
+    def save_settings_from_dock(self):
+        if self.dock is None:
             return
-        self.provider_settings = dialog.apply_to(self.provider_settings)
+        self.provider_settings = self.dock.apply_settings_to(self.provider_settings)
         self.settings_service.save(self.provider_settings)
         self.source_service = SourceService(self.provider_settings)
         try:
@@ -210,7 +224,13 @@ class ImageMatePlugin:
                 self._append_search_log(f"Removed {removed_count} existing Image Mate layer(s).")
             geometry = self._current_extent_geometry_wgs84()
             request_payload = self.search_controller.build_search_request(payload, geometry)
-            self._append_search_log(json.dumps(request_payload, indent=2))
+            
+            # Log AOI bounds for debugging
+            bounds_info = self._extract_bounds_summary(geometry)
+            self._append_search_log(f"Search AOI bounds: {bounds_info}")
+            self._append_search_log(f"Date range: {request_payload.get('start_date')} to {request_payload.get('end_date')}")
+            self._append_search_log(f"Collection: {request_payload.get('collection_id')}")
+            self._append_search_log(f"Full request payload:\n{json.dumps(request_payload, indent=2)}")
             self._last_search_request = dict(request_payload)
             items = self._search_with_satellogic_detail_parity(request_payload)
             self.search_items = {str(item.get("id") or ""): item for item in items or []}
@@ -230,9 +250,18 @@ class ImageMatePlugin:
                 duration=5,
             )
         except Exception as exc:
+            error_msg = str(exc)
             if request_payload:
-                self._append_search_log(json.dumps(request_payload, indent=2), level=Qgis.Warning)
-            self._append_search_log(f"Search failed: {exc}", level=Qgis.Warning)
+                bounds_info = self._extract_bounds_summary(request_payload.get("geometry", {}))
+                self._append_search_log(f"Search failed with AOI: {bounds_info}", level=Qgis.Warning)
+                self._append_search_log(f"Failed request payload:\n{json.dumps(request_payload, indent=2)}", level=Qgis.Warning)
+            
+            # Check for common error patterns
+            if "500 Server Error" in error_msg:
+                self._append_search_log(f"Search failed: {exc}\n\nHint: 500 Server Error may indicate invalid date range (future dates?) or geometry issues.", level=Qgis.Warning)
+            else:
+                self._append_search_log(f"Search failed: {exc}", level=Qgis.Warning)
+            
             self.iface.messageBar().pushMessage("Image Mate", f"Search failed: {exc}", level=Qgis.Critical, duration=10)
         finally:
             if self.dock is not None:
@@ -260,8 +289,12 @@ class ImageMatePlugin:
             if source_id == "satellogic" and detail_mode:
                 stream_item = self._resolve_satellogic_stream_item(item)
             stream_source_urls = None
+            stream_source_items = None
             if source_id == "satellogic":
-                stream_source_urls = self._satellogic_stream_source_urls(stream_item, overview_item=item)
+                stream_source_urls, stream_source_items = self._satellogic_stream_sources_and_items(
+                    stream_item,
+                    overview_item=item,
+                )
                 if len(stream_source_urls or []) > 1:
                     self._append_debug_log(
                         "Satellogic stream candidates resolved: "
@@ -272,7 +305,11 @@ class ImageMatePlugin:
                     "Resolved selection to l1d-sr detail item "
                     f"{stream_item.get('id')} (from {item.get('id')})."
                 )
-            layer = self._build_stream_layer_for_item(stream_item, source_urls=stream_source_urls)
+            layer = self._build_stream_layer_for_item(
+                stream_item,
+                source_urls=stream_source_urls,
+                source_items=stream_source_items,
+            )
             if layer is not None:
                 self._replace_preview_layer(layer, replace_existing=not create_new_layer_on_select)
                 if create_new_layer_on_select:
@@ -390,8 +427,6 @@ class ImageMatePlugin:
         if not message:
             return
         self._write_disk_log(message, level=level, tag="debug")
-        if self._show_debug_on_screen and self.dock is not None:
-            self.dock.append_search_log(message)
 
     def _init_disk_log(self):
         if self._disk_log_fp is not None:
@@ -471,6 +506,12 @@ class ImageMatePlugin:
         except Exception:
             pass
 
+        if self.dock is not None:
+            try:
+                self.dock.append_debug_log(line)
+            except Exception:
+                pass
+
     def _on_qgis_message_logged(self, message, tag, level):
         source_tag = str(tag or "").strip() or "qgis"
         # Capture actionable warnings/errors and WMS diagnostics to disk for offline debugging.
@@ -496,6 +537,11 @@ class ImageMatePlugin:
     def _normalize_collection_id(collection_id):
         return str(collection_id or "").strip().lower().replace("_", "-")
 
+    @classmethod
+    def _is_strip_collection(cls, collection_id):
+        normalized = cls._normalize_collection_id(collection_id)
+        return normalized in {"quickview-visual-thumb"}
+
     @staticmethod
     def _item_outcome_key(item):
         return str(item.get("outcome_id") or "").strip()
@@ -505,6 +551,14 @@ class ImageMatePlugin:
         value = str(item.get("datetime") or "").strip()
         return value[:19] if len(value) >= 19 else value
 
+    @staticmethod
+    def _item_capture_key(item):
+        item_id = str(item.get("id") or "").strip()
+        if not item_id:
+            return ""
+        match = re.search(r"(\d{8}_\d{6}_\d+_SN\d+)", item_id)
+        return str(match.group(1)) if match else ""
+
     def _search_with_satellogic_detail_parity(self, request_payload):
         source_id = str(request_payload.get("source_id") or "").strip().lower()
         if source_id != "satellogic":
@@ -512,6 +566,7 @@ class ImageMatePlugin:
             self._sat_detail_index = {"by_id": {}, "by_outcome": {}, "by_datetime": {}, "by_day": {}}
             self._sat_detail_fetch_key = ""
             self._sat_detail_fetch_at = 0.0
+            self._sat_capture_group_fetch_state = {}
             return self.source_service.search(request_payload)
 
         primary_items = self.source_service.search(request_payload)
@@ -519,6 +574,8 @@ class ImageMatePlugin:
         detail_items = []
         if primary_collection == "l1d-sr":
             detail_items = list(primary_items)
+        elif self._is_strip_collection(primary_collection):
+            detail_items = []
         else:
             detail_request = dict(request_payload)
             detail_request["collection_id"] = "l1d-sr"
@@ -539,6 +596,7 @@ class ImageMatePlugin:
         self._rebuild_sat_detail_index()
         self._sat_detail_fetch_key = ""
         self._sat_detail_fetch_at = 0.0
+        self._sat_capture_group_fetch_state = {}
         return primary_items
 
     def _rebuild_sat_detail_index(self):
@@ -580,6 +638,8 @@ class ImageMatePlugin:
             return item
         if self._normalize_collection_id(item.get("collection")) == "l1d-sr":
             return item
+        if self._is_strip_collection(item.get("collection")):
+            return item
         if not self._sat_detail_items:
             return item
 
@@ -599,8 +659,6 @@ class ImageMatePlugin:
         dt = self._item_datetime_key(item)
         if dt and by_datetime.get(dt):
             return by_datetime[dt][0]
-        if dt and len(dt) >= 10 and by_day.get(dt[:10]):
-            return by_day[dt[:10]][0]
 
         target_geom = self._geometry_from_geojson(item.get("geometry") if isinstance(item.get("geometry"), dict) else None)
         if target_geom is not None and not target_geom.isEmpty():
@@ -625,50 +683,192 @@ class ImageMatePlugin:
             return []
         if str(item.get("source_id") or "").strip().lower() != "satellogic":
             return []
+        if self._is_strip_collection(item.get("collection")):
+            return []
         if not self._sat_detail_items:
             return []
 
+        # Get the collection from the item to filter candidates
+        item_collection = self._normalize_collection_id(item.get("collection"))
+
         by_outcome = self._sat_detail_index.get("by_outcome", {})
         by_datetime = self._sat_detail_index.get("by_datetime", {})
-        by_day = self._sat_detail_index.get("by_day", {})
+
+        candidates = []
 
         outcome = self._item_outcome_key(item)
         if outcome and by_outcome.get(outcome):
-            return list(by_outcome.get(outcome) or [])
+            candidates = list(by_outcome.get(outcome) or [])
+        else:
+            dt = self._item_datetime_key(item)
+            if dt and by_datetime.get(dt):
+                candidates = list(by_datetime.get(dt) or [])
 
-        dt = self._item_datetime_key(item)
-        if dt and by_datetime.get(dt):
-            return list(by_datetime.get(dt) or [])
-        if dt and len(dt) >= 10 and by_day.get(dt[:10]):
-            return list(by_day.get(dt[:10]) or [])
-        return []
+        if item_collection == "l1d-sr":
+            self._enrich_l1d_sr_capture_group(item, candidates)
+            by_outcome = self._sat_detail_index.get("by_outcome", {})
+            by_datetime = self._sat_detail_index.get("by_datetime", {})
+            if outcome and by_outcome.get(outcome):
+                candidates = list(by_outcome.get(outcome) or [])
+            elif not candidates:
+                dt = self._item_datetime_key(item)
+                if dt and by_datetime.get(dt):
+                    candidates = list(by_datetime.get(dt) or [])
+
+        # Filter candidates to only include items from the same collection
+        if candidates and item_collection:
+            candidates = [
+                c for c in candidates
+                if self._normalize_collection_id(c.get("collection")) == item_collection
+            ]
+
+        return candidates
+
+    def _enrich_l1d_sr_capture_group(self, item, seed_candidates):
+        if self._normalize_collection_id(item.get("collection")) != "l1d-sr":
+            return
+
+        outcome = self._item_outcome_key(item)
+        capture_key = self._item_capture_key(item)
+        group_key = f"outcome:{outcome}" if outcome else (f"capture:{capture_key}" if capture_key else "")
+        if not group_key:
+            return
+        if self._sat_capture_group_fetch_state.get(group_key):
+            return
+        self._sat_capture_group_fetch_state[group_key] = True
+
+        seed_items = list(seed_candidates or [])
+        if not seed_items:
+            seed_items = [item]
+        rect = self._satellogic_extent_from_items(seed_items)
+        if rect is None or rect.isEmpty():
+            self._append_debug_log(
+                f"L1D SR capture-group enrichment skipped for {group_key}: no seed extent (seed_items={len(seed_items)}).",
+                level=Qgis.Warning,
+            )
+            return
+
+        try:
+            minx = float(rect.xMinimum())
+            miny = float(rect.yMinimum())
+            maxx = float(rect.xMaximum())
+            maxy = float(rect.yMaximum())
+        except Exception:
+            return
+        width = max(1e-6, maxx - minx)
+        height = max(1e-6, maxy - miny)
+        pad_x = max(width * 2.0, 0.02)
+        pad_y = max(height * 2.0, 0.02)
+        geometry = {
+            "type": "Polygon",
+            "coordinates": [[
+                [minx - pad_x, miny - pad_y],
+                [maxx + pad_x, miny - pad_y],
+                [maxx + pad_x, maxy + pad_y],
+                [minx - pad_x, maxy + pad_y],
+                [minx - pad_x, miny - pad_y],
+            ]],
+        }
+
+        detail_request = dict(self._last_search_request or {})
+        detail_request["source_id"] = "satellogic"
+        detail_request["collection_id"] = "l1d-sr"
+        detail_request["geometry"] = geometry
+        detail_request["limit"] = max(500, int(detail_request.get("limit") or 250))
+
+        item_contract = str(item.get("contract_id") or "").strip()
+        if item_contract and not str(detail_request.get("contract_id") or "").strip():
+            detail_request["contract_id"] = item_contract
+
+        dt_value = str(item.get("datetime") or "").strip()
+        if dt_value:
+            try:
+                parsed_dt = datetime.fromisoformat(dt_value.replace("Z", "+00:00"))
+                if parsed_dt.tzinfo is None:
+                    parsed_dt = parsed_dt.replace(tzinfo=timezone.utc)
+                parsed_dt = parsed_dt.astimezone(timezone.utc)
+                detail_request["start_date"] = (parsed_dt - timedelta(minutes=8)).strftime("%Y-%m-%dT%H:%M:%SZ")
+                detail_request["end_date"] = (parsed_dt + timedelta(minutes=8)).strftime("%Y-%m-%dT%H:%M:%SZ")
+            except Exception:
+                pass
+
+        try:
+            fetched = self.source_service.search(detail_request)
+        except Exception as exc:
+            self._append_debug_log(
+                f"L1D SR capture-group enrichment failed for {group_key}: {exc}",
+                level=Qgis.Warning,
+            )
+            return
+
+        matched = []
+        for row in fetched or []:
+            if not isinstance(row, dict):
+                continue
+            if outcome and self._item_outcome_key(row) == outcome:
+                matched.append(row)
+                continue
+            if capture_key and self._item_capture_key(row) == capture_key:
+                matched.append(row)
+
+        if not matched:
+            self._append_debug_log(
+                f"L1D SR capture-group enrichment for {group_key}: fetched={len(fetched or [])} matched=0 added=0."
+            )
+            return
+
+        existing_ids = {str(row.get("id") or "").strip() for row in self._sat_detail_items or []}
+        added = 0
+        for row in matched:
+            row_id = str(row.get("id") or "").strip()
+            if not row_id or row_id in existing_ids:
+                continue
+            self._sat_detail_items.append(row)
+            existing_ids.add(row_id)
+            added += 1
+
+        if added > 0:
+            self._rebuild_sat_detail_index()
+            self._append_debug_log(
+                f"Expanded L1D SR capture group {group_key}: +{added} strip(s), total={len(matched)}."
+            )
+        else:
+            self._append_debug_log(
+                f"L1D SR capture-group enrichment for {group_key}: fetched={len(fetched or [])} matched={len(matched)} added=0."
+            )
 
     def _satellogic_item_cog_source_url(self, item):
-        assets = item.get("assets") or {}
-        return self._extract_cog_source_url(
-            str(assets.get("visual_fullres") or "").strip()
-            or str(assets.get("visual") or "").strip()
-            or str(assets.get("analytic") or "").strip()
-        )
+        return satellogic_item_cog_source_url(item)
 
-    def _satellogic_stream_source_urls(self, stream_item, overview_item=None):
+    def _satellogic_stream_sources_and_items(self, stream_item, overview_item=None):
         if str(stream_item.get("source_id") or "").strip().lower() != "satellogic":
-            return []
+            return [], []
 
         urls = []
         seen = set()
+        items = []
+        seen_items = set()
+        item_sources = []
 
         def append_from(candidate):
             if not isinstance(candidate, dict):
                 return
+            item_id = str(candidate.get("id") or "").strip()
+            if item_id and item_id not in seen_items:
+                seen_items.add(item_id)
+                items.append(candidate)
             source_url = self._satellogic_item_cog_source_url(candidate)
             if source_url and source_url not in seen:
                 seen.add(source_url)
                 urls.append(source_url)
+                item_sources.append((candidate, source_url))
 
         append_from(stream_item)
         if isinstance(overview_item, dict):
-            append_from(overview_item)
+            if self._normalize_collection_id(overview_item.get("collection")) == self._normalize_collection_id(
+                stream_item.get("collection")
+            ):
+                append_from(overview_item)
 
         candidates = self._satellogic_detail_candidates_for_item(overview_item if isinstance(overview_item, dict) else stream_item)
         if not candidates and isinstance(overview_item, dict):
@@ -694,14 +894,181 @@ class ImageMatePlugin:
             for candidate in intersecting + others:
                 append_from(candidate)
 
-        max_sources = max(1, int(self._satellogic_max_stream_sources or 1))
+        configured_max_sources = max(1, int(self._satellogic_max_stream_sources or 1))
+        is_l1d_sr_stream = self._normalize_collection_id(stream_item.get("collection")) == "l1d-sr"
+        max_sources = len(urls) if is_l1d_sr_stream else configured_max_sources
         if len(urls) > max_sources:
             self._append_debug_log(
                 f"Capped Satellogic stream candidates from {len(urls)} to {max_sources} for responsive tile loading."
             )
             urls = urls[:max_sources]
+        elif is_l1d_sr_stream and len(urls) > configured_max_sources:
+            self._append_debug_log(
+                f"Bypassed source cap for l1d-sr coverage: using {len(urls)} strips (cap={configured_max_sources})."
+            )
 
+        if item_sources and urls:
+            url_set = set(urls)
+            items = [item for item, source in item_sources if source in url_set]
+
+        return urls, items
+
+    def _satellogic_stream_source_urls(self, stream_item, overview_item=None):
+        urls, _items = self._satellogic_stream_sources_and_items(stream_item, overview_item=overview_item)
         return urls
+
+    def _satellogic_extent_from_items(self, items):
+        if not items:
+            return None
+        rect = None
+        for item in items:
+            if self._normalize_collection_id(item.get("collection")) == "l1d-sr":
+                raster_rect = self._raster_bounds_rect_wgs84(item)
+                if raster_rect is not None and not raster_rect.isEmpty():
+                    if rect is None:
+                        rect = QgsRectangle(raster_rect)
+                    else:
+                        rect.combineExtentWith(raster_rect)
+                    continue
+            geom_payload = item.get("geometry")
+            if not isinstance(geom_payload, dict):
+                continue
+            geom = self._geometry_from_geojson(geom_payload)
+            if geom is None or geom.isEmpty():
+                continue
+            bbox = geom.boundingBox()
+            if rect is None:
+                rect = QgsRectangle(bbox)
+            else:
+                rect.combineExtentWith(bbox)
+        return rect
+
+    def _raster_bounds_rect_wgs84(self, item):
+        raw = item.get("raw") if isinstance(item, dict) else None
+        if not isinstance(raw, dict):
+            return None
+        props = raw.get("properties") if isinstance(raw.get("properties"), dict) else {}
+        shape = props.get("proj:shape") or raw.get("proj:shape")
+        transform = props.get("proj:transform") or raw.get("proj:transform")
+        epsg = props.get("proj:epsg") or raw.get("proj:epsg")
+        if not shape or not transform or not epsg:
+            return None
+        if not isinstance(shape, (list, tuple)) or len(shape) < 2:
+            return None
+        if not isinstance(transform, (list, tuple)) or len(transform) < 6:
+            return None
+        try:
+            height = int(shape[0])
+            width = int(shape[1])
+            if width <= 0 or height <= 0:
+                return None
+            a, b, c, d, e, f = (float(val) for val in transform[:6])
+            x0 = c
+            y0 = f
+            x1 = (a * width) + (b * height) + c
+            y1 = (d * width) + (e * height) + f
+            minx = min(x0, x1)
+            maxx = max(x0, x1)
+            miny = min(y0, y1)
+            maxy = max(y0, y1)
+            src_crs = QgsCoordinateReferenceSystem(f"EPSG:{int(epsg)}")
+            if not src_crs.isValid():
+                return None
+            rect = QgsRectangle(minx, miny, maxx, maxy)
+            transform_ctx = QgsCoordinateTransform(src_crs, QgsCoordinateReferenceSystem("EPSG:4326"), QgsProject.instance())
+            return transform_ctx.transformBoundingBox(rect)
+        except Exception:
+            return None
+
+    @staticmethod
+    def _tile_xy_float(lat: float, lon: float, zoom: int) -> tuple[float, float]:
+        n = 2 ** zoom
+        x_float = (lon + 180.0) / 360.0 * n
+        lat = max(-85.05112878, min(85.05112878, lat))
+        lat_rad = math.radians(lat)
+        y_float = (1.0 - math.log(math.tan(lat_rad) + (1.0 / math.cos(lat_rad))) / math.pi) / 2.0 * n
+        return x_float, y_float
+
+    @staticmethod
+    def _tile_x_to_lon(tile_x: float, zoom: int) -> float:
+        n = 2 ** zoom
+        return (float(tile_x) / n) * 360.0 - 180.0
+
+    @staticmethod
+    def _tile_y_to_lat(tile_y: float, zoom: int) -> float:
+        n = 2 ** zoom
+        y = float(tile_y)
+        lat_rad = math.atan(math.sinh(math.pi * (1.0 - 2.0 * y / n)))
+        return math.degrees(lat_rad)
+
+    def _snap_extent_to_tile_grid(self, rect, zoom: int):
+        if rect is None:
+            return None
+        try:
+            minx = float(rect.xMinimum())
+            maxx = float(rect.xMaximum())
+            miny = float(rect.yMinimum())
+            maxy = float(rect.yMaximum())
+        except Exception:
+            return rect
+
+        x_min_f, y_min_f = self._tile_xy_float(maxy, minx, zoom)
+        x_max_f, y_max_f = self._tile_xy_float(miny, maxx, zoom)
+
+        # Snap min edges inward; keep max edges inclusive.
+        x_min = math.floor(min(x_min_f, x_max_f))
+        x_max = math.ceil(max(x_min_f, x_max_f))
+        y_min = math.floor(min(y_min_f, y_max_f))
+        y_max = math.ceil(max(y_min_f, y_max_f))
+
+        # Expand by one tile to avoid edge gaps caused by rounding/coverage jitter.
+        n = 2 ** int(zoom)
+        pad = 1
+        x_min = max(0, x_min - pad)
+        y_min = max(0, y_min - pad)
+        x_max = min(n, x_max + pad)
+        y_max = min(n, y_max + pad)
+
+        log_key = f"{int(zoom)}:{minx:.6f}:{miny:.6f}:{maxx:.6f}:{maxy:.6f}"
+        if log_key != self._last_snap_log_key:
+            self._last_snap_log_key = log_key
+            self._append_debug_log(
+                "Snap extent: "
+                f"zoom={int(zoom)} x_f=({x_min_f:.3f},{x_max_f:.3f}) y_f=({y_min_f:.3f},{y_max_f:.3f}) "
+                f"tiles=({x_min},{x_max})/({y_min},{y_max})"
+            )
+
+        if x_min >= x_max or y_min >= y_max:
+            return rect
+
+        snapped_minx = self._tile_x_to_lon(x_min, zoom)
+        snapped_maxx = self._tile_x_to_lon(x_max, zoom)
+        snapped_maxy = self._tile_y_to_lat(y_min, zoom)
+        snapped_miny = self._tile_y_to_lat(y_max, zoom)
+
+        rect.setXMinimum(snapped_minx)
+        rect.setXMaximum(snapped_maxx)
+        rect.setYMinimum(snapped_miny)
+        rect.setYMaximum(snapped_maxy)
+        return rect
+
+    def _apply_stream_layer_extent(self, layer, items):
+        if layer is None or not items:
+            return
+        rect = self._satellogic_extent_from_items(items)
+        if rect is None:
+            return
+        zoom_level = self._current_canvas_zoom_level()
+        if zoom_level is not None:
+            rect = self._snap_extent_to_tile_grid(rect, zoom_level)
+        src_crs = QgsCoordinateReferenceSystem("EPSG:4326")
+        dst_crs = layer.crs() if layer.crs().isValid() else QgsCoordinateReferenceSystem("EPSG:3857")
+        try:
+            transform = QgsCoordinateTransform(src_crs, dst_crs, QgsProject.instance())
+            rect = transform.transformBoundingBox(rect)
+        except Exception:
+            return
+        layer.setExtent(rect)
 
     def _refresh_satellogic_detail_pool_for_viewport(self):
         request_payload = self._last_search_request or {}
@@ -765,6 +1132,39 @@ class ImageMatePlugin:
             transform = QgsCoordinateTransform(src_crs, target_crs, QgsProject.instance())
             extent_wgs84 = transform.transformBoundingBox(extent)
         return self.search_controller.extent_to_geometry(extent_wgs84)
+
+    def _extract_bounds_summary(self, geometry):
+        """Extract a human-readable bounds summary from a GeoJSON geometry."""
+        if not isinstance(geometry, dict):
+            return "invalid geometry"
+        try:
+            coords = geometry.get("coordinates", [])
+            if not coords:
+                return "no coordinates"
+            
+            # Extract all coordinate pairs
+            lons, lats = [], []
+            def extract_coords(obj):
+                if isinstance(obj, list):
+                    if len(obj) >= 2 and isinstance(obj[0], (int, float)) and isinstance(obj[1], (int, float)):
+                        lons.append(obj[0])
+                        lats.append(obj[1])
+                    else:
+                        for item in obj:
+                            extract_coords(item)
+            extract_coords(coords)
+            
+            if not lons or not lats:
+                return "no valid coordinates"
+            
+            min_lon, max_lon = min(lons), max(lons)
+            min_lat, max_lat = min(lats), max(lats)
+            center_lon = (min_lon + max_lon) / 2
+            center_lat = (min_lat + max_lat) / 2
+            
+            return f"[{min_lon:.6f}, {min_lat:.6f}] to [{max_lon:.6f}, {max_lat:.6f}] (center: {center_lat:.6f}, {center_lon:.6f})"
+        except Exception:
+            return "bounds extraction failed"
 
     def _render_search_results_layer(self, items):
         self._remove_layer_by_id(self.search_layer_id)
@@ -848,14 +1248,18 @@ class ImageMatePlugin:
         path.write_bytes(data)
         return path
 
-    def _build_stream_layer_for_item(self, item, source_urls=None):
+    def _build_stream_layer_for_item(self, item, source_urls=None, source_items=None):
         source_id = str(item.get("source_id") or "").strip().lower()
         if source_id == "merlin-s2":
             layer = self._build_merlin_wmts_stream_layer(item)
             if layer is not None:
                 return layer
         if source_id == "satellogic":
-            layer = self._build_satellogic_proxy_stream_layer(item, source_urls=source_urls)
+            layer = self._build_satellogic_proxy_stream_layer(
+                item,
+                source_urls=source_urls,
+                source_items=source_items,
+            )
             if layer is not None:
                 return layer
         return None
@@ -890,7 +1294,7 @@ class ImageMatePlugin:
         layer = self._make_xyz_layer(xyz_url, layer_name, zmin=0, zmax=19)
         return layer if layer is not None and layer.isValid() else None
 
-    def _build_satellogic_proxy_stream_layer(self, item, source_urls=None):
+    def _build_satellogic_proxy_stream_layer(self, item, source_urls=None, source_items=None):
         resolved_sources = []
         seen_sources = set()
 
@@ -967,7 +1371,10 @@ class ImageMatePlugin:
             )
         layer_name = self._asset_layer_name(item, "stream")
         layer = self._make_xyz_layer(xyz_url, layer_name, zmin=0, zmax=22)
-        return layer if layer is not None and layer.isValid() else None
+        if layer is None or not layer.isValid():
+            return None
+        self._apply_stream_layer_extent(layer, source_items or [item])
+        return layer
 
     @staticmethod
     def _make_xyz_layer(xyz_url, layer_name, zmin=0, zmax=22):
@@ -1006,49 +1413,49 @@ class ImageMatePlugin:
 
     @staticmethod
     def _extract_cog_source_url(raw_url):
-        value = str(raw_url or "").strip()
-        if not value:
-            return ""
-        if value.startswith("s3://"):
-            return value
-        try:
-            parsed = urlparse(value)
-            source = str((parse_qs(parsed.query or "").get("s") or [""])[0]).strip()
-            if source.startswith("s3://"):
-                return source
-            return value
-        except Exception:
-            return value
+        return extract_cog_source_url(raw_url)
 
     def _current_canvas_zoom_level(self):
         canvas = self.iface.mapCanvas()
         if canvas is None:
             return None
         try:
-            if hasattr(canvas, "zoomLevel"):
-                return int(canvas.zoomLevel())
+            map_settings = canvas.mapSettings()
+            units_per_pixel = float(getattr(map_settings, "mapUnitsPerPixel", lambda: 0.0)() or 0.0)
+            extent = map_settings.extent()
+            if extent.isEmpty():
+                return None
+            if units_per_pixel <= 0:
+                output_size = map_settings.outputSize()
+                width_px = max(1, int(output_size.width()))
+                height_px = max(1, int(output_size.height()))
+                units_per_pixel = max(extent.width() / width_px, extent.height() / height_px)
+            if units_per_pixel <= 0:
+                return None
+            crs = map_settings.destinationCrs()
+            meters_per_pixel = units_per_pixel
+            if crs.isValid() and crs.authid() == "EPSG:4326":
+                center_lat = extent.center().y()
+                meters_per_degree = 111319.49079327357 * math.cos(math.radians(center_lat))
+                meters_per_pixel = units_per_pixel * max(1e-9, abs(meters_per_degree))
+            zoom = math.log(156543.03392804097 / meters_per_pixel, 2)
+            if not math.isfinite(zoom):
+                return None
+            return int(round(zoom))
         except Exception:
             return None
-        return None
 
     def _satellogic_tile_scale(self):
         zoom_level = self._current_canvas_zoom_level()
         if zoom_level is None:
-            # Conservative default for performance when zoom level is unknown.
             return 1
-        return 2 if zoom_level >= int(self._satellogic_highres_zoom_threshold) else 1
+        return 2 if zoom_level >= int(self._satellogic_highres_zoom_threshold or 17) else 1
 
     def _is_detail_zoom(self):
         zoom_level = self._current_canvas_zoom_level()
-        if zoom_level is not None:
-            return zoom_level >= int(self._auto_stream_zoom_threshold)
-        canvas = self.iface.mapCanvas()
-        if canvas is None:
+        if zoom_level is None:
             return False
-        try:
-            return float(canvas.scale() or 0.0) <= 250000
-        except Exception:
-            return False
+        return zoom_level >= int(self._auto_stream_zoom_threshold or 13)
 
     def _start_stream_progress_monitor(self, item_id):
         if not self.local_tile_proxy.is_running():
@@ -1183,8 +1590,15 @@ class ImageMatePlugin:
         if not item:
             return
         stream_item = self._resolve_satellogic_stream_item(item)
-        stream_source_urls = self._satellogic_stream_source_urls(stream_item, overview_item=item)
-        layer = self._build_stream_layer_for_item(stream_item, source_urls=stream_source_urls)
+        stream_source_urls, stream_source_items = self._satellogic_stream_sources_and_items(
+            stream_item,
+            overview_item=item,
+        )
+        layer = self._build_stream_layer_for_item(
+            stream_item,
+            source_urls=stream_source_urls,
+            source_items=stream_source_items,
+        )
         if layer is None:
             return
         self._replace_preview_layer(layer)
