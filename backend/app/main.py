@@ -419,7 +419,9 @@ def _download_bytes_for_url(url: str, contract_id: str | None = None, source_hin
     return sources.download_bytes(url, contract_id=contract_id, source_hint=source_hint)
 
 
-def _prune_asset_cache(max_entries: int = 120):
+def _prune_asset_cache(max_entries: int | None = None):
+    if max_entries is None:
+        max_entries = max(100, int(settings.asset_cache_max_entries or 1200))
     cache = app.state.asset_cache
     if len(cache) <= max_entries:
         return
@@ -1194,7 +1196,7 @@ def sentinel_wmts_tile_proxy(
         return Response(
             content=payload,
             media_type=cache_entry.get("media_type", "image/png"),
-            headers={"Cache-Control": "public, max-age=300", "X-Proxy-Cache": "hit"},
+            headers={"Cache-Control": f"public, max-age={int(settings.proxy_cache_ttl_seconds)}", "X-Proxy-Cache": "hit"},
         )
     if cache_entry:
         app.state.asset_cache.pop(cache_key, None)
@@ -1225,7 +1227,7 @@ def sentinel_wmts_tile_proxy(
         app.state.asset_cache[cache_key] = {
             "content": payload,
             "media_type": media_type,
-            "expires_at": now + 300,
+            "expires_at": now + int(settings.proxy_cache_ttl_seconds),
         }
         _prune_asset_cache()
 
@@ -1243,7 +1245,7 @@ def sentinel_wmts_tile_proxy(
     return Response(
         content=payload,
         media_type=media_type,
-        headers={"Cache-Control": "public, max-age=300", "X-Proxy-Cache": "miss"},
+        headers={"Cache-Control": f"public, max-age={int(settings.proxy_cache_ttl_seconds)}", "X-Proxy-Cache": "miss"},
     )
 
 
@@ -1466,7 +1468,7 @@ def asset_proxy(
             return Response(
                 content=cache_entry["content"],
                 media_type=cache_entry["media_type"],
-                headers={"Cache-Control": "public, max-age=300", "X-Proxy-Cache": "hit"},
+                headers={"Cache-Control": f"public, max-age={int(settings.proxy_cache_ttl_seconds)}", "X-Proxy-Cache": "hit"},
             )
         if cache_entry:
             app.state.asset_cache.pop(cache_key, None)
@@ -1540,7 +1542,7 @@ def asset_proxy(
             app.state.asset_cache[cache_key] = {
                 "content": content,
                 "media_type": media_type,
-                "expires_at": now + 300,
+                "expires_at": now + int(settings.proxy_cache_ttl_seconds),
             }
             _prune_asset_cache()
 
@@ -1565,7 +1567,7 @@ def asset_proxy(
         return Response(
             content=content,
             media_type=media_type,
-            headers={"Cache-Control": "public, max-age=300", "X-Proxy-Cache": "miss"},
+            headers={"Cache-Control": f"public, max-age={int(settings.proxy_cache_ttl_seconds)}", "X-Proxy-Cache": "miss"},
         )
     except HTTPException:
         raise
@@ -2003,7 +2005,7 @@ def raster_cog_tile_proxy(
             return Response(
                 content=cache_entry["content"],
                 media_type=cache_entry["media_type"],
-                headers={"Cache-Control": "public, max-age=300", "X-Proxy-Cache": "hit"},
+                headers={"Cache-Control": f"public, max-age={int(settings.proxy_cache_ttl_seconds)}", "X-Proxy-Cache": "hit"},
             )
         if cache_entry:
             app.state.asset_cache.pop(cache_key, None)
@@ -2028,6 +2030,7 @@ def raster_cog_tile_proxy(
                 tile_size = 256 * max(1, int(scale or 1))
                 empty_tile = _transparent_png_tile(tile_size)
                 fallback_ttl = 60 if upstream_status == 404 else 20
+                fallback_ttl = min(fallback_ttl, int(settings.proxy_empty_tile_ttl_seconds))
                 elapsed_ms = int((time.perf_counter() - started) * 1000)
                 app.state.asset_cache[cache_key] = {
                     "content": empty_tile,
@@ -2082,7 +2085,7 @@ def raster_cog_tile_proxy(
             app.state.asset_cache[cache_key] = {
                 "content": content,
                 "media_type": media_type,
-                "expires_at": now + 300,
+                "expires_at": now + int(settings.proxy_cache_ttl_seconds),
             }
             _prune_asset_cache()
 
@@ -2101,7 +2104,7 @@ def raster_cog_tile_proxy(
         return Response(
             content=content,
             media_type=media_type,
-            headers={"Cache-Control": "public, max-age=300", "X-Proxy-Cache": "miss"},
+            headers={"Cache-Control": f"public, max-age={int(settings.proxy_cache_ttl_seconds)}", "X-Proxy-Cache": "miss"},
         )
     except HTTPException:
         raise

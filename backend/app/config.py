@@ -65,6 +65,9 @@ class Settings:
     host: str = os.getenv("IMAGE_MATE_HOST", "0.0.0.0")
     port: int = int(os.getenv("IMAGE_MATE_PORT", "8000"))
     cors_origins: list[str] = None  # type: ignore[assignment]
+    asset_cache_max_entries: int = int(os.getenv("IMAGE_MATE_ASSET_CACHE_MAX_ENTRIES", "1200"))
+    proxy_cache_ttl_seconds: int = int(os.getenv("IMAGE_MATE_PROXY_CACHE_TTL_SECONDS", "1800"))
+    proxy_empty_tile_ttl_seconds: int = int(os.getenv("IMAGE_MATE_PROXY_EMPTY_TILE_TTL_SECONDS", "300"))
 
     output_dir: Path = ROOT_DIR / "backend" / "output"
     monitoring_db_path: Path = ROOT_DIR / "backend" / "output" / "monitoring.sqlite3"
