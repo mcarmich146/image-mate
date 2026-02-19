@@ -6,6 +6,7 @@ from __future__ import annotations
 from collections import OrderedDict
 import io
 import json
+import math
 import re
 import struct
 import threading
@@ -141,6 +142,50 @@ def _alpha_composite_png_payloads(png_payloads: list[bytes]) -> bytes | None:
     return None
 
 
+def _png_alpha_extrema(payload: bytes) -> tuple[int, int] | None:
+    raw = bytes(payload or b"")
+    if not raw or not _is_valid_png(raw):
+        return None
+
+    if _HAS_PIL:
+        try:
+            image = Image.open(io.BytesIO(raw)).convert("RGBA")
+            alpha = image.getchannel("A")
+            extrema = alpha.getextrema()
+            if isinstance(extrema, tuple) and len(extrema) == 2:
+                return int(extrema[0]), int(extrema[1])
+        except Exception:
+            pass
+
+    if _HAS_QIMAGE:
+        try:
+            image = QImage.fromData(raw, "PNG")
+            if image.isNull():
+                return None
+            if image.format() != QImage.Format_ARGB32:
+                image = image.convertToFormat(QImage.Format_ARGB32)
+            width = max(0, int(image.width()))
+            height = max(0, int(image.height()))
+            if width <= 0 or height <= 0:
+                return None
+            min_alpha = 255
+            max_alpha = 0
+            for row in range(height):
+                for col in range(width):
+                    alpha_value = (int(image.pixel(col, row)) >> 24) & 0xFF
+                    if alpha_value < min_alpha:
+                        min_alpha = alpha_value
+                    if alpha_value > max_alpha:
+                        max_alpha = alpha_value
+                    if min_alpha == 0 and max_alpha == 255:
+                        return 0, 255
+            return int(min_alpha), int(max_alpha)
+        except Exception:
+            pass
+
+    return None
+
+
 def _extract_embedded_tile_options(url_value: str) -> tuple[str, dict[str, list[str]]]:
     value = str(url_value or "").strip()
     if not value or "&" not in value or "=" not in value:
@@ -174,6 +219,71 @@ def _extract_embedded_tile_options(url_value: str) -> tuple[str, dict[str, list[
     return base_url, embedded
 
 
+def _parse_bbox_token(value: str) -> tuple[float, float, float, float] | None:
+    raw = str(value or "").strip()
+    if not raw or raw == "-":
+        return None
+    parts = [str(piece).strip() for piece in raw.split(",")]
+    if len(parts) != 4:
+        return None
+    try:
+        minx = float(parts[0])
+        miny = float(parts[1])
+        maxx = float(parts[2])
+        maxy = float(parts[3])
+    except Exception:
+        return None
+    if not all(math.isfinite(v) for v in (minx, miny, maxx, maxy)):
+        return None
+    lo_x = min(minx, maxx)
+    hi_x = max(minx, maxx)
+    lo_y = min(miny, maxy)
+    hi_y = max(miny, maxy)
+    return lo_x, lo_y, hi_x, hi_y
+
+
+def _tile_bounds_wgs84(z: int, x: int, y: int) -> tuple[float, float, float, float]:
+    n = float(2 ** max(0, int(z)))
+    x0 = float(x)
+    y0 = float(y)
+    min_lon = (x0 / n) * 360.0 - 180.0
+    max_lon = ((x0 + 1.0) / n) * 360.0 - 180.0
+    lat_top = math.degrees(math.atan(math.sinh(math.pi * (1.0 - 2.0 * (y0 / n)))))
+    lat_bottom = math.degrees(math.atan(math.sinh(math.pi * (1.0 - 2.0 * ((y0 + 1.0) / n)))))
+    min_lat = min(lat_top, lat_bottom)
+    max_lat = max(lat_top, lat_bottom)
+    return min_lon, min_lat, max_lon, max_lat
+
+
+def _expand_bbox_wgs84(
+    bbox: tuple[float, float, float, float],
+    *,
+    lon_pad: float,
+    lat_pad: float,
+) -> tuple[float, float, float, float]:
+    minx, miny, maxx, maxy = bbox
+    return (
+        max(-180.0, float(minx) - float(max(0.0, lon_pad))),
+        max(-85.05112878, float(miny) - float(max(0.0, lat_pad))),
+        min(180.0, float(maxx) + float(max(0.0, lon_pad))),
+        min(85.05112878, float(maxy) + float(max(0.0, lat_pad))),
+    )
+
+
+def _bbox_intersects(
+    a: tuple[float, float, float, float],
+    b: tuple[float, float, float, float],
+) -> bool:
+    a_minx, a_miny, a_maxx, a_maxy = a
+    b_minx, b_miny, b_maxx, b_maxy = b
+    return not (
+        float(a_maxx) < float(b_minx)
+        or float(b_maxx) < float(a_minx)
+        or float(a_maxy) < float(b_miny)
+        or float(b_maxy) < float(a_miny)
+    )
+
+
 def _is_l1d_sr_source(source_url: str) -> bool:
     value = str(source_url or "").strip().lower()
     if not value:
@@ -194,6 +304,13 @@ class LocalTileProxy:
         self._cache_max_entries = 1400
         self._cache_ttl_seconds = 300
         self._stale_ttl_seconds = 3600
+        self._inflight_tile_lock = threading.Lock()
+        self._inflight_tile_events: dict[str, threading.Event] = {}
+        self._coalesce_wait_seconds = 18.0
+        self._probe_failure_lock = threading.Lock()
+        self._probe_failure_cache: OrderedDict[str, dict] = OrderedDict()
+        self._probe_failure_cache_max_entries = 8000
+        self._probe_failure_ttl_seconds = 240
         # Keep local proxy responsive for large AOIs:
         # cap sibling-strip fanout and fail fast per tile request.
         self._max_sources_per_request = 8
@@ -203,9 +320,16 @@ class LocalTileProxy:
         self._upstream_max_attempts = 1
         # Increased time budget to allow trying multiple sources with longer timeouts
         self._upstream_time_budget_seconds = 150.0
+        self._fallback_target_success_layers = 1
+        self._fallback_max_probes = 6
+        self._fallback_max_probes_l1d_sr = 13
         self._perf_log_slow_tile_ms = 3000.0
         self._perf_log_summary_every = 25
         self._perf_log_every_tile = False
+        self._source_priority_lock = threading.Lock()
+        self._source_probe_success: dict[str, int] = {}
+        self._source_probe_seen: dict[str, int] = {}
+        self._source_probe_cap = 2048
         self._stats = {
             "requests_total": 0,
             "cache_hits": 0,
@@ -261,6 +385,11 @@ class LocalTileProxy:
                 f"max_sources_l1d_sr={int(self._max_sources_per_request_l1d_sr or 0)} "
                 f"upstream_timeout_s={int(self._upstream_timeout_seconds or 0)} "
                 f"upstream_budget_s={float(self._upstream_time_budget_seconds or 0.0):.1f} "
+                f"fallback_target_layers={int(self._fallback_target_success_layers or 0)} "
+                f"fallback_probe_cap={int(self._fallback_max_probes or 0)} "
+                f"fallback_probe_cap_l1d_sr={int(self._fallback_max_probes_l1d_sr or 0)} "
+                f"coalesce_wait_s={float(self._coalesce_wait_seconds or 0.0):.1f} "
+                f"probe_fail_ttl_s={int(self._probe_failure_ttl_seconds or 0)} "
                 f"slow_tile_ms={float(self._perf_log_slow_tile_ms or 0.0):.1f} "
                 f"summary_every={int(self._perf_log_summary_every or 0)}"
             ),
@@ -339,6 +468,7 @@ class LocalTileProxy:
 
                 qs = parse_qs(parsed.query or "", keep_blank_values=False)
                 raw_source_urls = [str(value).strip() for value in (qs.get("url") or []) if str(value).strip()]
+                raw_source_bboxes = [str(value).strip() for value in (qs.get("source_bbox") or [])]
                 if not raw_source_urls:
                     self._write(400, b'{"detail":"url query param is required"}', "application/json")
                     return
@@ -346,12 +476,17 @@ class LocalTileProxy:
                 query_keys = set(qs.keys())
                 source_urls = []
                 seen_sources = set()
-                for raw_source in raw_source_urls:
+                source_bbox_by_url: dict[str, tuple[float, float, float, float]] = {}
+                for idx, raw_source in enumerate(raw_source_urls):
                     extracted_url, embedded_options = _extract_embedded_tile_options(raw_source)
                     source_url = str(extracted_url or "").strip()
                     if source_url and source_url not in seen_sources:
                         seen_sources.add(source_url)
                         source_urls.append(source_url)
+                        if idx < len(raw_source_bboxes):
+                            bbox = _parse_bbox_token(raw_source_bboxes[idx])
+                            if bbox is not None:
+                                source_bbox_by_url[source_url] = bbox
                     if embedded_options:
                         if "contract_id" not in query_keys:
                             contract_vals = embedded_options.get("contract_id") or []
@@ -381,7 +516,8 @@ class LocalTileProxy:
                     return
                 source_count_total = len(source_urls)
                 max_sources = max(1, int(proxy._max_sources_per_request or 1))
-                if any(_is_l1d_sr_source(url_value) for url_value in source_urls):
+                is_l1d_sr_request = any(_is_l1d_sr_source(url_value) for url_value in source_urls)
+                if is_l1d_sr_request:
                     max_sources = max(max_sources, int(proxy._max_sources_per_request_l1d_sr or max_sources))
                 if source_count_total > max_sources:
                     source_urls = source_urls[:max_sources]
@@ -403,11 +539,12 @@ class LocalTileProxy:
                 z = int(match.group("z"))
                 x = int(match.group("x"))
                 y = int(match.group("y"))
+                source_urls_for_key = sorted([str(value) for value in (source_urls or [])])
                 cache_key = proxy._cache_key(
                     z=z,
                     x=x,
                     y=y,
-                    source_urls=source_urls,
+                    source_urls=source_urls_for_key,
                     contract_id=contract_id,
                     scale=scale,
                     buffer=buffer,
@@ -417,6 +554,8 @@ class LocalTileProxy:
                 )
 
                 proxy._request_started()
+                owns_inflight_slot = False
+                inflight_event: threading.Event | None = None
                 try:
                     cache_started = time.perf_counter()
                     cached = proxy._cache_get(cache_key, allow_stale=False)
@@ -440,6 +579,39 @@ class LocalTileProxy:
                         self._write(200, cached["content"], cached["media_type"], headers=headers)
                         return
                     proxy._stat_inc("cache_misses")
+
+                    owns_inflight_slot, inflight_event = proxy._acquire_inflight_tile(cache_key)
+                    if not owns_inflight_slot:
+                        wait_timeout = max(2.0, float(proxy._coalesce_wait_seconds or 2.0))
+                        wait_started = time.perf_counter()
+                        try:
+                            inflight_event.wait(timeout=wait_timeout)
+                        except Exception:
+                            pass
+                        wait_ms = (time.perf_counter() - wait_started) * 1000.0
+                        attempted_statuses.append(f"coalesced_wait:{wait_ms:.0f}")
+                        cached_after_wait = proxy._cache_get(cache_key, allow_stale=False)
+                        if cached_after_wait is not None:
+                            proxy._stat_inc("cache_hits")
+                            proxy._stat_inc("served_success")
+                            proxy._set_last(status=200)
+                            proxy._record_perf_sample(
+                                z=z,
+                                x=x,
+                                y=y,
+                                path="coalesced_hit",
+                                total_ms=(time.perf_counter() - tile_started) * 1000.0,
+                                source_count_used=source_count_used,
+                                source_count_total=source_count_total,
+                                cache_lookup_ms=cache_lookup_ms,
+                                attempted_statuses=attempted_statuses,
+                            )
+                            headers = {"Cache-Control": "public, max-age=300", "X-Proxy-Cache": "coalesced"}
+                            self._write(200, cached_after_wait["content"], cached_after_wait["media_type"], headers=headers)
+                            return
+                        owns_inflight_slot, inflight_event = proxy._acquire_inflight_tile(cache_key)
+                        if not owns_inflight_slot:
+                            attempted_statuses.append("coalesce_busy")
 
                     with proxy._source_lock:
                         service = proxy._source_service
@@ -495,7 +667,47 @@ class LocalTileProxy:
                         upstream_started = time.time()
                         fallback_started = time.perf_counter()
                         successful_layers: list[tuple[str, bytes]] = []
-                        for source_url in source_urls:
+                        composed_during_probe: bytes | None = None
+                        candidate_sources = list(source_urls)
+                        if source_bbox_by_url:
+                            try:
+                                tile_bbox = _tile_bounds_wgs84(z=z, x=x, y=y)
+                                lon_span = max(0.0, float(tile_bbox[2]) - float(tile_bbox[0]))
+                                lat_span = max(0.0, float(tile_bbox[3]) - float(tile_bbox[1]))
+                                pad_fraction = float(max(0, int(buffer or 0))) / float(256 * max(1, int(scale or 1)))
+                                if pad_fraction > 0.0:
+                                    tile_bbox = _expand_bbox_wgs84(
+                                        tile_bbox,
+                                        lon_pad=lon_span * pad_fraction,
+                                        lat_pad=lat_span * pad_fraction,
+                                    )
+                                prefiltered_sources = []
+                                for source_url in source_urls:
+                                    source_bbox = source_bbox_by_url.get(source_url)
+                                    if source_bbox is None or _bbox_intersects(tile_bbox, source_bbox):
+                                        prefiltered_sources.append(source_url)
+                                if prefiltered_sources and len(prefiltered_sources) < len(source_urls):
+                                    candidate_sources = prefiltered_sources
+                                    attempted_statuses.append(
+                                        f"bbox_prefilter:{len(candidate_sources)}/{len(source_urls)}"
+                                    )
+                            except Exception:
+                                attempted_statuses.append("bbox_prefilter_err")
+
+                        ordered_sources = proxy._prioritize_sources_for_fallback(candidate_sources)
+                        if ordered_sources != candidate_sources:
+                            attempted_statuses.append("reordered")
+                        target_layers = max(1, int(proxy._fallback_target_success_layers or 1))
+                        max_probes_allowed = max(1, int(proxy._fallback_max_probes or 1))
+                        if is_l1d_sr_request:
+                            max_probes_allowed = max(
+                                max_probes_allowed,
+                                int(proxy._fallback_max_probes_l1d_sr or max_probes_allowed),
+                            )
+                        for source_url in ordered_sources:
+                            if probes >= max_probes_allowed:
+                                attempted_statuses.append(f"probe_cap:{max_probes_allowed}")
+                                break
                             probes += 1
                             if (
                                 float(proxy._upstream_time_budget_seconds or 0.0) > 0.0
@@ -503,6 +715,32 @@ class LocalTileProxy:
                             ):
                                 attempted_statuses.append("budget")
                                 break
+                            probe_key = proxy._probe_failure_key(
+                                z=z,
+                                x=x,
+                                y=y,
+                                source_url=source_url,
+                                contract_id=contract_id,
+                                scale=scale,
+                                buffer=buffer,
+                                tile_matrix_set_id=tile_matrix_set_id,
+                                image_format=image_format,
+                                bands=bands,
+                            )
+                            cached_failure = proxy._probe_failure_get(probe_key)
+                            if cached_failure is not None:
+                                status, content, media_type = cached_failure
+                                attempted_statuses.append(f"cached:{int(status)}")
+                                proxy._record_source_probe_result(source_url, success=False)
+                                if fallback_status == 404 and int(status) != 404:
+                                    fallback_status = int(status)
+                                    fallback_content = bytes(content or b"")
+                                    fallback_source = source_url
+                                elif not fallback_content:
+                                    fallback_status = int(status)
+                                    fallback_content = bytes(content or b"")
+                                    fallback_source = source_url
+                                continue
                             try:
                                 status, content, media_type = service.fetch_satellogic_cog_tile(
                                     z=z,
@@ -520,6 +758,14 @@ class LocalTileProxy:
                                 )
                             except Exception as exc:
                                 attempted_statuses.append(f"exc:{exc.__class__.__name__}")
+                                proxy._record_source_probe_result(source_url, success=False)
+                                proxy._probe_failure_put(
+                                    key=probe_key,
+                                    status=502,
+                                    content=str(exc).encode("utf-8", errors="replace"),
+                                    media_type="application/json",
+                                    ttl_seconds=90,
+                                )
                                 if fallback_status == 404:
                                     fallback_status = 502
                                     fallback_content = str(exc).encode("utf-8", errors="replace")
@@ -531,6 +777,13 @@ class LocalTileProxy:
                                 status = 502
                                 content = b'{"detail":"invalid PNG from upstream"}'
                             if status >= 400:
+                                proxy._record_source_probe_result(source_url, success=False)
+                                proxy._probe_failure_put(
+                                    key=probe_key,
+                                    status=int(status),
+                                    content=bytes(content or b""),
+                                    media_type=media_type,
+                                )
                                 attempted_statuses.append(str(status))
                                 if fallback_status == 404 and status != 404:
                                     fallback_status = status
@@ -541,7 +794,30 @@ class LocalTileProxy:
                                     fallback_content = content
                                 fallback_source = source_url
                                 continue
-                            successful_layers.append((source_url, bytes(content or b"")))
+                            payload = bytes(content or b"")
+                            proxy._record_source_probe_result(source_url, success=True)
+                            proxy._probe_failure_delete(probe_key)
+                            successful_layers.append((source_url, payload))
+
+                            if composed_during_probe is None:
+                                composed_during_probe = payload
+                            else:
+                                step_composed = _alpha_composite_png_payloads([composed_during_probe, payload])
+                                if step_composed is not None:
+                                    composed_during_probe = step_composed
+                                else:
+                                    composed_during_probe = None
+
+                            # If the composed fallback is already fully opaque after enough hits,
+                            # stop probing additional sibling strips for this tile.
+                            if (
+                                composed_during_probe is not None
+                                and len(successful_layers) >= target_layers
+                            ):
+                                alpha_extrema = _png_alpha_extrema(composed_during_probe)
+                                if alpha_extrema is not None and int(alpha_extrema[0]) >= 255:
+                                    attempted_statuses.append(f"opaque_stop:{len(successful_layers)}")
+                                    break
 
                         fallback_ms = (time.perf_counter() - fallback_started) * 1000.0
                         successful_layers_count = len(successful_layers)
@@ -552,9 +828,11 @@ class LocalTileProxy:
                                 selected_media_type = "image/png"
                             else:
                                 compose_started = time.perf_counter()
-                                composed = _alpha_composite_png_payloads(
-                                    [payload for _source, payload in successful_layers]
-                                )
+                                composed = composed_during_probe
+                                if composed is None:
+                                    composed = _alpha_composite_png_payloads(
+                                        [payload for _source, payload in successful_layers]
+                                    )
                                 compose_ms = (time.perf_counter() - compose_started) * 1000.0
                                 if composed is not None:
                                     selected_source_url = f"composite:{len(successful_layers)}"
@@ -720,6 +998,8 @@ class LocalTileProxy:
                     detail = {"detail": f"Tile proxy failed: {exc}"}
                     self._write(502, json.dumps(detail).encode("utf-8"), "application/json")
                 finally:
+                    if owns_inflight_slot and inflight_event is not None:
+                        proxy._release_inflight_tile(cache_key, inflight_event)
                     proxy._request_finished()
 
             def log_message(self, _fmt, *_args):  # noqa: D401
@@ -812,6 +1092,110 @@ class LocalTileProxy:
             while len(self._cache) > int(self._cache_max_entries):
                 self._cache.popitem(last=False)
 
+    def _acquire_inflight_tile(self, cache_key: str) -> tuple[bool, threading.Event]:
+        key = str(cache_key or "")
+        with self._inflight_tile_lock:
+            existing = self._inflight_tile_events.get(key)
+            if existing is not None:
+                return False, existing
+            created = threading.Event()
+            self._inflight_tile_events[key] = created
+            return True, created
+
+    def _release_inflight_tile(self, cache_key: str, event: threading.Event | None) -> None:
+        key = str(cache_key or "")
+        if not key:
+            return
+        with self._inflight_tile_lock:
+            existing = self._inflight_tile_events.get(key)
+            if existing is event:
+                self._inflight_tile_events.pop(key, None)
+        if event is not None:
+            try:
+                event.set()
+            except Exception:
+                pass
+
+    def _probe_failure_key(
+        self,
+        *,
+        z: int,
+        x: int,
+        y: int,
+        source_url: str,
+        contract_id: str | None,
+        scale: int,
+        buffer: int,
+        tile_matrix_set_id: str,
+        image_format: str,
+        bands: list[int],
+    ) -> str:
+        return "|".join(
+            [
+                str(int(z)),
+                str(int(x)),
+                str(int(y)),
+                str(source_url or ""),
+                str(contract_id or ""),
+                str(int(scale)),
+                str(int(buffer)),
+                str(tile_matrix_set_id or ""),
+                str(image_format or ""),
+                ",".join([str(int(v)) for v in (bands or [])]),
+            ]
+        )
+
+    def _probe_failure_get(self, key: str) -> tuple[int, bytes, str] | None:
+        now = time.time()
+        with self._probe_failure_lock:
+            entry = self._probe_failure_cache.get(str(key or ""))
+            if entry is None:
+                return None
+            expires_at = float(entry.get("expires_at") or 0.0)
+            if expires_at <= now:
+                self._probe_failure_cache.pop(str(key or ""), None)
+                return None
+            self._probe_failure_cache.move_to_end(str(key or ""))
+            return (
+                int(entry.get("status") or 0),
+                bytes(entry.get("content") or b""),
+                str(entry.get("media_type") or "application/json"),
+            )
+
+    def _probe_failure_put(
+        self,
+        *,
+        key: str,
+        status: int,
+        content: bytes,
+        media_type: str,
+        ttl_seconds: int | None = None,
+    ) -> None:
+        cache_key = str(key or "")
+        if not cache_key:
+            return
+        ttl = float(ttl_seconds) if ttl_seconds is not None else float(self._probe_failure_ttl_seconds)
+        ttl = max(5.0, ttl)
+        now = time.time()
+        entry = {
+            "status": int(status),
+            "content": bytes(content or b""),
+            "media_type": str(media_type or "application/json"),
+            "expires_at": now + ttl,
+        }
+        with self._probe_failure_lock:
+            self._probe_failure_cache[cache_key] = entry
+            self._probe_failure_cache.move_to_end(cache_key)
+            while len(self._probe_failure_cache) > int(self._probe_failure_cache_max_entries):
+                self._probe_failure_cache.popitem(last=False)
+
+    def _probe_failure_delete(self, key: str) -> None:
+        cache_key = str(key or "")
+        if not cache_key:
+            return
+        with self._probe_failure_lock:
+            self._probe_failure_cache.pop(cache_key, None)
+
     def _request_started(self) -> None:
         with self._stats_lock:
             self._stats["requests_total"] = int(self._stats.get("requests_total") or 0) + 1
@@ -829,6 +1213,40 @@ class LocalTileProxy:
         with self._stats_lock:
             self._stats["last_status"] = int(status or 0)
             self._stats["last_error"] = str(error or "")
+
+    def _prioritize_sources_for_fallback(self, source_urls: list[str]) -> list[str]:
+        candidates = [str(value or "").strip() for value in (source_urls or []) if str(value or "").strip()]
+        if len(candidates) <= 1:
+            return candidates
+        with self._source_priority_lock:
+            seen_map = dict(self._source_probe_seen)
+            success_map = dict(self._source_probe_success)
+        scored = []
+        for idx, value in enumerate(candidates):
+            seen = max(1, int(seen_map.get(value) or 0))
+            success = int(success_map.get(value) or 0)
+            ratio = float(success) / float(seen)
+            # Favor URLs that recently/consistently returned successful tiles.
+            score = ratio * 1000.0 + float(success)
+            scored.append((-score, idx, value))
+        scored.sort()
+        return [value for _score, _idx, value in scored]
+
+    def _record_source_probe_result(self, source_url: str, *, success: bool) -> None:
+        key = str(source_url or "").strip()
+        if not key:
+            return
+        with self._source_priority_lock:
+            self._source_probe_seen[key] = int(self._source_probe_seen.get(key) or 0) + 1
+            if success:
+                self._source_probe_success[key] = int(self._source_probe_success.get(key) or 0) + 1
+            # Keep maps bounded so long sessions do not grow unbounded.
+            if len(self._source_probe_seen) > int(self._source_probe_cap or 2048):
+                stale_by_seen = sorted(self._source_probe_seen.items(), key=lambda item: int(item[1] or 0))
+                drop_count = max(1, len(self._source_probe_seen) - int(self._source_probe_cap or 2048))
+                for stale_key, _count in stale_by_seen[:drop_count]:
+                    self._source_probe_seen.pop(stale_key, None)
+                    self._source_probe_success.pop(stale_key, None)
 
     def _record_perf_sample(
         self,
