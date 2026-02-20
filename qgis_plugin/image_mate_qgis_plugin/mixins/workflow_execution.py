@@ -20,7 +20,9 @@ from qgis.core import (
     QgsVectorLayer,
 )
 
-from ..workflow_execution import WorkflowExecutionWorker
+from ..workflow_execution import WorkflowEngineService
+
+ADAPTER_ID_FOR_EACH_IMAGE_IN_STACK = "for_each_image_in_stack"
 
 
 class WorkflowExecutionMixin:
@@ -39,7 +41,8 @@ class WorkflowExecutionMixin:
             )
             return
 
-        node_map, incoming = self._workflow_prepare_graph(payload)
+        engine_service = self._workflow_create_engine_service()
+        node_map, incoming = engine_service.prepare_graph(payload)
         total_nodes = len(node_map)
         if total_nodes == 0:
             self._workflow_log("Execution aborted: workflow has no executable nodes.", level=Qgis.Warning)
@@ -52,8 +55,8 @@ class WorkflowExecutionMixin:
             return
 
         try:
-            self._workflow_validate_node_configs(node_map)
-            prepared_node_map = self._workflow_prepare_execution_node_map(node_map)
+            engine_service.validate_node_configs(node_map)
+            prepared_node_map = engine_service.prepare_execution_node_map(node_map)
         except Exception as exc:
             self._workflow_log(f"Workflow preflight failed: {exc}", level=Qgis.Warning)
             self._workflow_log(traceback.format_exc(), level=Qgis.Warning)
@@ -88,11 +91,20 @@ class WorkflowExecutionMixin:
             str(node_id): str(node.get("type") or "").strip().lower()
             for node_id, node in prepared_node_map.items()
         }
+        self._workflow_node_adapter_embedded_function = {}
+        for node_id, node in prepared_node_map.items():
+            node_type = str(node.get("type") or "").strip().lower()
+            payload = node.get("payload") if isinstance(node.get("payload"), dict) else {}
+            if node_type != "adapter":
+                continue
+            self._workflow_node_adapter_embedded_function[str(node_id)] = bool(
+                str(payload.get("adapted_function_id") or "").strip()
+            )
         self._workflow_running = True
 
         self._cleanup_workflow_worker()
         self._workflow_thread = QThread(self.iface.mainWindow())
-        self._workflow_worker = WorkflowExecutionWorker(
+        self._workflow_worker = engine_service.build_worker(
             source_service=self.source_service,
             search_items=self.search_items,
             temp_dir=self.temp_dir,
@@ -132,8 +144,32 @@ class WorkflowExecutionMixin:
                     self._workflow_prepare_clip_to_aoi_payload(node_id=row["id"], payload=payload)
                 elif function_id == "temporal_stack_to_video":
                     self._workflow_prepare_temporal_stack_to_video_payload(node_id=row["id"], payload=payload)
+            elif node_type == "adapter":
+                self._workflow_prepare_adapter_payload(node_id=row["id"], payload=payload)
             prepared[row["id"]] = row
         return prepared
+
+    def _workflow_prepare_adapter_payload(self, *, node_id, payload):
+        adapter_id = str(payload.get("adapter_id") or "").strip()
+        if not adapter_id:
+            raise RuntimeError(f"{node_id}: adapter node is missing adapter_id")
+        if adapter_id != ADAPTER_ID_FOR_EACH_IMAGE_IN_STACK:
+            raise RuntimeError(f"{node_id}: unsupported adapter_id '{adapter_id}'")
+        payload["adapter_id"] = adapter_id
+
+        adapted_function_id = str(payload.get("adapted_function_id") or "").strip()
+        if not adapted_function_id:
+            return
+        adapted_payload = payload.get("adapted_function_payload")
+        if not isinstance(adapted_payload, dict):
+            raise RuntimeError(f"{node_id}: adapter node missing adapted_function_payload object")
+        adapted_payload = dict(adapted_payload)
+
+        if adapted_function_id == "clip_to_aoi":
+            self._workflow_prepare_clip_to_aoi_payload(node_id=node_id, payload=adapted_payload)
+        else:
+            raise RuntimeError(f"{node_id}: unsupported adapted_function_id '{adapted_function_id}'")
+        payload["adapted_function_payload"] = adapted_payload
 
     def _workflow_prepare_clip_to_aoi_payload(self, *, node_id, payload):
         source_type = str(payload.get("aoi_source_type") or "file").strip().lower()
@@ -177,27 +213,12 @@ class WorkflowExecutionMixin:
         payload["aoi_effective_mask_desc"] = f"aoi-file:{aoi_path}"
 
     def _workflow_prepare_temporal_stack_to_video_payload(self, *, node_id, payload):
-        clip_mode = str(payload.get("clip_mode") or "canvas").strip().lower()
-        if clip_mode not in {"canvas", "aoi"}:
-            raise RuntimeError(
-                f"{node_id}: temporal_stack_to_video clip_mode must be one of canvas|aoi (got: {clip_mode})"
-            )
-        payload["clip_mode"] = clip_mode
-
-        if clip_mode == "canvas":
-            resolved_mask_path = self._workflow_materialize_canvas_extent_mask(node_id=node_id)
-            payload["clip_effective_mask_path"] = resolved_mask_path
-            payload["clip_effective_mask_desc"] = "canvas-extent"
-            return
-
-        self._workflow_prepare_clip_to_aoi_payload(node_id=node_id, payload=payload)
-        resolved_mask_path = str(payload.get("aoi_effective_mask_path") or "").strip()
-        if not resolved_mask_path:
-            raise RuntimeError(f"{node_id}: failed to resolve AOI clip mask path")
-        payload["clip_effective_mask_path"] = resolved_mask_path
-        payload["clip_effective_mask_desc"] = str(
-            payload.get("aoi_effective_mask_desc") or "aoi"
-        ).strip() or "aoi"
+        # temporal_stack_to_video no longer clips inputs; keep keys normalized for compatibility.
+        payload["clip_mode"] = "none"
+        payload["clip_effective_mask_path"] = ""
+        payload["clip_effective_mask_desc"] = ""
+        payload["aoi_effective_mask_path"] = ""
+        payload["aoi_effective_mask_desc"] = ""
 
     def _workflow_materialize_canvas_extent_mask(self, *, node_id):
         canvas = self.iface.mapCanvas() if self.iface is not None else None
@@ -311,6 +332,7 @@ class WorkflowExecutionMixin:
             self._workflow_run_started_at = 0.0
             self._workflow_total_nodes = 0
             self._workflow_node_types = {}
+            self._workflow_node_adapter_embedded_function = {}
 
     def _on_workflow_worker_failed(self, error_text, traceback_text):
         error_message = str(error_text or "").strip() or "Unknown workflow execution error."
@@ -331,13 +353,25 @@ class WorkflowExecutionMixin:
         self._workflow_run_started_at = 0.0
         self._workflow_total_nodes = 0
         self._workflow_node_types = {}
+        self._workflow_node_adapter_embedded_function = {}
 
     def _workflow_attach_outputs(self, outputs_by_node):
         added_layers = 0
         output_artifacts = 0
         for node_id, artifacts in outputs_by_node.items():
-            if self._workflow_node_types.get(str(node_id), "") == "source":
+            node_key = str(node_id)
+            node_type = self._workflow_node_types.get(node_key, "")
+            if node_type == "source":
                 continue
+            if node_type == "adapter":
+                embedded_map = getattr(self, "_workflow_node_adapter_embedded_function", {}) or {}
+                has_embedded_function = bool(embedded_map.get(node_key))
+                if not has_embedded_function:
+                    self._workflow_log(
+                        f"Skipping passthrough adapter outputs from node {node_id}.",
+                        level=Qgis.Info,
+                    )
+                    continue
             artifact_rows = artifacts if isinstance(artifacts, list) else []
             for row in artifact_rows:
                 if not isinstance(row, dict):
@@ -430,6 +464,7 @@ class WorkflowExecutionMixin:
         self._workflow_run_started_at = 0.0
         self._workflow_total_nodes = 0
         self._workflow_node_types = {}
+        self._workflow_node_adapter_embedded_function = {}
         self._cleanup_workflow_worker()
         if self.dock is not None:
             self.dock.set_workflow_active_node("")
@@ -451,6 +486,35 @@ class WorkflowExecutionMixin:
     def _workflow_set_node_state(self, node_id, state):
         if self.dock is not None and hasattr(self.dock, "set_workflow_node_execution_state"):
             self.dock.set_workflow_node_execution_state(node_id, state)
+
+    def _workflow_create_engine_service(self):
+        return WorkflowEngineService(
+            temp_dir=self.temp_dir,
+            iface=self.iface,
+            log_callback=lambda message, level=Qgis.Info: self._workflow_log(message, level=level),
+        )
+
+    def execute_workflow_without_ui(
+        self,
+        workflow_payload,
+        *,
+        source_service=None,
+        search_items=None,
+        log_callback=None,
+        progress_callback=None,
+        node_state_callback=None,
+        active_node_callback=None,
+    ):
+        engine_service = self._workflow_create_engine_service()
+        return engine_service.execute_sync(
+            workflow_payload=workflow_payload,
+            source_service=source_service or self.source_service,
+            search_items=search_items if search_items is not None else self.search_items,
+            log_callback=log_callback,
+            progress_callback=progress_callback,
+            node_state_callback=node_state_callback,
+            active_node_callback=active_node_callback,
+        )
 
     def _workflow_prepare_graph(self, payload):
         raw_nodes = payload.get("nodes")
@@ -495,7 +559,67 @@ class WorkflowExecutionMixin:
                 )
                 continue
             incoming[target_id].add(source_id)
-        return node_map, incoming
+
+        source_node_ids = [
+            node_id
+            for node_id, node in node_map.items()
+            if str(node.get("type") or "").strip().lower() == "source"
+        ]
+        if not source_node_ids:
+            return node_map, incoming
+
+        outgoing = {node_id: set() for node_id in node_map}
+        for target_id, source_ids in incoming.items():
+            for source_id in source_ids:
+                outgoing[source_id].add(target_id)
+
+        reachable = set()
+        queue = list(source_node_ids)
+        while queue:
+            current = queue.pop(0)
+            if current in reachable:
+                continue
+            reachable.add(current)
+            for downstream_id in sorted(outgoing.get(current, set())):
+                if downstream_id not in reachable:
+                    queue.append(downstream_id)
+
+        disconnected = [node_id for node_id in node_map if node_id not in reachable]
+        if disconnected:
+            self._workflow_log(
+                "Skipping disconnected node(s) not reachable from a source: "
+                + ", ".join(disconnected),
+                level=Qgis.Warning,
+            )
+
+        filtered_node_map = {
+            node_id: row
+            for node_id, row in node_map.items()
+            if node_id in reachable
+        }
+        filtered_incoming = {
+            node_id: {source_id for source_id in incoming.get(node_id, set()) if source_id in reachable}
+            for node_id in filtered_node_map
+        }
+        return filtered_node_map, filtered_incoming
+
+    def _workflow_validate_clip_to_aoi_payload(self, *, issues, node_id, payload, context_label):
+        source_type = str(payload.get("aoi_source_type") or "file").strip().lower()
+        output_path = str(payload.get("output_path") or "").strip()
+        aoi_layer_id = str(payload.get("aoi_project_layer_id") or "").strip()
+        aoi_file = str(payload.get("aoi_path") or "").strip()
+        if source_type == "project_layer":
+            if not aoi_layer_id:
+                issues.append(f"{node_id}: {context_label} missing AOI project layer id")
+            elif QgsProject.instance().mapLayer(aoi_layer_id) is None:
+                issues.append(f"{node_id}: AOI project layer not found ({aoi_layer_id})")
+        else:
+            if not aoi_file:
+                issues.append(f"{node_id}: {context_label} missing AOI file path")
+            elif not Path(aoi_file).exists():
+                issues.append(f"{node_id}: AOI file not found ({aoi_file})")
+        if not output_path:
+            issues.append(f"{node_id}: {context_label} missing output path")
 
     def _workflow_validate_node_configs(self, node_map):
         issues = []
@@ -511,27 +635,41 @@ class WorkflowExecutionMixin:
                     issues.append(f"{node_id}: source node has no item_ids")
                 continue
 
+            if node_type == "adapter":
+                adapter_id = str(payload.get("adapter_id") or "").strip()
+                if not adapter_id:
+                    issues.append(f"{node_id}: adapter node missing adapter_id")
+                elif adapter_id != ADAPTER_ID_FOR_EACH_IMAGE_IN_STACK:
+                    issues.append(f"{node_id}: unsupported adapter_id '{adapter_id}'")
+                adapted_function_id = str(payload.get("adapted_function_id") or "").strip()
+                if not adapted_function_id:
+                    continue
+                adapted_payload = payload.get("adapted_function_payload")
+                if not isinstance(adapted_payload, dict):
+                    issues.append(f"{node_id}: adapter node missing adapted_function_payload object")
+                    continue
+                if adapted_function_id == "clip_to_aoi":
+                    self._workflow_validate_clip_to_aoi_payload(
+                        issues=issues,
+                        node_id=node_id,
+                        payload=adapted_payload,
+                        context_label="adapter clip_to_aoi",
+                    )
+                else:
+                    issues.append(f"{node_id}: unsupported adapted_function_id '{adapted_function_id}'")
+                continue
+
             if node_type != "function":
                 continue
 
             function_id = str(payload.get("function_id") or "").strip()
             if function_id == "clip_to_aoi":
-                source_type = str(payload.get("aoi_source_type") or "file").strip().lower()
-                output_path = str(payload.get("output_path") or "").strip()
-                aoi_layer_id = str(payload.get("aoi_project_layer_id") or "").strip()
-                aoi_file = str(payload.get("aoi_path") or "").strip()
-                if source_type == "project_layer":
-                    if not aoi_layer_id:
-                        issues.append(f"{node_id}: clip_to_aoi missing AOI project layer id")
-                    elif QgsProject.instance().mapLayer(aoi_layer_id) is None:
-                        issues.append(f"{node_id}: AOI project layer not found ({aoi_layer_id})")
-                else:
-                    if not aoi_file:
-                        issues.append(f"{node_id}: clip_to_aoi missing AOI file path")
-                    elif not Path(aoi_file).exists():
-                        issues.append(f"{node_id}: AOI file not found ({aoi_file})")
-                if not output_path:
-                    issues.append(f"{node_id}: clip_to_aoi missing output path")
+                self._workflow_validate_clip_to_aoi_payload(
+                    issues=issues,
+                    node_id=node_id,
+                    payload=payload,
+                    context_label="clip_to_aoi",
+                )
             elif function_id == "temporal_stack_to_video":
                 output_path = str(payload.get("output_path") or "").strip()
                 if not output_path:
@@ -563,54 +701,6 @@ class WorkflowExecutionMixin:
                     )
                 if vertical_align not in {"top", "bottom"}:
                     issues.append(f"{node_id}: temporal_stack_to_video text_vertical_align must be top|bottom")
-
-                clip_mode = str(payload.get("clip_mode") or "canvas").strip().lower()
-                if clip_mode not in {"canvas", "aoi"}:
-                    issues.append(f"{node_id}: temporal_stack_to_video clip_mode must be canvas|aoi")
-                elif clip_mode == "canvas":
-                    canvas = self.iface.mapCanvas() if self.iface is not None else None
-                    if canvas is None:
-                        issues.append(f"{node_id}: temporal_stack_to_video map canvas is unavailable")
-                    else:
-                        extent = QgsRectangle(canvas.extent())
-                        if extent.isEmpty():
-                            issues.append(
-                                f"{node_id}: temporal_stack_to_video map canvas extent is empty for clip_mode=canvas"
-                            )
-                else:
-                    source_type = str(payload.get("aoi_source_type") or "file").strip().lower()
-                    if source_type not in {"project_layer", "file"}:
-                        issues.append(
-                            f"{node_id}: temporal_stack_to_video aoi_source_type must be project_layer|file"
-                        )
-                    elif source_type == "project_layer":
-                        aoi_layer_id = str(payload.get("aoi_project_layer_id") or "").strip()
-                        if not aoi_layer_id:
-                            issues.append(
-                                f"{node_id}: temporal_stack_to_video missing AOI project layer id"
-                            )
-                        else:
-                            layer = QgsProject.instance().mapLayer(aoi_layer_id)
-                            if layer is None:
-                                issues.append(
-                                    f"{node_id}: temporal_stack_to_video AOI project layer not found ({aoi_layer_id})"
-                                )
-                            elif not isinstance(layer, QgsVectorLayer):
-                                issues.append(
-                                    f"{node_id}: temporal_stack_to_video AOI layer is not vector ({aoi_layer_id})"
-                                )
-                            elif not layer.isValid():
-                                issues.append(
-                                    f"{node_id}: temporal_stack_to_video AOI project layer is invalid ({aoi_layer_id})"
-                                )
-                    else:
-                        aoi_file = str(payload.get("aoi_path") or "").strip()
-                        if not aoi_file:
-                            issues.append(f"{node_id}: temporal_stack_to_video missing AOI file path")
-                        elif not Path(aoi_file).exists():
-                            issues.append(
-                                f"{node_id}: temporal_stack_to_video AOI file not found ({aoi_file})"
-                            )
 
                 for key in ("overlay_vector_layer_id", "overlay_shapefile_layer_id"):
                     layer_id = str(payload.get(key) or "").strip()

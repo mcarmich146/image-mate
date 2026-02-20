@@ -32,6 +32,8 @@ from qgis.core import (
     QgsVectorLayer,
 )
 
+ADAPTER_ID_FOR_EACH_IMAGE_IN_STACK = "for_each_image_in_stack"
+
 
 class WorkflowExecutionWorker(QObject):
     log = pyqtSignal(str, int)
@@ -138,6 +140,12 @@ class WorkflowExecutionWorker(QObject):
 
         if node_type == "source":
             return self._execute_source_node(node_id=node_id, payload=payload)
+        if node_type == "adapter":
+            return self._execute_adapter_node(
+                node_id=node_id,
+                payload=payload,
+                input_artifacts=input_artifacts,
+            )
         if node_type == "function":
             function_id = str(payload.get("function_id") or "").strip()
             return self._execute_function_node(
@@ -147,6 +155,61 @@ class WorkflowExecutionWorker(QObject):
                 input_artifacts=input_artifacts,
             )
         raise RuntimeError(f"Unsupported node type '{node_type}'")
+
+    def _execute_adapter_node(self, *, node_id, payload, input_artifacts):
+        adapter_id = str(payload.get("adapter_id") or "").strip()
+        if adapter_id != ADAPTER_ID_FOR_EACH_IMAGE_IN_STACK:
+            raise RuntimeError(f"Unsupported adapter_id '{adapter_id}'")
+
+        adapted_function_id = str(payload.get("adapted_function_id") or "").strip()
+        if adapted_function_id:
+            adapted_payload = payload.get("adapted_function_payload")
+            adapted_payload = (
+                dict(adapted_payload or {})
+                if isinstance(adapted_payload, dict)
+                else {}
+            )
+            if adapted_function_id == "clip_to_aoi":
+                self._emit_log(
+                    f"Adapter node {node_id}: applying embedded function {adapted_function_id}",
+                    Qgis.Info,
+                )
+                outputs = self._execute_clip_to_aoi(
+                    node_id=node_id,
+                    payload=adapted_payload,
+                    input_artifacts=input_artifacts,
+                )
+                self._emit_log(
+                    f"Adapter node {node_id}: embedded function {adapted_function_id} produced {len(outputs)} artifact(s)",
+                    Qgis.Info,
+                )
+                return outputs
+            raise RuntimeError(f"Unsupported adapted_function_id '{adapted_function_id}'")
+
+        # Backward-compatibility for older adapter nodes that did pass-through only.
+        raster_outputs = []
+        for row in input_artifacts or []:
+            if not isinstance(row, dict):
+                continue
+            if str(row.get("artifact_type") or "").strip().lower() != "raster":
+                continue
+            value = str(row.get("path") or "").strip()
+            if not value:
+                continue
+            copied = dict(row)
+            copied["adapter_id"] = adapter_id
+            copied["adapter_node_id"] = node_id
+            raster_outputs.append(copied)
+
+        if not raster_outputs:
+            raise RuntimeError(
+                f"Adapter node {node_id} ({adapter_id}) received no raster inputs"
+            )
+        self._emit_log(
+            f"Adapter node {node_id}: applied {adapter_id} to {len(raster_outputs)} raster artifact(s)",
+            Qgis.Info,
+        )
+        return raster_outputs
 
     def _execute_source_node(self, *, node_id, payload):
         mode = str(payload.get("mode") or "single").strip().lower()
@@ -261,7 +324,7 @@ class WorkflowExecutionWorker(QObject):
                 continue
             value = str(row.get("path") or "").strip()
             if value:
-                raster_inputs.append(value)
+                raster_inputs.append(dict(row))
         if not raster_inputs:
             raise RuntimeError("No raster inputs provided to clip_to_aoi")
 
@@ -279,11 +342,27 @@ class WorkflowExecutionWorker(QObject):
             f"inputs={len(raster_inputs)} | output_base={output_base}",
             Qgis.Info,
         )
-        self._emit_clip_diagnostics(node_id=node_id, mask_path=mask_path, raster_inputs=raster_inputs)
+        self._emit_clip_diagnostics(
+            node_id=node_id,
+            mask_path=mask_path,
+            raster_inputs=[
+                str(row.get("path") or "").strip()
+                for row in raster_inputs
+                if str(row.get("path") or "").strip()
+            ],
+        )
 
         outputs = []
-        for index, input_path in enumerate(raster_inputs):
-            output_path = self._build_output_path(output_base, index, len(raster_inputs))
+        used_output_paths = set()
+        for index, input_artifact in enumerate(raster_inputs):
+            input_path = str(input_artifact.get("path") or "").strip()
+            output_path = self._build_output_path(
+                output_base,
+                index,
+                len(raster_inputs),
+                artifact=input_artifact,
+                used_paths=used_output_paths,
+            )
             output_parent = Path(output_path).parent
             if output_parent and not output_parent.exists():
                 output_parent.mkdir(parents=True, exist_ok=True)
@@ -318,6 +397,11 @@ class WorkflowExecutionWorker(QObject):
                     "artifact_type": "raster",
                     "path": result_path,
                     "node_id": node_id,
+                    "item_id": str(input_artifact.get("item_id") or "").strip(),
+                    "collection_date": str(input_artifact.get("collection_date") or "").strip(),
+                    "collection_datetime": str(
+                        input_artifact.get("collection_datetime") or input_artifact.get("datetime") or ""
+                    ).strip(),
                 }
             )
             self._emit_log(
@@ -369,17 +453,6 @@ class WorkflowExecutionWorker(QObject):
             vertical_align = "top"
 
         overlay_layers = self._resolve_video_overlay_layers(node_id=node_id, payload=payload)
-        clip_mode, clip_mask_path, clip_desc = self._resolve_video_clip_mask(node_id=node_id, payload=payload)
-        raster_inputs_for_diagnostics = [
-            str(row.get("path") or "").strip()
-            for row in raster_artifacts
-            if str(row.get("path") or "").strip()
-        ]
-        self._emit_clip_diagnostics(
-            node_id=node_id,
-            mask_path=clip_mask_path,
-            raster_inputs=raster_inputs_for_diagnostics,
-        )
 
         indexed_rows = list(enumerate(raster_artifacts))
         indexed_rows.sort(key=lambda row: self._temporal_sort_key(row[0], row[1]))
@@ -416,7 +489,7 @@ class WorkflowExecutionWorker(QObject):
         self._emit_log(
             f"temporal_stack_to_video node {node_id}: rendering {total_frames} frame(s) "
             f"at {fps} fps | pause_between_dates={pause_seconds:.2f}s | "
-            f"clip_mode={clip_mode} clip={clip_desc or clip_mask_path} | output={output_file}",
+            f"output={output_file}",
             Qgis.Info,
         )
         self._emit_log(
@@ -427,18 +500,11 @@ class WorkflowExecutionWorker(QObject):
 
         for frame_index, artifact in enumerate(ordered, start=1):
             input_path = str(artifact.get("path") or "").strip()
-            clipped_input_path = self._clip_video_frame_to_mask(
-                node_id=node_id,
-                frame_index=frame_index,
-                input_path=input_path,
-                mask_path=clip_mask_path,
-                frame_dir=frame_dir,
-            )
-            raster_layer = QgsRasterLayer(clipped_input_path, f"WorkflowVideoSource-{frame_index}")
+            raster_layer = QgsRasterLayer(input_path, f"WorkflowVideoSource-{frame_index}")
             if not raster_layer.isValid():
-                raise RuntimeError(f"Video frame source raster is invalid ({clipped_input_path})")
+                raise RuntimeError(f"Video frame source raster is invalid ({input_path})")
             if not raster_layer.crs().isValid():
-                raise RuntimeError(f"Video frame source raster has invalid CRS ({clipped_input_path})")
+                raise RuntimeError(f"Video frame source raster has invalid CRS ({input_path})")
 
             if frame_height is None:
                 width = max(1, int(raster_layer.width() or 1))
@@ -588,66 +654,6 @@ class WorkflowExecutionWorker(QObject):
                 Qgis.Info,
             )
         return layers
-
-    def _resolve_video_clip_mask(self, *, node_id, payload):
-        clip_mode = str(payload.get("clip_mode") or "canvas").strip().lower()
-        if clip_mode not in {"canvas", "aoi"}:
-            raise RuntimeError(
-                f"temporal_stack_to_video node {node_id}: clip_mode must be canvas|aoi (got: {clip_mode})"
-            )
-
-        mask_path = str(
-            payload.get("clip_effective_mask_path")
-            or payload.get("aoi_effective_mask_path")
-            or ""
-        ).strip()
-        mask_desc = str(
-            payload.get("clip_effective_mask_desc")
-            or payload.get("aoi_effective_mask_desc")
-            or ""
-        ).strip()
-        if not mask_path:
-            raise RuntimeError(
-                f"temporal_stack_to_video node {node_id}: missing resolved clip mask path for clip_mode={clip_mode}"
-            )
-        if not Path(mask_path).exists():
-            raise RuntimeError(
-                f"temporal_stack_to_video node {node_id}: clip mask path does not exist ({mask_path})"
-            )
-        return clip_mode, mask_path, mask_desc
-
-    def _clip_video_frame_to_mask(self, *, node_id, frame_index, input_path, mask_path, frame_dir):
-        clip_output = frame_dir / f"frame_{frame_index:05d}_clip.tif"
-        params = {
-            "INPUT": input_path,
-            "MASK": mask_path,
-            "SOURCE_CRS": None,
-            "TARGET_CRS": None,
-            "NODATA": None,
-            "ALPHA_BAND": False,
-            "CROP_TO_CUTLINE": True,
-            "KEEP_RESOLUTION": True,
-            "SET_RESOLUTION": False,
-            "X_RESOLUTION": None,
-            "Y_RESOLUTION": None,
-            "MULTITHREADING": False,
-            "OPTIONS": "",
-            "DATA_TYPE": 0,
-            "EXTRA": "",
-            "OUTPUT": str(clip_output),
-        }
-        self._emit_log(
-            f"temporal_stack_to_video node {node_id}: clipping frame {frame_index} "
-            f"input={input_path} mask={mask_path}",
-            Qgis.Info,
-        )
-        result = processing.run("gdal:cliprasterbymasklayer", params)
-        result_path = str(result.get("OUTPUT") or clip_output).strip()
-        if not result_path:
-            raise RuntimeError(
-                f"temporal_stack_to_video node {node_id}: clipping produced empty path for frame {frame_index}"
-            )
-        return result_path
 
     def _temporal_sort_key(self, index, artifact):
         dt_value = str(artifact.get("collection_datetime") or artifact.get("datetime") or "").strip()
@@ -1320,14 +1326,66 @@ class WorkflowExecutionWorker(QObject):
         except Exception:
             return "(invalid)"
 
-    @staticmethod
-    def _build_output_path(base_output_path, index, total):
+    @classmethod
+    def _build_output_path(cls, base_output_path, index, total, *, artifact=None, used_paths=None):
         base = Path(str(base_output_path or "").strip())
+        token_values = {
+            "index": str(int(index) + 1),
+            "index_03": f"{int(index) + 1:03d}",
+            "item_id": cls._sanitize_output_token((artifact or {}).get("item_id")),
+            "collection_date": cls._sanitize_output_token((artifact or {}).get("collection_date")),
+            "collection_datetime": cls._sanitize_output_token((artifact or {}).get("collection_datetime")),
+            "logical_source_key": cls._sanitize_output_token((artifact or {}).get("logical_source_key")),
+        }
+
+        template_text = str(base)
+        has_token = any(f"{{{key}}}" in template_text for key in token_values)
+        if has_token:
+            rendered_text = template_text
+            for key, value in token_values.items():
+                rendered_text = rendered_text.replace(f"{{{key}}}", str(value))
+            candidate = Path(rendered_text)
+            if not candidate.suffix:
+                candidate = candidate.with_suffix(base.suffix or ".tif")
+            return str(cls._dedupe_output_path(candidate, used_paths))
+
         if total <= 1:
-            return str(base)
+            return str(cls._dedupe_output_path(base, used_paths))
         stem = base.stem or "output"
         suffix = base.suffix or ".tif"
-        return str(base.with_name(f"{stem}_{index + 1}{suffix}"))
+        candidate = base.with_name(f"{stem}_{int(index) + 1:03d}{suffix}")
+        return str(cls._dedupe_output_path(candidate, used_paths))
+
+    @staticmethod
+    def _sanitize_output_token(value):
+        text = str(value or "").strip()
+        if not text:
+            return "unknown"
+        # Keep token expansions conservative for filesystem/GDAL compatibility.
+        sanitized = re.sub(r"[^0-9A-Za-z_-]+", "_", text).strip("_-")
+        return sanitized or "unknown"
+
+    @staticmethod
+    def _dedupe_output_path(path_obj, used_paths):
+        candidate = Path(path_obj)
+        tracker = used_paths if isinstance(used_paths, set) else None
+        if tracker is None:
+            return candidate
+        key = str(candidate).lower()
+        if key not in tracker:
+            tracker.add(key)
+            return candidate
+        base_stem = candidate.stem or "output"
+        suffix = candidate.suffix or ".tif"
+        parent = candidate.parent
+        serial = 2
+        while True:
+            retry = parent / f"{base_stem}_{serial:03d}{suffix}"
+            retry_key = str(retry).lower()
+            if retry_key not in tracker:
+                tracker.add(retry_key)
+                return retry
+            serial += 1
 
     @staticmethod
     def _guess_asset_extension(url, data):

@@ -5,9 +5,7 @@ Double-click behavior:
 2. Configure output video location/name.
 3. Configure text overlay template and placement.
 4. Configure temporal pause between frames when collection date changes.
-5. Choose clipping mode: canvas extent or AOI.
-6. If AOI clipping is selected, choose AOI source (project layer or file).
-7. Select optional project vector layers to overlay on every frame.
+5. Select optional project vector layers to overlay on every frame.
 
 Plugin callback API notes:
 - Function id: `temporal_stack_to_video`
@@ -18,10 +16,6 @@ Plugin callback API notes:
   - `text_horizontal_align`: `left`, `center`, or `right`
   - `pause_between_dates_seconds`: float >= 0
   - `frames_per_second`: int > 0
-  - `clip_mode`: `canvas` or `aoi`
-  - `aoi_source_type`: `project_layer` or `file` (used when `clip_mode=aoi`)
-  - `aoi_project_layer_id`: optional AOI project layer id
-  - `aoi_path`: optional AOI file path
   - `overlay_vector_layer_id`: optional project vector layer id
   - `overlay_shapefile_layer_id`: optional project shapefile layer id
 """
@@ -91,8 +85,7 @@ class TemporalStackToVideoConfigDialog(QDialog):
         self.frames_per_second_spin.setRange(1, 60)
 
         self.clip_mode_combo = QComboBox()
-        self.clip_mode_combo.addItem("Clip to Canvas", "canvas")
-        self.clip_mode_combo.addItem("Clip to AOI", "aoi")
+        self.clip_mode_combo.addItem("No Clipping", "none")
         self.clip_mode_combo.currentIndexChanged.connect(self._on_clip_mode_changed)
 
         self.aoi_source_combo = QComboBox()
@@ -128,10 +121,6 @@ class TemporalStackToVideoConfigDialog(QDialog):
         form.addRow("Text Horizontal", self.text_horizontal_combo)
         form.addRow("Pause Between Dates (s)", self.pause_seconds_spin)
         form.addRow("Frames Per Second", self.frames_per_second_spin)
-        form.addRow("Clip Mode", self.clip_mode_combo)
-        form.addRow("AOI Source Type", self.aoi_source_combo)
-        form.addRow("AOI Project Layer", self.aoi_project_layer_combo)
-        form.addRow("AOI File", aoi_file_row)
         form.addRow("Overlay Vector (project)", self.overlay_vector_combo)
         form.addRow("Overlay Shapefile (project)", self.overlay_shapefile_combo)
         layout.addLayout(form)
@@ -227,11 +216,8 @@ class TemporalStackToVideoConfigDialog(QDialog):
                 pass
 
         clip_mode = str(self._initial_payload.get("clip_mode") or "").strip().lower()
-        if clip_mode not in {"canvas", "aoi"}:
-            if self._initial_payload.get("aoi_project_layer_id") or self._initial_payload.get("aoi_path"):
-                clip_mode = "aoi"
-            else:
-                clip_mode = "canvas"
+        if clip_mode != "none":
+            clip_mode = "none"
         clip_mode_idx = self.clip_mode_combo.findData(clip_mode)
         if clip_mode_idx >= 0:
             self.clip_mode_combo.setCurrentIndex(clip_mode_idx)
@@ -277,7 +263,7 @@ class TemporalStackToVideoConfigDialog(QDialog):
         self._update_clip_controls_state()
 
     def _update_clip_controls_state(self):
-        clip_mode = str(self.clip_mode_combo.currentData() or "canvas").strip().lower()
+        clip_mode = str(self.clip_mode_combo.currentData() or "none").strip().lower()
         use_aoi = clip_mode == "aoi"
 
         self.aoi_source_combo.setEnabled(use_aoi)
@@ -323,28 +309,6 @@ class TemporalStackToVideoConfigDialog(QDialog):
             QMessageBox.warning(self, "Temporal Stack to Video", "Select output video file location and name.")
             return
 
-        clip_mode = str(self.clip_mode_combo.currentData() or "canvas").strip().lower()
-        if clip_mode == "aoi":
-            source_type = str(self.aoi_source_combo.currentData() or "file").strip().lower()
-            if source_type == "project_layer":
-                layer_id = str(self.aoi_project_layer_combo.currentData() or "").strip()
-                if not layer_id:
-                    QMessageBox.warning(
-                        self,
-                        "Temporal Stack to Video",
-                        "Select an AOI project layer or switch AOI source type to file.",
-                    )
-                    return
-            else:
-                aoi_file = str(self.aoi_file_edit.text() or "").strip()
-                if not aoi_file:
-                    QMessageBox.warning(
-                        self,
-                        "Temporal Stack to Video",
-                        "Select an AOI file or switch AOI source type to project layer.",
-                    )
-                    return
-
         self.accept()
 
     def config_payload(self):
@@ -364,26 +328,17 @@ class TemporalStackToVideoConfigDialog(QDialog):
         updated["pause_between_dates_seconds"] = float(self.pause_seconds_spin.value())
         updated["frames_per_second"] = int(self.frames_per_second_spin.value())
 
-        clip_mode = str(self.clip_mode_combo.currentData() or "canvas").strip().lower()
-        updated["clip_mode"] = clip_mode
+        updated["clip_mode"] = "none"
         updated["allow_project_layers_input"] = self._allow_project_layers_input
-
-        source_type = str(self.aoi_source_combo.currentData() or "file").strip().lower()
-        updated["aoi_source_type"] = source_type
-        if source_type == "project_layer":
-            layer_id = str(self.aoi_project_layer_combo.currentData() or "").strip()
-            layer_label = str(self.aoi_project_layer_combo.currentText() or "").strip()
-            layer_name = layer_label.split(" (")[0] if layer_label else layer_id
-            updated["aoi_project_layer_id"] = layer_id
-            updated["aoi_project_layer_name"] = layer_name
-            updated["aoi_path"] = ""
-            updated["aoi_file_name"] = ""
-        else:
-            aoi_file = str(self.aoi_file_edit.text() or "").strip()
-            updated["aoi_path"] = aoi_file
-            updated["aoi_file_name"] = Path(aoi_file).name if aoi_file else ""
-            updated["aoi_project_layer_id"] = ""
-            updated["aoi_project_layer_name"] = ""
+        updated["aoi_source_type"] = ""
+        updated["aoi_project_layer_id"] = ""
+        updated["aoi_project_layer_name"] = ""
+        updated["aoi_path"] = ""
+        updated["aoi_file_name"] = ""
+        updated["clip_effective_mask_path"] = ""
+        updated["clip_effective_mask_desc"] = ""
+        updated["aoi_effective_mask_path"] = ""
+        updated["aoi_effective_mask_desc"] = ""
 
         vector_layer_id = str(self.overlay_vector_combo.currentData() or "").strip()
         vector_layer_name = ""
@@ -421,7 +376,7 @@ def get_function_spec():
         display_name="Temporal Stack to Video",
         description=(
             "Render temporal stack inputs into a video. "
-            "Supports clipping (canvas or AOI), text/date overlay, temporal pause, and project vector overlays."
+            "Supports text/date overlay, temporal pause, and project vector overlays."
         ),
         default_payload={
             "output_path": "",
@@ -431,8 +386,8 @@ def get_function_spec():
             "text_horizontal_align": "left",
             "pause_between_dates_seconds": 0.0,
             "frames_per_second": 2,
-            "clip_mode": "canvas",
-            "aoi_source_type": "project_layer",
+            "clip_mode": "none",
+            "aoi_source_type": "",
             "aoi_project_layer_id": "",
             "aoi_project_layer_name": "",
             "aoi_path": "",

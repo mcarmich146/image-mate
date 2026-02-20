@@ -29,10 +29,21 @@ from ..types import WorkflowFunctionSpec
 
 
 class ClipToAoiConfigDialog(QDialog):
-    def __init__(self, *, parent=None, initial_payload=None):
+    def __init__(self, *, parent=None, initial_payload=None, dock=None):
         super().__init__(parent)
         self.setWindowTitle("Configure Clip to AOI")
         self._initial_payload = dict(initial_payload or {})
+        self._dock = dock
+        self._grouping_type = (
+            str(
+                self._initial_payload.get("__workflow_grouping_type")
+                or self._initial_payload.get("grouping_type")
+                or "single"
+            )
+            .strip()
+            .lower()
+            or "single"
+        )
         self._allow_project_layers_input = bool(self._initial_payload.get("allow_project_layers_input", True))
 
         layout = QVBoxLayout(self)
@@ -57,19 +68,30 @@ class ClipToAoiConfigDialog(QDialog):
         aoi_file_row.addWidget(self.aoi_file_edit, 1)
         aoi_file_row.addWidget(self.aoi_file_browse_btn)
 
-        output_row = QHBoxLayout()
-        self.output_file_edit = QLineEdit()
-        self.output_file_edit.setPlaceholderText("Select output file path...")
-        self.output_file_edit.setMinimumWidth(0)
-        self.output_file_browse_btn = QPushButton("Browse...")
-        self.output_file_browse_btn.clicked.connect(self._browse_output_file)
-        output_row.addWidget(self.output_file_edit, 1)
-        output_row.addWidget(self.output_file_browse_btn)
+        output_ui = self._request_output_file_ui()
+        if output_ui is not None:
+            self.output_file_edit = output_ui["line_edit"]
+            self.output_file_browse_btn = output_ui["browse_button"]
+            output_widget = output_ui["widget"]
+        else:
+            output_row = QHBoxLayout()
+            self.output_file_edit = QLineEdit()
+            self.output_file_edit.setPlaceholderText("Select output file path...")
+            self.output_file_edit.setMinimumWidth(0)
+            self.output_file_edit.setToolTip(
+                "For stack adapters, output path supports tokens: "
+                "{index}, {index_03}, {item_id}, {collection_date}, {collection_datetime}, {logical_source_key}"
+            )
+            self.output_file_browse_btn = QPushButton("Browse...")
+            self.output_file_browse_btn.clicked.connect(self._browse_output_file)
+            output_row.addWidget(self.output_file_edit, 1)
+            output_row.addWidget(self.output_file_browse_btn)
+            output_widget = output_row
 
         form.addRow("AOI Source Type", self.aoi_source_combo)
         form.addRow("Project Layer", self.aoi_project_layer_combo)
         form.addRow("AOI File", aoi_file_row)
-        form.addRow("Output File", output_row)
+        form.addRow("Output File", output_widget)
         layout.addLayout(form)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
@@ -79,6 +101,28 @@ class ClipToAoiConfigDialog(QDialog):
 
         self._load_initial_values()
         self._on_source_mode_changed()
+
+    def _request_output_file_ui(self):
+        callback = getattr(self._dock, "request_outputfile_ui", None) if self._dock is not None else None
+        if not callable(callback):
+            return None
+        output_path = str(self._initial_payload.get("output_path") or "").strip()
+        ui_payload = callback(
+            parent=self,
+            grouping_type=self._grouping_type,
+            placeholder_text="Select output file path...",
+            browse_caption="Select Clip Output File",
+            file_filter="GeoTIFF (*.tif *.tiff);;All files (*.*)",
+            default_suffix=".tif",
+            initial_path=output_path,
+        )
+        if not isinstance(ui_payload, dict):
+            return None
+        if not isinstance(ui_payload.get("line_edit"), QLineEdit):
+            return None
+        if not isinstance(ui_payload.get("browse_button"), QPushButton):
+            return None
+        return ui_payload
 
     def _refresh_project_layers(self):
         prior = str(self.aoi_project_layer_combo.currentData() or "").strip()
@@ -181,6 +225,7 @@ class ClipToAoiConfigDialog(QDialog):
 
     def config_payload(self):
         updated = dict(self._initial_payload or {})
+        updated.pop("__workflow_grouping_type", None)
         source_type = str(self.aoi_source_combo.currentData() or "file").strip().lower()
         output_file = str(self.output_file_edit.text() or "").strip()
         if output_file and not Path(output_file).suffix:
@@ -212,6 +257,7 @@ def _on_node_double_click(*, dock, node_payload, function_spec):
     dialog = ClipToAoiConfigDialog(
         parent=dock,
         initial_payload=node_payload,
+        dock=dock,
     )
     if dialog.exec_() != QDialog.Accepted:
         return None

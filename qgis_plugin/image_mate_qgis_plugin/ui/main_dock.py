@@ -105,11 +105,13 @@ class WorkflowNodeItem(QGraphicsRectItem):
             "source": QColor(220, 236, 255),
             "function": QColor(224, 244, 224),
             "step": QColor(224, 244, 224),
+            "adapter": QColor(255, 240, 214),
         }
         border_map = {
             "source": QColor(56, 118, 176),
             "function": QColor(80, 142, 86),
             "step": QColor(80, 142, 86),
+            "adapter": QColor(184, 128, 45),
         }
         fill_color = fill_map.get(self.node_type, QColor(236, 236, 236))
         border_color = border_map.get(self.node_type, QColor(125, 125, 125))
@@ -216,6 +218,8 @@ class ImageMateMainDock(QDockWidget):
     execute_workflow_requested = pyqtSignal(dict)
     create_vrt_requested = pyqtSignal(dict)
     sharpen_image_requested = pyqtSignal(dict)
+    ADAPTER_ID_FOR_EACH_IMAGE_IN_STACK = "for_each_image_in_stack"
+    ADAPTER_NAME_FOR_EACH_IMAGE_IN_STACK = "For Each Image in Stack"
 
     def __init__(self, parent=None):
         super().__init__("Image Mate", parent)
@@ -1086,6 +1090,129 @@ class ImageMateMainDock(QDockWidget):
                 return dict(payload)
         return None
 
+    @staticmethod
+    def _workflow_outputfile_token_specs(grouping_type):
+        mode = str(grouping_type or "single").strip().lower()
+        stack_like_modes = {
+            "stack",
+            "mosaic_bundle",
+            "multi_temporal_stacks",
+            "multi_stack",
+            "bundle",
+            "auto",
+            "any",
+        }
+        if mode not in stack_like_modes:
+            return []
+        return [
+            ("{index}", "1-based output index"),
+            ("{index_03}", "1-based output index with zero padding (001, 002, ...)"),
+            ("{item_id}", "Source item id"),
+            ("{collection_date}", "Collection date token"),
+            ("{collection_datetime}", "Collection datetime token"),
+            ("{logical_source_key}", "Logical source key token"),
+        ]
+
+    @staticmethod
+    def _insert_token_into_line_edit(line_edit, token_text):
+        target = line_edit if isinstance(line_edit, QLineEdit) else None
+        token = str(token_text or "").strip()
+        if target is None or not token:
+            return
+        current = str(target.text() or "")
+        cursor_pos = int(target.cursorPosition())
+        cursor_pos = max(0, min(cursor_pos, len(current)))
+        updated = f"{current[:cursor_pos]}{token}{current[cursor_pos:]}"
+        target.setText(updated)
+        target.setCursorPosition(cursor_pos + len(token))
+        target.setFocus()
+
+    def request_outputfile_ui(
+        self,
+        *,
+        parent,
+        grouping_type="single",
+        placeholder_text="Select output file path...",
+        browse_caption="Select Output File",
+        file_filter="All files (*.*)",
+        default_suffix="",
+        initial_path="",
+    ):
+        suffix = str(default_suffix or "").strip()
+        if suffix and not suffix.startswith("."):
+            suffix = f".{suffix}"
+        initial_value = str(initial_path or "").strip()
+
+        container = QWidget(parent)
+        container_layout = QVBoxLayout(container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(4)
+
+        row_widget = QWidget(container)
+        row_layout = QHBoxLayout(row_widget)
+        row_layout.setContentsMargins(0, 0, 0, 0)
+        row_layout.setSpacing(6)
+
+        path_edit = QLineEdit(row_widget)
+        path_edit.setPlaceholderText(str(placeholder_text or "").strip() or "Select output file path...")
+        path_edit.setMinimumWidth(0)
+        if initial_value:
+            path_edit.setText(initial_value)
+
+        browse_btn = QPushButton("Browse...", row_widget)
+
+        def _browse_output_file():
+            current = str(path_edit.text() or "").strip()
+            fallback_name = f"output{suffix}" if suffix else "output"
+            start_file = current or initial_value or fallback_name
+            selected_path, _ = QFileDialog.getSaveFileName(
+                parent or self,
+                str(browse_caption or "Select Output File"),
+                start_file,
+                str(file_filter or "All files (*.*)"),
+            )
+            selected_path = str(selected_path or "").strip()
+            if not selected_path:
+                return
+            if suffix and not Path(selected_path).suffix:
+                selected_path = f"{selected_path}{suffix}"
+            path_edit.setText(selected_path)
+
+        browse_btn.clicked.connect(_browse_output_file)
+
+        row_layout.addWidget(path_edit, 1)
+        row_layout.addWidget(browse_btn)
+        container_layout.addWidget(row_widget)
+
+        token_specs = self._workflow_outputfile_token_specs(grouping_type)
+        if token_specs:
+            token_widget = QWidget(container)
+            token_layout = QHBoxLayout(token_widget)
+            token_layout.setContentsMargins(0, 0, 0, 0)
+            token_layout.setSpacing(4)
+            token_layout.addWidget(QLabel("Supported tokens:", token_widget))
+            for token, tooltip in token_specs:
+                token_btn = QPushButton(str(token), token_widget)
+                token_btn.setToolTip(str(tooltip))
+                token_btn.clicked.connect(
+                    lambda _checked=False, tok=str(token): self._insert_token_into_line_edit(path_edit, tok)
+                )
+                token_layout.addWidget(token_btn)
+            token_layout.addStretch(1)
+            container_layout.addWidget(token_widget)
+            path_edit.setToolTip(
+                "Click a token button to insert it into the output path at the cursor position."
+            )
+
+        return {
+            "widget": container,
+            "line_edit": path_edit,
+            "browse_button": browse_btn,
+            "token_specs": token_specs,
+            "default_suffix": suffix,
+            "grouping_type": str(grouping_type or "").strip().lower(),
+        }
+
     def _reload_workflow_functions(self):
         self._workflow_function_specs = self._workflow_plugin_manager.reload()
         self._refresh_workflow_function_options()
@@ -1145,30 +1272,11 @@ class ImageMateMainDock(QDockWidget):
             output_name = str(payload.get("output_file_name") or "").strip()
             if not output_name and output_path:
                 output_name = Path(output_path).name
-            clip_mode = str(payload.get("clip_mode") or "canvas").strip().lower()
-            aoi_source_type = str(payload.get("aoi_source_type") or "file").strip().lower()
-            aoi_layer_name = str(payload.get("aoi_project_layer_name") or "").strip()
-            aoi_file_name = str(payload.get("aoi_file_name") or "").strip()
-            aoi_path = str(payload.get("aoi_path") or "").strip()
             fps_value = payload.get("frames_per_second")
             pause_value = payload.get("pause_between_dates_seconds")
             parts = []
             if output_name:
                 parts.append(f"OUT={output_name}")
-            if clip_mode == "aoi":
-                aoi_name = ""
-                if aoi_source_type == "project_layer" and aoi_layer_name:
-                    aoi_name = aoi_layer_name
-                elif aoi_file_name:
-                    aoi_name = aoi_file_name
-                elif aoi_path:
-                    aoi_name = Path(aoi_path).name
-                if aoi_name:
-                    parts.append(f"CLIP=AOI:{aoi_name}")
-                else:
-                    parts.append("CLIP=AOI")
-            else:
-                parts.append("CLIP=Canvas")
             try:
                 parts.append(f"FPS={int(fps_value)}")
             except Exception:
@@ -1182,6 +1290,30 @@ class ImageMateMainDock(QDockWidget):
             if parts:
                 suffix = f" [{', '.join(parts)}]"
         return f"Function {spec.display_name}{suffix}"
+
+    @classmethod
+    def _adapter_node_label(cls, payload):
+        adapter_payload = payload if isinstance(payload, dict) else {}
+        adapter_id = str(adapter_payload.get("adapter_id") or "").strip()
+        adapter_name = str(adapter_payload.get("adapter_name") or "").strip()
+        adapted_name = str(
+            adapter_payload.get("adapted_function_name")
+            or adapter_payload.get("adapted_function_id")
+            or ""
+        ).strip()
+        if adapter_id == cls.ADAPTER_ID_FOR_EACH_IMAGE_IN_STACK:
+            if adapted_name:
+                return f"Adapter {cls.ADAPTER_NAME_FOR_EACH_IMAGE_IN_STACK} -> {adapted_name}"
+            return f"Adapter {cls.ADAPTER_NAME_FOR_EACH_IMAGE_IN_STACK}"
+        if adapter_name:
+            if adapted_name:
+                return f"Adapter {adapter_name} -> {adapted_name}"
+            return f"Adapter {adapter_name}"
+        if adapter_id:
+            if adapted_name:
+                return f"Adapter {adapter_id} -> {adapted_name}"
+            return f"Adapter {adapter_id}"
+        return "Adapter"
 
     @staticmethod
     def _source_node_mode(payload):
@@ -1404,6 +1536,9 @@ class ImageMateMainDock(QDockWidget):
         if node_item.node_type == "source":
             self._edit_source_node_selection(node_item)
             return
+        if node_item.node_type == "adapter":
+            self._edit_adapter_node(node_item)
+            return
         if node_item.node_type != "function":
             return
 
@@ -1431,6 +1566,47 @@ class ImageMateMainDock(QDockWidget):
             node_item.node_payload["function_name"] = spec.display_name
             node_item.set_node_label(self._function_node_label(spec, node_item.node_payload))
         self._set_workflow_hint(f"Updated function node: {node_item.node_id}")
+
+    def _edit_adapter_node(self, node_item):
+        adapter_payload = dict(node_item.node_payload or {})
+        adapter_id = str(adapter_payload.get("adapter_id") or "").strip()
+        if adapter_id != self.ADAPTER_ID_FOR_EACH_IMAGE_IN_STACK:
+            self._set_workflow_hint("Adapter node is not configurable.")
+            return
+
+        function_id = str(adapter_payload.get("adapted_function_id") or "").strip()
+        if not function_id:
+            self._set_workflow_hint("Adapter has no embedded function to configure.")
+            return
+        function_payload = adapter_payload.get("adapted_function_payload")
+        function_payload = dict(function_payload or {}) if isinstance(function_payload, dict) else {}
+        callback_payload = dict(function_payload)
+        callback_payload["__workflow_grouping_type"] = "stack"
+
+        try:
+            updated_payload = self._workflow_plugin_manager.run_node_double_click_callback(
+                function_id=function_id,
+                node_payload=callback_payload,
+                dock=self,
+            )
+        except Exception as exc:
+            QMessageBox.warning(self, "Adapter Callback", f"Embedded function callback failed:\n{exc}")
+            return
+
+        if not isinstance(updated_payload, dict):
+            return
+
+        spec = self._workflow_plugin_manager.get(function_id)
+        if spec is not None:
+            updated_payload["function_id"] = spec.function_id
+            updated_payload["function_name"] = spec.display_name
+            adapter_payload["adapted_function_id"] = spec.function_id
+            adapter_payload["adapted_function_name"] = spec.display_name
+        updated_payload.pop("__workflow_grouping_type", None)
+        adapter_payload["adapted_function_payload"] = dict(updated_payload)
+        node_item.node_payload = adapter_payload
+        node_item.set_node_label(self._adapter_node_label(adapter_payload))
+        self._set_workflow_hint(f"Updated adapter node: {node_item.node_id}")
 
     def _add_selected_source_node(self):
         if self._workflow_canvas_locked:
@@ -1536,6 +1712,18 @@ class ImageMateMainDock(QDockWidget):
         target_node = self._workflow_nodes.get(target_key)
         if source_node is None or target_node is None:
             return False
+        if self._should_auto_wrap_stack_clip_function(source_node, target_node):
+            adapter_node = self._replace_function_node_with_stack_adapter(target_node)
+            if adapter_node is None:
+                return False
+            return self._add_direct_workflow_edge(source_node, adapter_node)
+        return self._add_direct_workflow_edge(source_node, target_node)
+
+    def _add_direct_workflow_edge(self, source_node, target_node):
+        if source_node is None or target_node is None:
+            return False
+        if source_node is target_node:
+            return False
         for edge in self._workflow_edges:
             if edge.source_node is source_node and edge.target_node is target_node:
                 return False
@@ -1543,6 +1731,90 @@ class ImageMateMainDock(QDockWidget):
         self._workflow_scene.addItem(edge_item)
         self._workflow_edges.append(edge_item)
         return True
+
+    def _should_auto_wrap_stack_clip_function(self, source_node, target_node):
+        if source_node is None or target_node is None:
+            return False
+        if str(source_node.node_type or "").strip().lower() != "source":
+            return False
+        if str(target_node.node_type or "").strip().lower() != "function":
+            return False
+        if self._source_node_mode(source_node.node_payload) != "stack":
+            return False
+        function_id = str(target_node.node_payload.get("function_id") or "").strip()
+        if function_id != "clip_to_aoi":
+            return False
+        return True
+
+    def _build_stack_clip_adapter_payload_from_function(self, function_node):
+        node = function_node
+        if node is None:
+            return {}
+        function_payload = dict(node.node_payload or {})
+        function_id = str(function_payload.get("function_id") or "").strip()
+        function_name = str(function_payload.get("function_name") or "").strip()
+        if not function_name and function_id:
+            spec = self._workflow_plugin_manager.get(function_id)
+            if spec is not None:
+                function_name = spec.display_name
+        return {
+            "adapter_id": self.ADAPTER_ID_FOR_EACH_IMAGE_IN_STACK,
+            "adapter_name": self.ADAPTER_NAME_FOR_EACH_IMAGE_IN_STACK,
+            "adapted_function_id": function_id,
+            "adapted_function_name": function_name,
+            "adapted_function_payload": function_payload,
+            "auto_inserted": True,
+        }
+
+    def _replace_function_node_with_stack_adapter(self, function_node):
+        node = function_node
+        if node is None:
+            return None
+        if str(node.node_type or "").strip().lower() != "function":
+            return None
+        function_id = str(node.node_payload.get("function_id") or "").strip()
+        if function_id != "clip_to_aoi":
+            return None
+
+        adapter_payload = self._build_stack_clip_adapter_payload_from_function(node)
+        adapter_label = self._adapter_node_label(adapter_payload)
+        adapter_node_id = str(node.node_id or "").strip()
+        adapter_pos = QPointF(node.pos())
+
+        upstream_nodes = []
+        downstream_nodes = []
+        remove_edges = []
+        for edge in self._workflow_edges:
+            if edge.target_node is node:
+                remove_edges.append(edge)
+                if edge.source_node is not None and edge.source_node not in upstream_nodes:
+                    upstream_nodes.append(edge.source_node)
+                continue
+            if edge.source_node is node:
+                remove_edges.append(edge)
+                if edge.target_node is not None and edge.target_node not in downstream_nodes:
+                    downstream_nodes.append(edge.target_node)
+
+        for edge in remove_edges:
+            if edge in self._workflow_edges:
+                self._workflow_edges.remove(edge)
+            self._workflow_scene.removeItem(edge)
+
+        self._workflow_scene.removeItem(node)
+        self._workflow_nodes.pop(adapter_node_id, None)
+
+        adapter_node = self._add_workflow_node(
+            node_type="adapter",
+            label=adapter_label,
+            payload=adapter_payload,
+            pos=adapter_pos,
+            node_id=adapter_node_id,
+        )
+        for upstream in upstream_nodes:
+            self._add_direct_workflow_edge(upstream, adapter_node)
+        for downstream in downstream_nodes:
+            self._add_direct_workflow_edge(adapter_node, downstream)
+        return adapter_node
 
     def _delete_selected_workflow_items(self):
         if self._workflow_canvas_locked:
@@ -1796,6 +2068,20 @@ class ImageMateMainDock(QDockWidget):
                     node_payload["function_id"] = function_id
                 if function_name and "function_name" not in node_payload:
                     node_payload["function_name"] = function_name
+            if node_type == "adapter":
+                adapter_id = str(node_payload.get("adapter_id") or "").strip()
+                if not adapter_id:
+                    node_payload["adapter_id"] = self.ADAPTER_ID_FOR_EACH_IMAGE_IN_STACK
+                    node_payload["adapter_name"] = self.ADAPTER_NAME_FOR_EACH_IMAGE_IN_STACK
+                adapted_function_id = str(node_payload.get("adapted_function_id") or "").strip()
+                adapted_payload = node_payload.get("adapted_function_payload")
+                if adapted_payload is not None and not isinstance(adapted_payload, dict):
+                    node_payload["adapted_function_payload"] = {}
+                if adapted_function_id and not str(node_payload.get("adapted_function_name") or "").strip():
+                    spec = self._workflow_plugin_manager.get(adapted_function_id)
+                    if spec is not None:
+                        node_payload["adapted_function_name"] = spec.display_name
+                node_label = self._adapter_node_label(node_payload)
             node_pos = self._coerce_pos(row.get("position"))
             self._add_workflow_node(
                 node_type=node_type,
