@@ -19,7 +19,7 @@ def _manual_load_env(env_path: Path) -> bool:
         return False
     
     for raw in text.splitlines():
-        line = raw.strip()
+        line = raw.strip().lstrip("\ufeff")
         if not line or line.startswith("#"):
             continue
         if line.startswith("export "):
@@ -27,7 +27,7 @@ def _manual_load_env(env_path: Path) -> bool:
         if "=" not in line:
             continue
         key, value = line.split("=", 1)
-        key = key.strip()
+        key = key.strip().lstrip("\ufeff")
         value = value.strip()
         if not key:
             continue

@@ -11,11 +11,14 @@ import re
 
 from qgis.PyQt.QtCore import QStandardPaths
 from qgis.PyQt.QtCore import QVariant
+from qgis.PyQt.QtGui import QColor
+from qgis.PyQt.QtGui import QImage
 from qgis.core import (
     Qgis,
     QgsCoordinateReferenceSystem,
     QgsCoordinateTransform,
     QgsFeature,
+    QgsFillSymbol,
     QgsField,
     QgsGeometry,
     QgsLayerTreeGroup,
@@ -24,6 +27,7 @@ from qgis.core import (
     QgsProject,
     QgsRasterLayer,
     QgsRectangle,
+    QgsSingleSymbolRenderer,
     QgsVectorLayer,
 )
 
@@ -66,31 +70,104 @@ class SearchStreamingMixin:
         if self.dock is None:
             return
         source_id = self.dock.current_source_id() or "satellogic"
+        source_norm = str(source_id or "").strip().lower()
         self.dock.set_collections(self.source_service.list_collections(source_id))
-        self.dock.set_contract_enabled(source_id == "satellogic")
+        self.dock.set_contract_enabled(source_norm == "satellogic")
+        if hasattr(self.dock, "require_full_aoi_overlap"):
+            if source_norm == "merlin-s2" and bool(self.dock.require_full_aoi_overlap.isChecked()):
+                self.dock.require_full_aoi_overlap.setChecked(False)
+                self._append_search_log(
+                    "Coverage filter auto-disabled for Sentinel-2. "
+                    "Use overlap results for tile-based collections.",
+                    level=Qgis.Info,
+                )
+            self.dock.require_full_aoi_overlap.setToolTip(
+                "When enabled, search results must fully contain the current AOI. "
+                "Sentinel-2 typically works better with this disabled."
+            )
+        if source_norm == "merlin-s2" and hasattr(self.dock, "max_gsd"):
+            try:
+                current_max_gsd = float(self.dock.max_gsd.value() or 0.0)
+            except Exception:
+                current_max_gsd = 0.0
+            if 0.0 < current_max_gsd < 10.0:
+                self.dock.max_gsd.setValue(0.0)
+                self._append_search_log(
+                    "Max Resolution filter reset to 'none' for Sentinel-2 "
+                    "(values below 10 m/px can exclude all Sentinel-2 scenes).",
+                    level=Qgis.Info,
+                )
+        if hasattr(self, "handle_tasking_refresh_request"):
+            try:
+                self.handle_tasking_refresh_request()
+            except Exception:
+                pass
+        if hasattr(self, "handle_mosaic_refresh_projects_request"):
+            try:
+                self.handle_mosaic_refresh_projects_request()
+            except Exception:
+                pass
+        if hasattr(self, "handle_monitoring_refresh_request"):
+            try:
+                self.handle_monitoring_refresh_request({"source_id": source_id})
+            except Exception:
+                pass
 
     def _runtime_summary_text(self, extra_line=None):
         runtime = self.source_service.runtime_summary()
+        wmts_ready = bool(
+            runtime.get("cdse_enabled")
+            and runtime.get("cdse_wmts_configured")
+            and runtime.get("cdse_credentials_detected")
+        )
+        campaign_uid = str(getattr(self, "current_campaign_uid", "") or "").strip()
+        campaign_root = ""
+        if campaign_uid and hasattr(self, "campaign_storage"):
+            try:
+                campaign_root = str(self.campaign_storage.campaign_root(campaign_uid))
+            except Exception:
+                campaign_root = ""
         lines = [
             f"Repo root used: {runtime.get('repo_root_used') or 'not resolved'}",
             f"Env file used: {runtime.get('env_file_used') or 'not found'}",
             f"Debug log file: {self._disk_log_path or 'not initialized'}",
             f"Backend API base URL: {self._backend_api_base_url()}",
             f"Local tile proxy: {self.local_tile_proxy.base_url if self.local_tile_proxy.is_running() else 'unavailable'}",
-            f"Satellogic auth mode: {runtime['satellogic_auth_mode']}",
-            f"Satellogic contract configured: {'yes' if runtime['satellogic_contract_configured'] else 'no'}",
-            f"Satellogic credentials detected (.env/backend): {'yes' if runtime.get('satellogic_credentials_detected') else 'no'}",
-            f"Satellogic authcfg configured: {'yes' if runtime['satellogic_authcfg_configured'] else 'no'}",
+            f"Campaign UID: {campaign_uid or 'none'}",
+            f"Campaign root: {campaign_root or 'unavailable'}",
+            f"Managed campaign storage: {'yes' if bool(getattr(self, '_campaign_storage_enabled', lambda: False)()) else 'no'}",
+            f"NewSat Constellation auth mode: {runtime['satellogic_auth_mode']}",
+            f"NewSat Constellation access profile configured: {'yes' if runtime['satellogic_contract_configured'] else 'no'}",
+            f"NewSat Constellation credentials detected (.env/backend): {'yes' if runtime.get('satellogic_credentials_detected') else 'no'}",
+            f"NewSat Constellation authcfg configured: {'yes' if runtime['satellogic_authcfg_configured'] else 'no'}",
             f"CDSE enabled: {'yes' if runtime['cdse_enabled'] else 'no'}",
             f"CDSE WMTS configured: {'yes' if runtime['cdse_wmts_configured'] else 'no'}",
+            f"CDSE WMTS readiness: {'ready' if wmts_ready else 'not_ready'}",
+            f"CDSE WMTS backend proxy preferred: {'yes' if runtime.get('cdse_wmts_use_backend_proxy', True) else 'no'}",
             f"CDSE credentials detected (.env/backend): {'yes' if runtime.get('cdse_credentials_detected') else 'no'}",
             f"CDSE authcfg configured: {'yes' if runtime['cdse_authcfg_configured'] else 'no'}",
             f"Backend provider modules ready: {'yes' if runtime.get('backend_ready') else 'no'}",
         ]
+        asset_intel_service = getattr(self, "asset_intel_service", None)
+        if asset_intel_service is not None:
+            asset_db_path = str(getattr(asset_intel_service, "db_path", "") or "").strip()
+            lines.append(f"Asset Intel DB path: {asset_db_path or 'not configured'}")
+            try:
+                lines.append(
+                    f"Asset Intel DB ready: {'yes' if bool(asset_intel_service.is_ready()) else 'no'}"
+                )
+            except Exception:
+                lines.append("Asset Intel DB ready: no")
         if runtime.get("backend_error"):
             lines.append(f"Backend init error: {runtime['backend_error']}")
         if self._local_tile_proxy_error:
             lines.append(f"Local tile proxy error: {self._local_tile_proxy_error}")
+        asset_intel_error = str(getattr(self, "_asset_intel_error", "") or "").strip()
+        if asset_intel_error:
+            lines.append(f"Asset Intel error: {asset_intel_error}")
+        campaign_storage_error = str(getattr(self, "_campaign_storage_error", "") or "").strip()
+        if campaign_storage_error:
+            lines.append(f"Campaign storage init error: {campaign_storage_error}")
         if extra_line:
             lines.append(f"Validation: {extra_line}")
         return "\n".join(lines)
@@ -116,10 +193,21 @@ class SearchStreamingMixin:
     def _init_disk_log(self):
         if self._disk_log_fp is not None:
             return
-        base_dir = str(QStandardPaths.writableLocation(QStandardPaths.AppDataLocation) or "").strip()
-        if not base_dir:
-            base_dir = str(self.temp_dir)
-        log_dir = Path(base_dir) / "image_mate_logs"
+        log_dir = None
+        storage_enabled_fn = getattr(self, "_campaign_storage_enabled", None)
+        if callable(storage_enabled_fn) and bool(storage_enabled_fn()):
+            campaign_uid = str(getattr(self, "current_campaign_uid", "") or "").strip()
+            campaign_storage = getattr(self, "campaign_storage", None)
+            if campaign_uid and campaign_storage is not None:
+                try:
+                    log_dir = campaign_storage.campaign_logs_dir(campaign_uid)
+                except Exception:
+                    log_dir = None
+        if log_dir is None:
+            base_dir = str(QStandardPaths.writableLocation(QStandardPaths.AppDataLocation) or "").strip()
+            if not base_dir:
+                base_dir = str(self.temp_dir)
+            log_dir = Path(base_dir) / "image_mate_logs"
         log_dir.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now(tz=timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         log_path = log_dir / f"image_mate_qgis_{stamp}.log"
@@ -584,7 +672,7 @@ class SearchStreamingMixin:
         max_sources = len(urls) if is_l1d_sr_stream else configured_max_sources
         if len(urls) > max_sources:
             self._append_debug_log(
-                f"Capped Satellogic stream candidates from {len(urls)} to {max_sources} for responsive tile loading."
+                f"Capped NewSat Constellation stream candidates from {len(urls)} to {max_sources} for responsive tile loading."
             )
             urls = urls[:max_sources]
         elif is_l1d_sr_stream and len(urls) > configured_max_sources:
@@ -1063,25 +1151,39 @@ class SearchStreamingMixin:
 
         if features:
             provider.addFeatures(features)
+        fill_color = QColor(255, 255, 153, 64)
+        outline_color = QColor(255, 255, 153, 255)
+        symbol = QgsFillSymbol.createSimple(
+            {
+                "color": f"{fill_color.red()},{fill_color.green()},{fill_color.blue()},{fill_color.alpha()}",
+                "outline_color": f"{outline_color.red()},{outline_color.green()},{outline_color.blue()},{outline_color.alpha()}",
+                "outline_width": "0.6",
+                "outline_style": "solid",
+            }
+        )
+        if symbol is not None:
+            layer.setRenderer(QgsSingleSymbolRenderer(symbol))
         layer.updateExtents()
-        self._add_layer_to_image_mate_group(layer)
+        self._add_layer_to_image_mate_group(layer, insert_on_top=False)
+        layer_node = QgsProject.instance().layerTreeRoot().findLayer(layer.id())
+        if layer_node is not None:
+            layer_node.setItemVisibilityChecked(False)
         self.search_layer_id = layer.id()
 
     def _load_item_imagery_layer(self, item):
         source_id = str(item.get("source_id") or "").strip() or None
         contract_id = str(item.get("contract_id") or "").strip() or None
-        assets = item.get("assets") or {}
-        candidates = [
-            ("preview", str(assets.get("preview") or "").strip()),
-            ("thumbnail", str(assets.get("thumbnail") or "").strip()),
-            ("visual", str(assets.get("visual") or "").strip()),
-            ("visual_fullres", str(assets.get("visual_fullres") or "").strip()),
-            ("analytic", str(assets.get("analytic") or "").strip()),
-        ]
+        collection_id = str(item.get("collection") or "").strip()
+        item_id = str(item.get("id") or "").strip() or "unknown-item"
+        candidates = self._imagery_asset_candidates_for_item(item)
+        attempted_keys = []
         errors = []
+        first_error = ""
         for key, url in candidates:
             if not url:
                 continue
+            attempted_keys.append(key)
+            auth_route = self._asset_auth_route_for_download(source_id=source_id, asset_url=url)
             try:
                 expected_size = self._asset_expected_size_bytes(
                     item=item,
@@ -1098,11 +1200,40 @@ class SearchStreamingMixin:
                     layer_name = self._asset_layer_name(item, key)
                     cached_layer = QgsRasterLayer(str(cached_path), layer_name)
                     if cached_layer.isValid():
+                        source_norm = str(source_id or "").strip().lower()
+                        if (
+                            source_norm == "merlin-s2"
+                            and key in {"preview", "thumbnail"}
+                            and not self._layer_has_georeference(cached_layer)
+                        ):
+                            if self._georeference_image_asset_from_item_bounds(item=item, image_path=cached_path):
+                                refreshed_layer = QgsRasterLayer(str(cached_path), layer_name)
+                                if refreshed_layer.isValid():
+                                    if not refreshed_layer.crs().isValid():
+                                        refreshed_layer.setCrs(QgsCoordinateReferenceSystem("EPSG:4326"))
+                                    if self._layer_has_georeference(refreshed_layer):
+                                        cached_layer = refreshed_layer
+                                        self._append_debug_log(
+                                            "item_load_attempt "
+                                            f"source={source_id or 'unknown'} collection={collection_id or ''} item_id={item_id} "
+                                            f"asset_key={key} mode=preview_georef success=yes cache=true"
+                                        )
+                        self._append_debug_log(
+                            "item_load_attempt "
+                            f"source={source_id or 'unknown'} collection={collection_id or ''} item_id={item_id} "
+                            f"asset_key={key} auth_route={auth_route} mode=cache success=yes"
+                        )
                         self._append_search_log(
                             f"Reusing cached asset '{key}' ({cached_path.name})",
                             level=Qgis.Info,
                         )
                         return cached_layer
+                    self._append_debug_log(
+                        "item_load_attempt "
+                        f"source={source_id or 'unknown'} collection={collection_id or ''} item_id={item_id} "
+                        f"asset_key={key} auth_route={auth_route} mode=cache success=no error=invalid_qgis_layer",
+                        level=Qgis.Warning,
+                    )
                     self._append_debug_log(
                         f"Cached asset '{cached_path}' failed QGIS validation; downloading fresh copy.",
                         level=Qgis.Warning,
@@ -1119,19 +1250,194 @@ class SearchStreamingMixin:
                 layer = QgsRasterLayer(str(path), layer_name)
                 if not layer.isValid():
                     raise RuntimeError(f"QGIS could not open downloaded asset ({path.name})")
+                source_norm = str(source_id or "").strip().lower()
+                if (
+                    source_norm == "merlin-s2"
+                    and key in {"preview", "thumbnail"}
+                    and not self._layer_has_georeference(layer)
+                ):
+                    if self._georeference_image_asset_from_item_bounds(item=item, image_path=path):
+                        georef_layer = QgsRasterLayer(str(path), layer_name)
+                        if georef_layer.isValid():
+                            if not georef_layer.crs().isValid():
+                                georef_layer.setCrs(QgsCoordinateReferenceSystem("EPSG:4326"))
+                            if self._layer_has_georeference(georef_layer):
+                                layer = georef_layer
+                                self._append_debug_log(
+                                    "item_load_attempt "
+                                    f"source={source_id or 'unknown'} collection={collection_id or ''} item_id={item_id} "
+                                    f"asset_key={key} mode=preview_georef success=yes"
+                                )
+                self._append_debug_log(
+                    "item_load_attempt "
+                    f"source={source_id or 'unknown'} collection={collection_id or ''} item_id={item_id} "
+                    f"asset_key={key} auth_route={auth_route} mode=download success=yes bytes={len(data)}"
+                )
                 return layer
             except Exception as exc:
                 errors.append(f"{key}: {exc}")
+                if not first_error:
+                    first_error = f"{key}: {exc}"
+                self._append_debug_log(
+                    "item_load_attempt "
+                    f"source={source_id or 'unknown'} collection={collection_id or ''} item_id={item_id} "
+                    f"asset_key={key} auth_route={auth_route} mode=download success=no error={exc}",
+                    level=Qgis.Warning,
+                )
                 continue
+
+        source_norm = str(source_id or "").strip().lower()
+        if source_norm == "merlin-s2":
+            wmts_layer = self._build_merlin_wmts_stream_layer(item)
+            if wmts_layer is not None:
+                self._append_search_log(
+                    f"Fallback loaded Sentinel-2 WMTS layer for item {item_id} after raster asset attempts.",
+                    level=Qgis.Info,
+                )
+                return wmts_layer
+
+        attempted = ",".join(attempted_keys) if attempted_keys else "none"
         if errors:
-            raise RuntimeError("; ".join(errors))
-        raise RuntimeError("No usable imagery assets were available for this item")
+            raise RuntimeError(
+                f"No usable imagery assets were available for item {item_id}; "
+                f"attempted_assets=[{attempted}] first_error={first_error or errors[0]}"
+            )
+        raise RuntimeError(
+            f"No usable imagery assets were available for item {item_id}; attempted_assets=[{attempted}]"
+        )
+
+    @staticmethod
+    def _imagery_asset_candidates_for_item(item):
+        source_id = str(item.get("source_id") or "").strip().lower()
+        assets = item.get("assets") or {}
+        if source_id == "merlin-s2":
+            ordered_keys = [
+                "visual_fullres",
+                "visual",
+                "analytic",
+                "preview",
+                "thumbnail",
+            ]
+        else:
+            ordered_keys = [
+                "preview",
+                "thumbnail",
+                "visual",
+                "visual_fullres",
+                "analytic",
+            ]
+        seen = set()
+        out = []
+        for key in ordered_keys:
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append((key, str(assets.get(key) or "").strip()))
+        return out
+
+    @staticmethod
+    def _asset_auth_route_for_download(*, source_id, asset_url):
+        source = str(source_id or "").strip().lower()
+        if source == "merlin-s2":
+            url_lc = str(asset_url or "").strip().lower()
+            if "/odata/" in url_lc or "/download/" in url_lc:
+                return "cdse_download_token"
+            return "cdse_access_token"
+        if source == "satellogic":
+            return "satellogic_contract_auth"
+        return "source_auto"
+
+    @staticmethod
+    def _layer_has_georeference(layer):
+        if layer is None:
+            return False
+        try:
+            if not layer.crs().isValid():
+                return False
+            extent = layer.extent()
+            return extent is not None and not extent.isEmpty()
+        except Exception:
+            return False
+
+    def _georeference_image_asset_from_item_bounds(self, *, item, image_path):
+        path = Path(str(image_path or "")).expanduser().resolve()
+        if not path.is_file():
+            return False
+        geometry_payload = item.get("geometry") if isinstance(item, dict) else None
+        if not isinstance(geometry_payload, dict):
+            return False
+        geom = self._geometry_from_geojson(geometry_payload)
+        if geom is None or geom.isEmpty():
+            return False
+        try:
+            bounds = geom.boundingBox()
+            min_x = float(bounds.xMinimum())
+            min_y = float(bounds.yMinimum())
+            max_x = float(bounds.xMaximum())
+            max_y = float(bounds.yMaximum())
+        except Exception:
+            return False
+        if not (max_x > min_x and max_y > min_y):
+            return False
+
+        image = QImage(str(path))
+        width = int(image.width())
+        height = int(image.height())
+        if width < 2 or height < 2:
+            return False
+
+        pixel_size_x = (max_x - min_x) / float(width)
+        pixel_size_y = (max_y - min_y) / float(height)
+        if pixel_size_x <= 0 or pixel_size_y <= 0:
+            return False
+
+        x_center_ul = min_x + (pixel_size_x / 2.0)
+        y_center_ul = max_y - (pixel_size_y / 2.0)
+        world_lines = [
+            f"{pixel_size_x:.15f}",
+            "0.0",
+            "0.0",
+            f"{-pixel_size_y:.15f}",
+            f"{x_center_ul:.15f}",
+            f"{y_center_ul:.15f}",
+        ]
+        world_path = self._world_file_path(path)
+        try:
+            world_path.write_text("\n".join(world_lines) + "\n", encoding="ascii")
+            prj_path = path.with_suffix(".prj")
+            prj_wkt = QgsCoordinateReferenceSystem("EPSG:4326").toWkt()
+            if prj_wkt:
+                prj_path.write_text(prj_wkt, encoding="utf-8")
+            return True
+        except Exception:
+            return False
+
+    @staticmethod
+    def _world_file_path(image_path):
+        path = Path(str(image_path))
+        suffix = path.suffix.lower()
+        mapping = {
+            ".png": ".pgw",
+            ".jpg": ".jgw",
+            ".jpeg": ".jgw",
+            ".tif": ".tfw",
+            ".tiff": ".tfw",
+            ".jp2": ".j2w",
+            ".webp": ".wld",
+        }
+        world_suffix = mapping.get(suffix, ".wld")
+        return path.with_suffix(world_suffix)
 
     def _write_temp_asset(self, item, url, data, preferred_key):
         item_id = str(item.get("id") or "item").replace(":", "_").replace("/", "_")
         ext = self._guess_asset_extension(url, data)
         file_name = f"{item_id}_{preferred_key}{ext}"
-        path = self.temp_dir / file_name
+        cache_dir_fn = getattr(self, "search_asset_cache_dir", None)
+        if callable(cache_dir_fn):
+            path = Path(cache_dir_fn(item=item, workflow=False)) / file_name
+        else:
+            path = self.temp_dir / file_name
+        path.parent.mkdir(parents=True, exist_ok=True)
         if path.exists():
             try:
                 if int(path.stat().st_size) == int(len(data)):
@@ -1147,12 +1453,21 @@ class SearchStreamingMixin:
         item_id = str((item if isinstance(item, dict) else {}).get("id") or "item")
         safe_item_id = item_id.replace(":", "_").replace("/", "_")
         name_prefix = f"{safe_item_id}_{preferred_key}"
+        cache_dir = None
+        cache_dir_fn = getattr(self, "search_asset_cache_dir", None)
+        if callable(cache_dir_fn):
+            try:
+                cache_dir = Path(cache_dir_fn(item=item, workflow=False))
+            except Exception:
+                cache_dir = None
+        if cache_dir is None:
+            cache_dir = self.temp_dir
 
         candidates = []
         suffix = Path(urlparse(str(asset_url or "")).path).suffix.lower()
         if suffix:
-            candidates.append(self.temp_dir / f"{name_prefix}{suffix}")
-        for candidate in sorted(self.temp_dir.glob(f"{name_prefix}.*")):
+            candidates.append(cache_dir / f"{name_prefix}{suffix}")
+        for candidate in sorted(cache_dir.glob(f"{name_prefix}.*")):
             if candidate.is_file():
                 candidates.append(candidate)
 
@@ -1304,14 +1619,51 @@ class SearchStreamingMixin:
         return None
 
     def _build_merlin_wmts_stream_layer(self, item):
+        day = self._item_day(item)
+        time_param = f"{day}/{day}" if day else ""
+        use_backend_proxy = bool(getattr(self.provider_settings, "cdse_wmts_use_backend_proxy", True))
+
+        backend_reason = ""
+        if use_backend_proxy:
+            backend_template_url, backend_reason = self._merlin_wmts_backend_template_url(item=item, time_param=time_param)
+            if backend_template_url:
+                layer_name = self._asset_layer_name(item, "wmts")
+                layer = self._make_xyz_layer(backend_template_url, layer_name, zmin=0, zmax=19)
+                if layer is not None and layer.isValid():
+                    self._append_debug_log(
+                        "merlin_wmts_stream source=backend status=ready "
+                        f"item_id={item.get('id') or ''} day={day or ''} url={backend_template_url[:280]}"
+                    )
+                    return layer
+                backend_reason = "backend_template_invalid_in_qgis"
+                self._append_debug_log(
+                    "merlin_wmts_stream source=backend status=invalid_layer "
+                    f"item_id={item.get('id') or ''} day={day or ''}",
+                    level=Qgis.Warning,
+                )
+
         base_url = str(self.provider_settings.cdse_wmts_base_url or "").strip().rstrip("/")
         instance_id = str(self.provider_settings.cdse_wmts_instance_id or "").strip()
         layer_id = str(self.provider_settings.cdse_wmts_layer_id or "TRUE-COLOR").strip() or "TRUE-COLOR"
-        if not base_url or not instance_id:
+        if not base_url:
+            reason = "missing_base_url"
+            if backend_reason:
+                reason = f"{backend_reason}; {reason}"
+            self._set_stream_status(f"Stream status: Sentinel-2 WMTS unavailable ({reason})")
+            return None
+        if not instance_id:
+            reason = "missing_instance_id"
+            if backend_reason:
+                reason = f"{backend_reason}; {reason}"
+            self._set_stream_status(f"Stream status: Sentinel-2 WMTS unavailable ({reason})")
+            return None
+        if not layer_id:
+            reason = "missing_layer_id"
+            if backend_reason:
+                reason = f"{backend_reason}; {reason}"
+            self._set_stream_status(f"Stream status: Sentinel-2 WMTS unavailable ({reason})")
             return None
 
-        day = self._item_day(item)
-        time_param = f"{day}/{day}" if day else ""
         params = [
             ("SERVICE", "WMTS"),
             ("REQUEST", "GetTile"),
@@ -1331,7 +1683,99 @@ class SearchStreamingMixin:
         xyz_url = f"{base_url}/{instance_id}?{query}"
         layer_name = self._asset_layer_name(item, "wmts")
         layer = self._make_xyz_layer(xyz_url, layer_name, zmin=0, zmax=19)
-        return layer if layer is not None and layer.isValid() else None
+        if layer is None or not layer.isValid():
+            reason = "direct_wmts_invalid_layer"
+            if backend_reason:
+                reason = f"{backend_reason}; {reason}"
+            self._set_stream_status(f"Stream status: Sentinel-2 WMTS unavailable ({reason})")
+            self._append_debug_log(
+                "merlin_wmts_stream source=direct status=invalid_layer "
+                f"item_id={item.get('id') or ''} day={day or ''} url={xyz_url[:280]}",
+                level=Qgis.Warning,
+            )
+            return None
+        self._append_debug_log(
+            "merlin_wmts_stream source=direct status=ready "
+            f"item_id={item.get('id') or ''} day={day or ''} url={xyz_url[:280]}"
+        )
+        return layer
+
+    def _merlin_wmts_backend_template_url(self, *, item, time_param):
+        backend_request = getattr(self, "_backend_json_request", None)
+        if not callable(backend_request):
+            return "", "backend_proxy_not_available"
+        layer_id = str(self.provider_settings.cdse_wmts_layer_id or "TRUE-COLOR").strip() or "TRUE-COLOR"
+        try:
+            payload = backend_request(
+                "/api/layers/sentinel/wmts",
+                params={"layer_id": layer_id},
+                timeout=12,
+            )
+        except Exception as exc:
+            reason = f"backend_wmts_request_failed:{exc}"
+            self._append_debug_log(
+                f"merlin_wmts_stream source=backend status=unavailable reason={reason}",
+                level=Qgis.Warning,
+            )
+            self._set_stream_status(f"Stream status: Sentinel-2 WMTS unavailable ({reason})")
+            return "", reason
+        if not isinstance(payload, dict):
+            reason = "backend_wmts_invalid_response"
+            self._append_debug_log(
+                f"merlin_wmts_stream source=backend status=unavailable reason={reason}",
+                level=Qgis.Warning,
+            )
+            return "", reason
+        available = bool(payload.get("available"))
+        reason = str(payload.get("reason") or "").strip()
+        template_url = str(payload.get("template_url") or "").strip()
+        warning = str(payload.get("warning") or "").strip()
+        if not available:
+            reason = reason or "backend_reported_unavailable"
+            self._append_debug_log(
+                "merlin_wmts_stream source=backend status=unavailable "
+                f"reason={reason} warning={warning}",
+                level=Qgis.Warning,
+            )
+            self._set_stream_status(f"Stream status: Sentinel-2 WMTS unavailable ({reason})")
+            return "", reason
+        if not template_url:
+            reason = "backend_template_url_missing"
+            self._append_debug_log(
+                f"merlin_wmts_stream source=backend status=unavailable reason={reason}",
+                level=Qgis.Warning,
+            )
+            return "", reason
+        full_url = self._absolutize_backend_url(template_url)
+        full_url = self._apply_wmts_time_to_template_url(full_url, time_param)
+        return full_url, ""
+
+    def _absolutize_backend_url(self, value):
+        raw = str(value or "").strip()
+        if not raw:
+            return ""
+        if raw.startswith("http://") or raw.startswith("https://"):
+            return raw
+        if raw.startswith("/"):
+            return f"{self._backend_api_base_url()}{raw}"
+        return f"{self._backend_api_base_url()}/{raw.lstrip('/')}"
+
+    @staticmethod
+    def _apply_wmts_time_to_template_url(template_url, time_param):
+        text = str(template_url or "").strip()
+        if not text or not time_param:
+            return text
+        parsed = urlparse(text)
+        params = parse_qs(parsed.query, keep_blank_values=True)
+        if "time" in params:
+            params["time"] = [time_param]
+        elif "TIME" in params:
+            params["TIME"] = [time_param]
+        else:
+            params["time"] = [time_param]
+        query = urlencode(params, doseq=True)
+        query = query.replace("%7Bz%7D", "{z}").replace("%7By%7D", "{y}").replace("%7Bx%7D", "{x}")
+        return parsed._replace(query=query).geturl()
 
     def _build_satellogic_proxy_stream_layer(self, item, source_urls=None, source_items=None):
         resolved_sources = []
@@ -1619,6 +2063,13 @@ class SearchStreamingMixin:
             return
         if not self.search_items:
             return
+        pinned_item_id = str(getattr(self, "_auto_stream_pinned_item_id", "") or "").strip()
+        if pinned_item_id:
+            pinned_item = self.search_items.get(pinned_item_id)
+            if isinstance(pinned_item, dict) and str(pinned_item.get("source_id") or "").strip().lower() == "satellogic":
+                # Respect manual selection for NewSat imagery; do not auto-switch on zoom/pan.
+                return
+            setattr(self, "_auto_stream_pinned_item_id", "")
         if not self._is_detail_zoom():
             return
         now = datetime.now(tz=timezone.utc).timestamp()
@@ -1706,7 +2157,7 @@ class SearchStreamingMixin:
     def _replace_preview_layer(self, new_layer, *, replace_existing=True):
         if replace_existing:
             self._remove_layer_by_id(self.preview_layer_id)
-        self._add_layer_to_image_mate_group(new_layer)
+        self._add_layer_to_image_mate_group(new_layer, insert_on_top=True)
         self.preview_layer_id = new_layer.id()
 
     @staticmethod
@@ -1717,13 +2168,18 @@ class SearchStreamingMixin:
                 return child
         return root.addGroup("Image Mate")
 
-    def _add_layer_to_image_mate_group(self, layer):
+    def _add_layer_to_image_mate_group(self, layer, *, insert_on_top=False):
         if layer is None:
             return
         project = QgsProject.instance()
         group = self._get_or_create_image_mate_group()
-        project.addMapLayer(layer, False)
-        group.addLayer(layer)
+        if project.mapLayer(layer.id()) is None:
+            project.addMapLayer(layer, False)
+        existing_node = group.findLayer(layer.id())
+        if existing_node is not None:
+            group.removeChildNode(existing_node)
+        insert_index = 0 if bool(insert_on_top) else len(group.children())
+        group.insertLayer(insert_index, layer)
 
     @staticmethod
     def _remove_layer_by_id(layer_id):

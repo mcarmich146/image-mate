@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse, urlsplit, urlunsplit
 import logging
 import re
 
@@ -150,6 +150,8 @@ class SatellogicClient:
                 headers["authorizationToken"] = f"Bearer {token}"
             elif self.key_id and self.key_secret:
                 headers["authorizationToken"] = f"Key,Secret {self.key_id},{self.key_secret}"
+            elif self.bearer_token and not ignore_static_bearer:
+                headers["authorizationToken"] = f"Bearer {self.bearer_token}"
         elif mode == "auto":
             if self.bearer_token and not ignore_static_bearer:
                 headers["authorizationToken"] = f"Bearer {self.bearer_token}"
@@ -229,7 +231,7 @@ class SatellogicClient:
         self,
         contract_id: str | None = None,
         *,
-        limit: int = 100,
+        limit: int = 500,
         query: str | None = None,
         next_url: str | None = None,
     ) -> dict[str, Any]:
@@ -237,7 +239,22 @@ class SatellogicClient:
         Return v2 orders from Satellogic Order Management API.
         """
         if next_url:
-            url = next_url if next_url.startswith("http") else f"{self.api_base_url}{next_url}"
+            raw_url = next_url if next_url.startswith("http") else f"{self.api_base_url}{next_url}"
+            # Keep pagination links but enforce per-request limit at or below 500.
+            split = urlsplit(raw_url)
+            query_parts = [chunk for chunk in str(split.query or "").split("&") if chunk]
+            clamped_parts = []
+            has_limit = False
+            for chunk in query_parts:
+                key, sep, value = chunk.partition("=")
+                if key.strip().lower() == "limit":
+                    has_limit = True
+                    clamped_parts.append("limit=500")
+                    continue
+                clamped_parts.append(chunk if sep else key)
+            if not has_limit:
+                clamped_parts.append("limit=500")
+            url = urlunsplit((split.scheme, split.netloc, split.path, "&".join(clamped_parts), split.fragment))
             response = requests.get(url, headers=self.auth_headers(contract_id=contract_id), timeout=60)
         else:
             url = f"{self.api_base_url}/v2/orders/"
@@ -272,6 +289,46 @@ class SatellogicClient:
         if isinstance(payload, dict):
             return payload
         return {"result": payload}
+
+    def get_order(self, order_id: str, contract_id: str | None = None) -> dict[str, Any]:
+        """
+        Fetch a single v2 tasking order by id.
+        """
+        order_key = quote(str(order_id or "").strip(), safe="")
+        if not order_key:
+            raise RuntimeError("order_id is required")
+        url = f"{self.api_base_url}/v2/orders/{order_key}"
+        response = requests.get(
+            url,
+            headers=self.auth_headers(contract_id=contract_id),
+            timeout=60,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if isinstance(payload, dict):
+            return payload
+        return {"result": payload}
+
+    def cancel_order(self, order_id: str, contract_id: str | None = None) -> dict[str, Any]:
+        """
+        Cancel a v2 tasking order by id.
+        """
+        order_key = quote(str(order_id or "").strip(), safe="")
+        if not order_key:
+            raise RuntimeError("order_id is required")
+        url = f"{self.api_base_url}/v2/orders/{order_key}/cancel"
+        response = requests.post(
+            url,
+            headers=self.auth_headers(contract_id=contract_id),
+            timeout=60,
+        )
+        response.raise_for_status()
+        if not response.content:
+            return {"id": str(order_id or "").strip(), "status": "cancelled"}
+        payload = response.json()
+        if isinstance(payload, dict):
+            return payload
+        return {"id": str(order_id or "").strip(), "status": "cancelled", "result": payload}
 
     def search(
         self,

@@ -2,7 +2,7 @@
 
 Double-click behavior:
 1. Open one modal dialog for full plugin configuration.
-2. Configure output video location/name.
+2. Configure optional output label (path is campaign-managed).
 3. Configure text overlay template and placement.
 4. Configure temporal pause between frames when collection date changes.
 5. Select optional project vector layers to overlay on every frame.
@@ -10,7 +10,7 @@ Double-click behavior:
 Plugin callback API notes:
 - Function id: `temporal_stack_to_video`
 - Expected payload keys:
-  - `output_path`: output video path
+  - `output_name_hint`: optional output label for auto-managed file naming
   - `text_template`: overlay text, supports `{collection_date, 'yyyy-mm-dd'}`
   - `text_vertical_align`: `top` or `bottom`
   - `text_horizontal_align`: `left`, `center`, or `right`
@@ -31,7 +31,6 @@ from qgis.PyQt.QtWidgets import (
     QFormLayout,
     QHBoxLayout,
     QLineEdit,
-    QMessageBox,
     QPushButton,
     QSpinBox,
     QVBoxLayout,
@@ -52,14 +51,9 @@ class TemporalStackToVideoConfigDialog(QDialog):
         layout = QVBoxLayout(self)
         form = QFormLayout()
 
-        output_row = QHBoxLayout()
-        self.output_file_edit = QLineEdit()
-        self.output_file_edit.setPlaceholderText("Select output video file...")
-        self.output_file_edit.setMinimumWidth(0)
-        self.output_file_browse_btn = QPushButton("Browse...")
-        self.output_file_browse_btn.clicked.connect(self._browse_output_file)
-        output_row.addWidget(self.output_file_edit, 1)
-        output_row.addWidget(self.output_file_browse_btn)
+        self.output_name_hint_edit = QLineEdit()
+        self.output_name_hint_edit.setPlaceholderText("Optional output label (auto if blank)")
+        self.output_name_hint_edit.setMinimumWidth(0)
 
         self.text_template_edit = QLineEdit()
         self.text_template_edit.setMinimumWidth(0)
@@ -115,7 +109,7 @@ class TemporalStackToVideoConfigDialog(QDialog):
         self.overlay_shapefile_combo.setMinimumWidth(0)
         self._populate_overlay_combo(self.overlay_shapefile_combo, shapefile_only=True)
 
-        form.addRow("Output Video", output_row)
+        form.addRow("Output Label", self.output_name_hint_edit)
         form.addRow("Text Overlay", self.text_template_edit)
         form.addRow("Text Vertical", self.text_vertical_combo)
         form.addRow("Text Horizontal", self.text_horizontal_combo)
@@ -183,9 +177,13 @@ class TemporalStackToVideoConfigDialog(QDialog):
         combo.blockSignals(False)
 
     def _load_initial_values(self):
-        output_path = str(self._initial_payload.get("output_path") or "").strip()
-        if output_path:
-            self.output_file_edit.setText(output_path)
+        output_hint = str(
+            self._initial_payload.get("output_name_hint")
+            or self._initial_payload.get("output_file_name")
+            or ""
+        ).strip()
+        if output_hint:
+            self.output_name_hint_edit.setText(output_hint)
 
         text_template = str(self._initial_payload.get("text_template") or "").strip()
         if text_template:
@@ -275,21 +273,6 @@ class TemporalStackToVideoConfigDialog(QDialog):
         self.aoi_file_edit.setEnabled(use_file)
         self.aoi_file_browse_btn.setEnabled(use_file)
 
-    def _browse_output_file(self):
-        current = str(self.output_file_edit.text() or "").strip()
-        start_file = current or "temporal_stack_video.mp4"
-        selected_path, _ = QFileDialog.getSaveFileName(
-            self,
-            "Select Video Output File",
-            start_file,
-            "MP4 video (*.mp4);;All files (*.*)",
-        )
-        selected_path = str(selected_path or "").strip()
-        if selected_path:
-            if not Path(selected_path).suffix:
-                selected_path = f"{selected_path}.mp4"
-            self.output_file_edit.setText(selected_path)
-
     def _browse_aoi_file(self):
         current = str(self.aoi_file_edit.text() or "").strip()
         start_dir = str(Path(current).parent) if current else ""
@@ -304,21 +287,15 @@ class TemporalStackToVideoConfigDialog(QDialog):
             self.aoi_file_edit.setText(selected_path)
 
     def _on_accept(self):
-        output_file = str(self.output_file_edit.text() or "").strip()
-        if not output_file:
-            QMessageBox.warning(self, "Temporal Stack to Video", "Select output video file location and name.")
-            return
-
         self.accept()
 
     def config_payload(self):
         updated = dict(self._initial_payload or {})
 
-        output_file = str(self.output_file_edit.text() or "").strip()
-        if output_file and not Path(output_file).suffix:
-            output_file = f"{output_file}.mp4"
-        updated["output_path"] = output_file
-        updated["output_file_name"] = Path(output_file).name if output_file else ""
+        output_hint = str(self.output_name_hint_edit.text() or "").strip()
+        updated["output_path"] = ""
+        updated["output_file_name"] = ""
+        updated["output_name_hint"] = output_hint
 
         updated["text_template"] = str(self.text_template_edit.text() or "").strip()
         updated["text_vertical_align"] = str(self.text_vertical_combo.currentData() or "top").strip().lower()
@@ -376,11 +353,13 @@ def get_function_spec():
         display_name="Temporal Stack to Video",
         description=(
             "Render temporal stack inputs into a video. "
-            "Supports text/date overlay, temporal pause, and project vector overlays."
+            "Supports text/date overlay, temporal pause, and project vector overlays. "
+            "Output path is managed automatically."
         ),
         default_payload={
             "output_path": "",
             "output_file_name": "",
+            "output_name_hint": "",
             "text_template": "Collected {collection_date, 'yyyy-mm-dd'}",
             "text_vertical_align": "top",
             "text_horizontal_align": "left",

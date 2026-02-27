@@ -1,0 +1,4 @@
+interface:
+  display_name: "QGIS Plugin Developer"
+  short_description: "Backend-first image-mate QGIS plugin development workflows"
+  default_prompt: "Use $qgis-plugin-developer to implement backend-first changes in ./qgis_plugin with CLI-first tests and dated docs."

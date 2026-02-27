@@ -28,6 +28,12 @@ ADAPTER_ID_FOR_EACH_IMAGE_IN_STACK = "for_each_image_in_stack"
 class WorkflowExecutionMixin:
     def handle_execute_workflow_request(self, workflow_payload):
         payload = workflow_payload if isinstance(workflow_payload, dict) else {}
+        raw_nodes = payload.get("nodes") if isinstance(payload.get("nodes"), list) else []
+        raw_edges = payload.get("edges") if isinstance(payload.get("edges"), list) else []
+        self._workflow_log(
+            f"Execution request received: raw_nodes={len(raw_nodes)} raw_edges={len(raw_edges)}",
+            level=Qgis.Info,
+        )
         if self._workflow_running or (self._workflow_thread is not None and self._workflow_thread.isRunning()):
             self._workflow_log(
                 "Execution request ignored: another workflow execution is still running.",
@@ -41,10 +47,31 @@ class WorkflowExecutionMixin:
             )
             return
 
+        run_id = ""
+        begin_run_fn = getattr(self, "workflow_begin_run_context", None)
+        if callable(begin_run_fn):
+            try:
+                run_id = str(begin_run_fn() or "").strip()
+            except Exception as exc:
+                self.iface.messageBar().pushMessage(
+                    "Image Mate",
+                    f"Workflow run initialization failed: {exc}",
+                    level=Qgis.Warning,
+                    duration=10,
+                )
+                return
+
         engine_service = self._workflow_create_engine_service()
         node_map, incoming = engine_service.prepare_graph(payload)
         total_nodes = len(node_map)
+        self._workflow_log(
+            f"Workflow graph prepared: runnable_nodes={total_nodes} edges={sum(len(v) for v in incoming.values())}",
+            level=Qgis.Info,
+        )
         if total_nodes == 0:
+            end_run_fn = getattr(self, "workflow_end_run_context", None)
+            if callable(end_run_fn):
+                end_run_fn()
             self._workflow_log("Execution aborted: workflow has no executable nodes.", level=Qgis.Warning)
             self.iface.messageBar().pushMessage(
                 "Image Mate",
@@ -55,9 +82,24 @@ class WorkflowExecutionMixin:
             return
 
         try:
+            required_algorithms = engine_service._required_processing_algorithms_for_node_map(node_map)
+            if required_algorithms:
+                runtime_diag = engine_service.ensure_processing_runtime(
+                    required_algorithms=required_algorithms
+                )
+                self._workflow_log(
+                    "Processing runtime ready for workflow: "
+                    f"algorithms={','.join(required_algorithms)} "
+                    f"initialized_processing={bool(runtime_diag.get('initialized_processing'))}",
+                    level=Qgis.Info,
+                )
             engine_service.validate_node_configs(node_map)
             prepared_node_map = engine_service.prepare_execution_node_map(node_map)
+            self._workflow_apply_managed_output_paths(prepared_node_map, run_id=run_id)
         except Exception as exc:
+            end_run_fn = getattr(self, "workflow_end_run_context", None)
+            if callable(end_run_fn):
+                end_run_fn()
             self._workflow_log(f"Workflow preflight failed: {exc}", level=Qgis.Warning)
             self._workflow_log(traceback.format_exc(), level=Qgis.Warning)
             self._workflow_set_progress(0, total_nodes, f"Workflow preflight failed: {exc}")
@@ -102,18 +144,33 @@ class WorkflowExecutionMixin:
             )
         self._workflow_running = True
 
+        workflow_temp_dir_fn = getattr(self, "workflow_temp_dir", None)
+        worker_temp_dir = workflow_temp_dir_fn() if callable(workflow_temp_dir_fn) else self.temp_dir
+        workflow_source_cache_fn = getattr(self, "workflow_source_cache_dir", None)
+        worker_asset_cache_dir = (
+            workflow_source_cache_fn() if callable(workflow_source_cache_fn) else worker_temp_dir
+        )
+
         self._cleanup_workflow_worker()
         self._workflow_thread = QThread(self.iface.mainWindow())
         self._workflow_worker = engine_service.build_worker(
             source_service=self.source_service,
             search_items=self.search_items,
-            temp_dir=self.temp_dir,
+            temp_dir=worker_temp_dir,
             node_map=prepared_node_map,
             incoming=incoming,
+            asset_cache_dir=worker_asset_cache_dir,
         )
         self._workflow_worker.moveToThread(self._workflow_thread)
+        self._workflow_log(
+            f"Workflow worker prepared: temp_dir={worker_temp_dir} asset_cache_dir={worker_asset_cache_dir}",
+            level=Qgis.Info,
+        )
 
         self._workflow_thread.started.connect(self._workflow_worker.run)
+        self._workflow_thread.started.connect(
+            lambda: self._workflow_log("Workflow worker thread started.", level=Qgis.Info)
+        )
         self._workflow_worker.log.connect(self._on_workflow_worker_log)
         self._workflow_worker.progress.connect(self._on_workflow_worker_progress)
         self._workflow_worker.node_state.connect(self._on_workflow_worker_node_state)
@@ -122,6 +179,9 @@ class WorkflowExecutionMixin:
         self._workflow_worker.failed.connect(self._on_workflow_worker_failed)
         self._workflow_worker.finished.connect(self._workflow_thread.quit)
         self._workflow_worker.failed.connect(self._workflow_thread.quit)
+        self._workflow_thread.finished.connect(
+            lambda: self._workflow_log("Workflow worker thread finished.", level=Qgis.Info)
+        )
         self._workflow_thread.finished.connect(self._cleanup_workflow_worker)
 
         self._workflow_thread.start()
@@ -149,6 +209,122 @@ class WorkflowExecutionMixin:
             prepared[row["id"]] = row
         return prepared
 
+    def _workflow_apply_managed_output_paths(self, node_map, *, run_id):
+        rows = node_map if isinstance(node_map, dict) else {}
+        for node_id, node in rows.items():
+            row = node if isinstance(node, dict) else {}
+            node_type = str(row.get("type") or "").strip().lower()
+            payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
+            node_key = str(node_id or row.get("id") or "").strip() or "node"
+
+            if node_type == "function":
+                function_id = str(payload.get("function_id") or "").strip()
+                if function_id == "clip_to_aoi":
+                    self._workflow_apply_clip_output_defaults(
+                        node_id=node_key,
+                        payload=payload,
+                        run_id=run_id,
+                    )
+                elif function_id == "temporal_stack_to_video":
+                    self._workflow_apply_video_output_defaults(
+                        node_id=node_key,
+                        payload=payload,
+                        run_id=run_id,
+                    )
+                continue
+
+            if node_type == "adapter":
+                adapted_function_id = str(payload.get("adapted_function_id") or "").strip()
+                adapted_payload = payload.get("adapted_function_payload")
+                if adapted_function_id != "clip_to_aoi" or not isinstance(adapted_payload, dict):
+                    continue
+                self._workflow_apply_clip_output_defaults(
+                    node_id=node_key,
+                    payload=adapted_payload,
+                    run_id=run_id,
+                )
+
+    def _workflow_resolve_output_template(
+        self,
+        *,
+        run_id,
+        node_id,
+        function_id,
+        suffix,
+        hint,
+        include_index_token=False,
+    ):
+        resolver = getattr(self, "workflow_resolve_output_template", None)
+        if callable(resolver):
+            resolved = resolver(
+                run_id=run_id,
+                node_id=node_id,
+                function_id=function_id,
+                suffix=suffix,
+                hint=hint,
+                include_index_token=include_index_token,
+            )
+            return str(resolved)
+
+        base_dir = Path(str(getattr(self, "temp_dir", Path("."))))
+        output_dir = base_dir / "workflow_outputs"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        suffix_norm = str(suffix or "").strip() or ".bin"
+        if not suffix_norm.startswith("."):
+            suffix_norm = f".{suffix_norm}"
+        file_name = f"{str(node_id or 'node')}_{str(function_id or 'function')}_{str(hint or 'output')}"
+        if include_index_token:
+            file_name = f"{file_name}_{{index_03}}"
+        return str(output_dir / f"{file_name}{suffix_norm}")
+
+    def _workflow_apply_clip_output_defaults(self, *, node_id, payload, run_id):
+        output_path = str(payload.get("output_path") or "").strip()
+        if output_path and not Path(output_path).suffix:
+            output_path = f"{output_path}.tif"
+            payload["output_path"] = output_path
+        if output_path:
+            return
+        output_hint = (
+            str(payload.get("output_name_hint") or "").strip()
+            or str(payload.get("output_file_name") or "").strip()
+            or "clip"
+        )
+        resolved = self._workflow_resolve_output_template(
+            run_id=run_id,
+            node_id=node_id,
+            function_id="clip_to_aoi",
+            suffix=".tif",
+            hint=output_hint,
+            include_index_token=True,
+        )
+        payload["output_path"] = resolved
+        payload["output_file_name"] = Path(resolved).name
+        self._workflow_log(f"{node_id}: clip_to_aoi output path auto-assigned -> {resolved}")
+
+    def _workflow_apply_video_output_defaults(self, *, node_id, payload, run_id):
+        output_path = str(payload.get("output_path") or "").strip()
+        if output_path and not Path(output_path).suffix:
+            output_path = f"{output_path}.mp4"
+            payload["output_path"] = output_path
+        if output_path:
+            return
+        output_hint = (
+            str(payload.get("output_name_hint") or "").strip()
+            or str(payload.get("output_file_name") or "").strip()
+            or "video"
+        )
+        resolved = self._workflow_resolve_output_template(
+            run_id=run_id,
+            node_id=node_id,
+            function_id="temporal_stack_to_video",
+            suffix=".mp4",
+            hint=output_hint,
+            include_index_token=False,
+        )
+        payload["output_path"] = resolved
+        payload["output_file_name"] = Path(resolved).name
+        self._workflow_log(f"{node_id}: temporal_stack_to_video output path auto-assigned -> {resolved}")
+
     def _workflow_prepare_adapter_payload(self, *, node_id, payload):
         adapter_id = str(payload.get("adapter_id") or "").strip()
         if not adapter_id:
@@ -173,6 +349,12 @@ class WorkflowExecutionMixin:
 
     def _workflow_prepare_clip_to_aoi_payload(self, *, node_id, payload):
         source_type = str(payload.get("aoi_source_type") or "file").strip().lower()
+        if source_type == "canvas":
+            resolved_mask_path = self._workflow_materialize_canvas_extent_mask(node_id=node_id)
+            payload["aoi_effective_mask_path"] = resolved_mask_path
+            payload["aoi_effective_mask_desc"] = "canvas-extent"
+            return
+
         if source_type == "project_layer":
             layer_id = str(payload.get("aoi_project_layer_id") or "").strip()
             layer = QgsProject.instance().mapLayer(layer_id)
@@ -203,6 +385,12 @@ class WorkflowExecutionMixin:
                 f"{node_id}: AOI project layer materialized -> {resolved_mask_path}"
             )
             return
+
+        if source_type != "file":
+            raise RuntimeError(
+                f"{node_id}: unsupported AOI source type '{source_type}' "
+                "(expected project_layer|file|canvas)"
+            )
 
         aoi_path = str(payload.get("aoi_path") or "").strip()
         if not aoi_path:
@@ -333,6 +521,9 @@ class WorkflowExecutionMixin:
             self._workflow_total_nodes = 0
             self._workflow_node_types = {}
             self._workflow_node_adapter_embedded_function = {}
+            end_run_fn = getattr(self, "workflow_end_run_context", None)
+            if callable(end_run_fn):
+                end_run_fn()
 
     def _on_workflow_worker_failed(self, error_text, traceback_text):
         error_message = str(error_text or "").strip() or "Unknown workflow execution error."
@@ -354,6 +545,9 @@ class WorkflowExecutionMixin:
         self._workflow_total_nodes = 0
         self._workflow_node_types = {}
         self._workflow_node_adapter_embedded_function = {}
+        end_run_fn = getattr(self, "workflow_end_run_context", None)
+        if callable(end_run_fn):
+            end_run_fn()
 
     def _workflow_attach_outputs(self, outputs_by_node):
         added_layers = 0
@@ -465,6 +659,9 @@ class WorkflowExecutionMixin:
         self._workflow_total_nodes = 0
         self._workflow_node_types = {}
         self._workflow_node_adapter_embedded_function = {}
+        end_run_fn = getattr(self, "workflow_end_run_context", None)
+        if callable(end_run_fn):
+            end_run_fn()
         self._cleanup_workflow_worker()
         if self.dock is not None:
             self.dock.set_workflow_active_node("")
@@ -488,8 +685,10 @@ class WorkflowExecutionMixin:
             self.dock.set_workflow_node_execution_state(node_id, state)
 
     def _workflow_create_engine_service(self):
+        workflow_temp_dir_fn = getattr(self, "workflow_temp_dir", None)
+        temp_dir = workflow_temp_dir_fn() if callable(workflow_temp_dir_fn) else self.temp_dir
         return WorkflowEngineService(
-            temp_dir=self.temp_dir,
+            temp_dir=temp_dir,
             iface=self.iface,
             log_callback=lambda message, level=Qgis.Info: self._workflow_log(message, level=level),
         )
@@ -506,10 +705,13 @@ class WorkflowExecutionMixin:
         active_node_callback=None,
     ):
         engine_service = self._workflow_create_engine_service()
+        workflow_source_cache_fn = getattr(self, "workflow_source_cache_dir", None)
+        asset_cache_dir = workflow_source_cache_fn() if callable(workflow_source_cache_fn) else None
         return engine_service.execute_sync(
             workflow_payload=workflow_payload,
             source_service=source_service or self.source_service,
             search_items=search_items if search_items is not None else self.search_items,
+            asset_cache_dir=asset_cache_dir,
             log_callback=log_callback,
             progress_callback=progress_callback,
             node_state_callback=node_state_callback,
@@ -605,21 +807,25 @@ class WorkflowExecutionMixin:
 
     def _workflow_validate_clip_to_aoi_payload(self, *, issues, node_id, payload, context_label):
         source_type = str(payload.get("aoi_source_type") or "file").strip().lower()
-        output_path = str(payload.get("output_path") or "").strip()
         aoi_layer_id = str(payload.get("aoi_project_layer_id") or "").strip()
         aoi_file = str(payload.get("aoi_path") or "").strip()
+        if source_type == "canvas":
+            return
         if source_type == "project_layer":
             if not aoi_layer_id:
                 issues.append(f"{node_id}: {context_label} missing AOI project layer id")
             elif QgsProject.instance().mapLayer(aoi_layer_id) is None:
                 issues.append(f"{node_id}: AOI project layer not found ({aoi_layer_id})")
-        else:
+        elif source_type == "file":
             if not aoi_file:
                 issues.append(f"{node_id}: {context_label} missing AOI file path")
             elif not Path(aoi_file).exists():
                 issues.append(f"{node_id}: AOI file not found ({aoi_file})")
-        if not output_path:
-            issues.append(f"{node_id}: {context_label} missing output path")
+        else:
+            issues.append(
+                f"{node_id}: {context_label} unsupported AOI source type '{source_type}' "
+                "(expected project_layer|file|canvas)"
+            )
 
     def _workflow_validate_node_configs(self, node_map):
         issues = []
@@ -671,9 +877,6 @@ class WorkflowExecutionMixin:
                     context_label="clip_to_aoi",
                 )
             elif function_id == "temporal_stack_to_video":
-                output_path = str(payload.get("output_path") or "").strip()
-                if not output_path:
-                    issues.append(f"{node_id}: temporal_stack_to_video missing output path")
                 if shutil.which("ffmpeg") is None:
                     issues.append(f"{node_id}: temporal_stack_to_video requires ffmpeg in PATH")
 

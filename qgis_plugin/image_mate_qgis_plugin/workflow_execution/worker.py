@@ -43,11 +43,14 @@ class WorkflowExecutionWorker(QObject):
     finished = pyqtSignal(dict)
     failed = pyqtSignal(str, str)
 
-    def __init__(self, *, source_service, search_items, temp_dir, node_map, incoming):
+    def __init__(self, *, source_service, search_items, temp_dir, node_map, incoming, asset_cache_dir=None):
         super().__init__()
         self.source_service = source_service
         self.search_items = dict(search_items or {})
         self.temp_dir = Path(temp_dir)
+        self.temp_dir.mkdir(parents=True, exist_ok=True)
+        self.asset_cache_dir = Path(asset_cache_dir) if asset_cache_dir is not None else self.temp_dir
+        self.asset_cache_dir.mkdir(parents=True, exist_ok=True)
         self.node_map = dict(node_map or {})
         self.incoming = {str(k): set(v or set()) for k, v in (incoming or {}).items()}
         self.outgoing = {node_id: set() for node_id in self.node_map}
@@ -105,6 +108,11 @@ class WorkflowExecutionWorker(QObject):
                         outputs = self._execute_node(node=node, input_artifacts=input_artifacts)
                     except Exception as exc:
                         self.node_state.emit(node_id, "error")
+                        self._emit_log(
+                            f"Node {node_id} raised an exception: {exc}",
+                            Qgis.Warning,
+                        )
+                        self._emit_log(traceback.format_exc(), Qgis.Warning)
                         raise RuntimeError(f"Node {node_id} failed: {exc}") from exc
 
                     outputs = outputs if isinstance(outputs, list) else []
@@ -125,6 +133,8 @@ class WorkflowExecutionWorker(QObject):
             self.finished.emit({"outputs_by_node": outputs_by_node})
         except Exception as exc:
             self.active_node.emit("")
+            self._emit_log(f"Workflow worker failed: {exc}", Qgis.Warning)
+            self._emit_log(traceback.format_exc(), Qgis.Warning)
             self.failed.emit(str(exc), traceback.format_exc())
 
     def _emit_log(self, message, level):
@@ -132,6 +142,28 @@ class WorkflowExecutionWorker(QObject):
 
     def _emit_progress(self, completed, total, text):
         self.progress.emit(int(completed or 0), int(total or 0), str(text or "").strip())
+
+    def _run_processing_algorithm(self, *, algorithm_id, params, node_id, context):
+        started_at = time.perf_counter()
+        try:
+            result = processing.run(str(algorithm_id or "").strip(), dict(params or {}))
+        except Exception as exc:
+            elapsed_s = max(0.0, float(time.perf_counter() - started_at))
+            param_keys = sorted(str(key) for key in (params or {}).keys())
+            self._emit_log(
+                f"{context} node {node_id}: processing {algorithm_id} failed after {elapsed_s:.2f}s "
+                f"param_keys={','.join(param_keys) if param_keys else '(none)'} error={exc}",
+                Qgis.Warning,
+            )
+            raise
+        elapsed_s = max(0.0, float(time.perf_counter() - started_at))
+        result_keys = sorted(str(key) for key in (result or {}).keys())
+        self._emit_log(
+            f"{context} node {node_id}: processing {algorithm_id} completed in {elapsed_s:.2f}s "
+            f"result_keys={','.join(result_keys) if result_keys else '(none)'}",
+            Qgis.Info,
+        )
+        return result
 
     def _execute_node(self, *, node, input_artifacts):
         node_type = str(node.get("type") or "").strip().lower()
@@ -335,7 +367,8 @@ class WorkflowExecutionWorker(QObject):
 
         output_base = str(payload.get("output_path") or "").strip()
         if not output_base:
-            raise RuntimeError("clip_to_aoi missing output path")
+            safe_node = re.sub(r"[^0-9A-Za-z._-]+", "_", str(node_id or "node")).strip("_") or "node"
+            output_base = str(self.temp_dir / f"{safe_node}_clip_output.tif")
 
         self._emit_log(
             f"clip_to_aoi node {node_id}: mask={mask_desc or mask_path} | "
@@ -390,7 +423,12 @@ class WorkflowExecutionWorker(QObject):
                 f"input={input_path} output={output_path}",
                 Qgis.Info,
             )
-            result = processing.run("gdal:cliprasterbymasklayer", params)
+            result = self._run_processing_algorithm(
+                algorithm_id="gdal:cliprasterbymasklayer",
+                params=params,
+                node_id=node_id,
+                context="clip_to_aoi",
+            )
             result_path = str(result.get("OUTPUT") or output_path).strip()
             outputs.append(
                 {
@@ -427,7 +465,8 @@ class WorkflowExecutionWorker(QObject):
 
         output_path = str(payload.get("output_path") or "").strip()
         if not output_path:
-            raise RuntimeError("temporal_stack_to_video missing output path")
+            safe_node = re.sub(r"[^0-9A-Za-z._-]+", "_", str(node_id or "node")).strip("_") or "node"
+            output_path = str(self.temp_dir / f"{safe_node}_temporal_video.mp4")
         output_file = Path(output_path)
         if not output_file.suffix:
             output_file = output_file.with_suffix(".mp4")
@@ -462,7 +501,6 @@ class WorkflowExecutionWorker(QObject):
         stamp = datetime.now(tz=timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
         frame_dir = self.temp_dir / f"{safe_node}_video_frames_{stamp}"
         frame_dir.mkdir(parents=True, exist_ok=True)
-        concat_file = frame_dir / "frames.concat.txt"
 
         base_duration_s = 1.0 / float(fps)
         frame_records = []
@@ -571,11 +609,17 @@ class WorkflowExecutionWorker(QObject):
         if not frame_records:
             raise RuntimeError("temporal_stack_to_video did not produce any frames")
 
-        with concat_file.open("w", encoding="utf-8") as out:
-            for row in frame_records:
-                out.write(f"file '{self._ffmpeg_concat_path(row['path'])}'\n")
-                out.write(f"duration {float(row['duration_s']):.6f}\n")
-            out.write(f"file '{self._ffmpeg_concat_path(frame_records[-1]['path'])}'\n")
+        sequence_dir = frame_dir / "sequence"
+        sequence_dir.mkdir(parents=True, exist_ok=True)
+        sequence_index = 0
+        for row in frame_records:
+            repeat_count = max(1, int(round(float(row.get("duration_s") or 0.0) * float(fps))))
+            for _ in range(repeat_count):
+                sequence_index += 1
+                seq_path = sequence_dir / f"seq_{sequence_index:06d}.png"
+                shutil.copyfile(str(row["path"]), str(seq_path))
+        if sequence_index <= 0:
+            raise RuntimeError("temporal_stack_to_video did not build an ffmpeg input sequence")
 
         ffmpeg_bin = shutil.which("ffmpeg")
         if not ffmpeg_bin:
@@ -583,23 +627,26 @@ class WorkflowExecutionWorker(QObject):
                 "ffmpeg executable was not found in PATH. Install ffmpeg to use temporal_stack_to_video."
             )
 
+        sequence_pattern = sequence_dir / "seq_%06d.png"
         cmd = [
             ffmpeg_bin,
             "-y",
-            "-f",
-            "concat",
-            "-safe",
-            "0",
+            "-framerate",
+            str(int(fps)),
             "-i",
-            str(concat_file),
+            str(sequence_pattern),
+            "-c:v",
+            "libx264",
             "-pix_fmt",
             "yuv420p",
             "-movflags",
             "+faststart",
             str(output_file),
         ]
+        expected_duration_s = float(sequence_index) / float(fps)
         self._emit_log(
-            f"temporal_stack_to_video node {node_id}: encoding video with ffmpeg -> {output_file}",
+            f"temporal_stack_to_video node {node_id}: encoding video with ffmpeg -> {output_file} "
+            f"(sequence_frames={sequence_index}, expected_duration={expected_duration_s:.2f}s)",
             Qgis.Info,
         )
         proc = subprocess.run(cmd, capture_output=True, text=True)
@@ -609,6 +656,31 @@ class WorkflowExecutionWorker(QObject):
             raise RuntimeError(
                 "ffmpeg failed while encoding workflow video: "
                 + (" | ".join(stderr_lines) if stderr_lines else f"exit_code={proc.returncode}")
+            )
+
+        min_duration_s = max(0.0, float(expected_duration_s) * 0.50)
+        min_frame_count = max(1, int(round(float(sequence_index) * 0.50)))
+        probe = self._probe_video_stream(output_file)
+        if probe is None:
+            self._emit_log(
+                f"temporal_stack_to_video node {node_id}: sanity check skipped "
+                f"(ffprobe unavailable or probe failed) | expected_duration={expected_duration_s:.2f}s "
+                f"expected_frames={sequence_index}",
+                Qgis.Warning,
+            )
+        else:
+            measured_duration_s = max(0.0, float(probe.get("duration_s") or 0.0))
+            measured_frames = int(probe.get("frame_count") or 0)
+            if measured_duration_s < min_duration_s or measured_frames < min_frame_count:
+                raise RuntimeError(
+                    "temporal_stack_to_video sanity check failed: "
+                    f"expected about {expected_duration_s:.2f}s/{sequence_index} frames, "
+                    f"got {measured_duration_s:.3f}s/{measured_frames} frames."
+                )
+            self._emit_log(
+                f"temporal_stack_to_video node {node_id}: sanity check passed "
+                f"(duration={measured_duration_s:.3f}s frames={measured_frames})",
+                Qgis.Info,
             )
 
         self._emit_log(
@@ -775,9 +847,62 @@ class WorkflowExecutionWorker(QObject):
         painter.end()
 
     @staticmethod
-    def _ffmpeg_concat_path(path_value):
-        resolved = str(Path(path_value).resolve()).replace("\\", "/")
-        return resolved.replace("'", "'\\''")
+    def _probe_video_stream(video_path):
+        ffprobe_bin = shutil.which("ffprobe")
+        if not ffprobe_bin:
+            return None
+
+        cmd = [
+            ffprobe_bin,
+            "-v",
+            "error",
+            "-count_frames",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=duration,nb_frames,nb_read_frames,avg_frame_rate,r_frame_rate",
+            "-of",
+            "json",
+            str(video_path),
+        ]
+        proc = subprocess.run(cmd, capture_output=True, text=True)
+        if int(proc.returncode) != 0:
+            return None
+
+        try:
+            payload = json.loads(str(proc.stdout or "").strip() or "{}")
+        except Exception:
+            return None
+        streams = payload.get("streams") if isinstance(payload, dict) else None
+        if not isinstance(streams, list) or not streams:
+            return None
+        stream = streams[0] if isinstance(streams[0], dict) else {}
+        if not isinstance(stream, dict):
+            return None
+
+        duration_s = 0.0
+        try:
+            duration_s = max(0.0, float(stream.get("duration") or 0.0))
+        except Exception:
+            duration_s = 0.0
+
+        frame_count = 0
+        for key in ("nb_read_frames", "nb_frames"):
+            raw_value = stream.get(key)
+            text_value = str(raw_value or "").strip()
+            if not text_value:
+                continue
+            try:
+                frame_count = max(frame_count, int(text_value))
+            except Exception:
+                continue
+
+        return {
+            "duration_s": duration_s,
+            "frame_count": frame_count,
+            "avg_frame_rate": str(stream.get("avg_frame_rate") or "").strip(),
+            "r_frame_rate": str(stream.get("r_frame_rate") or "").strip(),
+        }
 
     @staticmethod
     def _clamp_even_dimension(value, *, min_value, max_value):
@@ -847,7 +972,8 @@ class WorkflowExecutionWorker(QObject):
                 if ext not in {".tif", ".tiff", ".jp2"}:
                     raise RuntimeError(f"unsupported workflow raster format ({ext})")
                 file_name = f"{item_id.replace(':', '_').replace('/', '_')}_workflow_{key}{ext}"
-                path = self.temp_dir / file_name
+                path = self.asset_cache_dir / file_name
+                path.parent.mkdir(parents=True, exist_ok=True)
                 if expected_size is not None and expected_size > 0 and int(len(data)) != int(expected_size):
                     self._emit_log(
                         f"Source size mismatch for item {item_id} asset '{key}': "
@@ -896,8 +1022,8 @@ class WorkflowExecutionWorker(QObject):
         out = []
         suffix = Path(urlparse(str(asset_url or "")).path).suffix.lower()
         if suffix:
-            out.append(self.temp_dir / f"{name_prefix}{suffix}")
-        for candidate in sorted(self.temp_dir.glob(f"{name_prefix}.*")):
+            out.append(self.asset_cache_dir / f"{name_prefix}{suffix}")
+        for candidate in sorted(self.asset_cache_dir.glob(f"{name_prefix}.*")):
             if candidate.is_file():
                 out.append(candidate)
         dedup = []
@@ -1076,7 +1202,12 @@ class WorkflowExecutionWorker(QObject):
             f"logical_source={logical_source_key} tile_count={len(tile_paths)} output={vrt_path}",
             Qgis.Info,
         )
-        result = processing.run("gdal:buildvirtualraster", build_vrt_params)
+        result = self._run_processing_algorithm(
+            algorithm_id="gdal:buildvirtualraster",
+            params=build_vrt_params,
+            node_id=node_id,
+            context="source-stitch",
+        )
         result_path = str(result.get("OUTPUT") or vrt_path).strip()
         layer = QgsRasterLayer(result_path, f"Workflow Mosaic {logical_source_key}")
         if not layer.isValid():
@@ -1260,9 +1391,14 @@ class WorkflowExecutionWorker(QObject):
 
         mask_extent = mask_layer.extent()
         mask_crs = mask_layer.crs().authid() if mask_layer.crs().isValid() else "unknown"
+        mask_geometry = self._vector_layer_union_geometry(mask_layer)
+        geometry_mode = "feature_union" if mask_geometry is not None and not mask_geometry.isEmpty() else "extent_fallback"
+        if geometry_mode == "extent_fallback":
+            mask_geometry = QgsGeometry.fromRect(mask_extent)
         self._emit_log(
             f"clip_to_aoi node {node_id}: mask diagnostics "
-            f"crs={mask_crs} extent={self._format_extent(mask_extent)} features={mask_layer.featureCount()}",
+            f"crs={mask_crs} extent={self._format_extent(mask_extent)} "
+            f"features={mask_layer.featureCount()} geometry_mode={geometry_mode}",
             Qgis.Info,
         )
 
@@ -1278,8 +1414,12 @@ class WorkflowExecutionWorker(QObject):
             raster_extent = raster_layer.extent()
             raster_crs = raster_layer.crs()
             transformed_mask_extent = QgsRectangle(mask_extent)
+            transformed_mask_geometry = QgsGeometry(mask_geometry)
             intersects = True
             transform_note = "same_crs"
+            overlap_ratio = 0.0
+            overlap_area = 0.0
+            mask_area = 0.0
             try:
                 if mask_layer.crs().isValid() and raster_crs.isValid() and mask_layer.crs() != raster_crs:
                     transform = QgsCoordinateTransform(
@@ -1288,21 +1428,71 @@ class WorkflowExecutionWorker(QObject):
                         QgsProject.instance().transformContext(),
                     )
                     transformed_mask_extent = transform.transformBoundingBox(mask_extent)
+                    transformed_mask_geometry.transform(transform)
                     transform_note = "transformed"
-                intersects = raster_extent.intersects(transformed_mask_extent)
+                raster_geometry = QgsGeometry.fromRect(raster_extent)
+                intersects = raster_geometry.intersects(transformed_mask_geometry)
+                mask_area = max(0.0, float(transformed_mask_geometry.area()))
+                if intersects and mask_area > 0.0:
+                    overlap_geometry = raster_geometry.intersection(transformed_mask_geometry)
+                    if overlap_geometry is not None and not overlap_geometry.isEmpty():
+                        overlap_area = max(0.0, float(overlap_geometry.area()))
+                        overlap_ratio = max(0.0, min(1.0, overlap_area / mask_area))
             except Exception as exc:
                 intersects = False
                 transform_note = f"transform_error:{exc}"
 
-            level = Qgis.Info if intersects else Qgis.Warning
+            low_overlap = bool(mask_area > 0.0 and overlap_ratio < 0.50)
+            level = Qgis.Warning if (not intersects or low_overlap) else Qgis.Info
             self._emit_log(
                 f"clip_to_aoi node {node_id}: overlap check input={input_path} "
                 f"raster_crs={(raster_crs.authid() if raster_crs.isValid() else 'unknown')} "
                 f"raster_extent={self._format_extent(raster_extent)} "
                 f"mask_extent_raster_crs={self._format_extent(transformed_mask_extent)} "
-                f"intersects={intersects} ({transform_note})",
+                f"intersects={intersects} overlap={overlap_ratio * 100.0:.1f}% "
+                f"(threshold>=50.0%, mask_area={mask_area:.6f}, overlap_area={overlap_area:.6f}) "
+                f"({transform_note})",
                 level,
             )
+            if low_overlap:
+                self._emit_log(
+                    f"clip_to_aoi node {node_id}: warning low overlap for input={input_path} "
+                    f"({overlap_ratio * 100.0:.1f}% of clip polygon covered; minimum is 50.0%).",
+                    Qgis.Warning,
+                )
+
+    @staticmethod
+    def _vector_layer_union_geometry(layer):
+        if layer is None:
+            return None
+        geometries = []
+        try:
+            for feature in layer.getFeatures():
+                geom = feature.geometry()
+                if geom is None or geom.isEmpty():
+                    continue
+                geometries.append(QgsGeometry(geom))
+        except Exception:
+            return None
+
+        if not geometries:
+            return None
+        try:
+            union_geom = QgsGeometry.unaryUnion(geometries)
+            if union_geom is not None and not union_geom.isEmpty():
+                return union_geom
+        except Exception:
+            pass
+
+        merged = QgsGeometry(geometries[0])
+        for geom in geometries[1:]:
+            try:
+                merged = merged.combine(geom)
+            except Exception:
+                continue
+        if merged is not None and not merged.isEmpty():
+            return merged
+        return None
 
     def _raster_diagnostics(self, raster_path):
         layer = QgsRasterLayer(str(raster_path), "WorkflowRasterDiagnostics")

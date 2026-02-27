@@ -29,7 +29,7 @@ class SourceManager:
         self._sources: dict[str, SourceInfo] = {
             SOURCE_SATELLOGIC: SourceInfo(
                 source_id=SOURCE_SATELLOGIC,
-                title="Satellogic",
+                title="NewSat Constellation",
                 enabled=True,
                 supports_contracts=True,
                 default_collection_id="l1d-sr",

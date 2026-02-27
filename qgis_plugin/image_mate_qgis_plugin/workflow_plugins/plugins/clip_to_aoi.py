@@ -3,9 +3,10 @@
 Double-click behavior:
 1. Open one modal dialog for full plugin configuration.
 2. Let user pick AOI from either:
-   - existing project layer, or
-   - AOI file path from filesystem.
-3. Let user pick output file location/name.
+ - existing project layer, or
+ - AOI file path from filesystem.
+ - current map canvas extent.
+3. Let user set an optional output label (path is campaign-managed).
 4. Save only when user presses OK; keep unchanged on Cancel.
 """
 
@@ -53,6 +54,7 @@ class ClipToAoiConfigDialog(QDialog):
         if self._allow_project_layers_input:
             self.aoi_source_combo.addItem("Project Layer", "project_layer")
         self.aoi_source_combo.addItem("AOI File", "file")
+        self.aoi_source_combo.addItem("Clip To Canvas", "canvas")
         self.aoi_source_combo.currentIndexChanged.connect(self._on_source_mode_changed)
 
         self.aoi_project_layer_combo = QComboBox()
@@ -68,30 +70,14 @@ class ClipToAoiConfigDialog(QDialog):
         aoi_file_row.addWidget(self.aoi_file_edit, 1)
         aoi_file_row.addWidget(self.aoi_file_browse_btn)
 
-        output_ui = self._request_output_file_ui()
-        if output_ui is not None:
-            self.output_file_edit = output_ui["line_edit"]
-            self.output_file_browse_btn = output_ui["browse_button"]
-            output_widget = output_ui["widget"]
-        else:
-            output_row = QHBoxLayout()
-            self.output_file_edit = QLineEdit()
-            self.output_file_edit.setPlaceholderText("Select output file path...")
-            self.output_file_edit.setMinimumWidth(0)
-            self.output_file_edit.setToolTip(
-                "For stack adapters, output path supports tokens: "
-                "{index}, {index_03}, {item_id}, {collection_date}, {collection_datetime}, {logical_source_key}"
-            )
-            self.output_file_browse_btn = QPushButton("Browse...")
-            self.output_file_browse_btn.clicked.connect(self._browse_output_file)
-            output_row.addWidget(self.output_file_edit, 1)
-            output_row.addWidget(self.output_file_browse_btn)
-            output_widget = output_row
+        self.output_name_hint_edit = QLineEdit()
+        self.output_name_hint_edit.setPlaceholderText("Optional output label (auto if blank)")
+        self.output_name_hint_edit.setMinimumWidth(0)
 
         form.addRow("AOI Source Type", self.aoi_source_combo)
         form.addRow("Project Layer", self.aoi_project_layer_combo)
         form.addRow("AOI File", aoi_file_row)
-        form.addRow("Output File", output_widget)
+        form.addRow("Output Label", self.output_name_hint_edit)
         layout.addLayout(form)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
@@ -101,28 +87,6 @@ class ClipToAoiConfigDialog(QDialog):
 
         self._load_initial_values()
         self._on_source_mode_changed()
-
-    def _request_output_file_ui(self):
-        callback = getattr(self._dock, "request_outputfile_ui", None) if self._dock is not None else None
-        if not callable(callback):
-            return None
-        output_path = str(self._initial_payload.get("output_path") or "").strip()
-        ui_payload = callback(
-            parent=self,
-            grouping_type=self._grouping_type,
-            placeholder_text="Select output file path...",
-            browse_caption="Select Clip Output File",
-            file_filter="GeoTIFF (*.tif *.tiff);;All files (*.*)",
-            default_suffix=".tif",
-            initial_path=output_path,
-        )
-        if not isinstance(ui_payload, dict):
-            return None
-        if not isinstance(ui_payload.get("line_edit"), QLineEdit):
-            return None
-        if not isinstance(ui_payload.get("browse_button"), QPushButton):
-            return None
-        return ui_payload
 
     def _refresh_project_layers(self):
         prior = str(self.aoi_project_layer_combo.currentData() or "").strip()
@@ -143,7 +107,7 @@ class ClipToAoiConfigDialog(QDialog):
 
     def _load_initial_values(self):
         source_type = str(self._initial_payload.get("aoi_source_type") or "").strip().lower()
-        if source_type not in {"project_layer", "file"}:
+        if source_type not in {"project_layer", "file", "canvas"}:
             if self._initial_payload.get("aoi_project_layer_id"):
                 source_type = "project_layer"
             elif self._initial_payload.get("aoi_path"):
@@ -159,9 +123,13 @@ class ClipToAoiConfigDialog(QDialog):
         if aoi_file:
             self.aoi_file_edit.setText(aoi_file)
 
-        output_file = str(self._initial_payload.get("output_path") or "").strip()
-        if output_file:
-            self.output_file_edit.setText(output_file)
+        output_hint = str(
+            self._initial_payload.get("output_name_hint")
+            or self._initial_payload.get("output_file_name")
+            or ""
+        ).strip()
+        if output_hint:
+            self.output_name_hint_edit.setText(output_hint)
 
         layer_id = str(self._initial_payload.get("aoi_project_layer_id") or "").strip()
         if layer_id:
@@ -172,9 +140,10 @@ class ClipToAoiConfigDialog(QDialog):
     def _on_source_mode_changed(self):
         source_type = str(self.aoi_source_combo.currentData() or "file").strip().lower()
         use_project_layer = source_type == "project_layer"
+        use_file = source_type == "file"
         self.aoi_project_layer_combo.setEnabled(use_project_layer)
-        self.aoi_file_edit.setEnabled(not use_project_layer)
-        self.aoi_file_browse_btn.setEnabled(not use_project_layer)
+        self.aoi_file_edit.setEnabled(use_file)
+        self.aoi_file_browse_btn.setEnabled(use_file)
 
     def _browse_aoi_file(self):
         current = str(self.aoi_file_edit.text() or "").strip()
@@ -189,21 +158,6 @@ class ClipToAoiConfigDialog(QDialog):
         if selected_path:
             self.aoi_file_edit.setText(selected_path)
 
-    def _browse_output_file(self):
-        current = str(self.output_file_edit.text() or "").strip()
-        start_file = current or "clip_to_aoi_output.tif"
-        selected_path, _ = QFileDialog.getSaveFileName(
-            self,
-            "Select Clip Output File",
-            start_file,
-            "GeoTIFF (*.tif *.tiff);;All files (*.*)",
-        )
-        selected_path = str(selected_path or "").strip()
-        if selected_path:
-            if not Path(selected_path).suffix:
-                selected_path = f"{selected_path}.tif"
-            self.output_file_edit.setText(selected_path)
-
     def _on_accept(self):
         source_type = str(self.aoi_source_combo.currentData() or "file").strip().lower()
         if source_type == "project_layer":
@@ -211,30 +165,24 @@ class ClipToAoiConfigDialog(QDialog):
             if not layer_id:
                 QMessageBox.warning(self, "Clip to AOI", "Select a project layer for AOI input.")
                 return
-        else:
+        elif source_type == "file":
             aoi_file = str(self.aoi_file_edit.text() or "").strip()
             if not aoi_file:
                 QMessageBox.warning(self, "Clip to AOI", "Select an AOI file.")
                 return
-
-        output_file = str(self.output_file_edit.text() or "").strip()
-        if not output_file:
-            QMessageBox.warning(self, "Clip to AOI", "Select output file location and name.")
-            return
         self.accept()
 
     def config_payload(self):
         updated = dict(self._initial_payload or {})
         updated.pop("__workflow_grouping_type", None)
         source_type = str(self.aoi_source_combo.currentData() or "file").strip().lower()
-        output_file = str(self.output_file_edit.text() or "").strip()
-        if output_file and not Path(output_file).suffix:
-            output_file = f"{output_file}.tif"
+        output_hint = str(self.output_name_hint_edit.text() or "").strip()
 
         updated["aoi_source_type"] = source_type
         updated["allow_project_layers_input"] = self._allow_project_layers_input
-        updated["output_path"] = output_file
-        updated["output_file_name"] = Path(output_file).name if output_file else ""
+        updated["output_path"] = ""
+        updated["output_file_name"] = ""
+        updated["output_name_hint"] = output_hint
 
         if source_type == "project_layer":
             layer_id = str(self.aoi_project_layer_combo.currentData() or "").strip()
@@ -244,10 +192,16 @@ class ClipToAoiConfigDialog(QDialog):
             updated["aoi_project_layer_name"] = layer_name
             updated["aoi_path"] = ""
             updated["aoi_file_name"] = ""
-        else:
+        elif source_type == "file":
             aoi_file = str(self.aoi_file_edit.text() or "").strip()
             updated["aoi_path"] = aoi_file
             updated["aoi_file_name"] = Path(aoi_file).name if aoi_file else ""
+            updated["aoi_project_layer_id"] = ""
+            updated["aoi_project_layer_name"] = ""
+        else:
+            # Clip-to-canvas mode derives AOI from current map canvas extent at execution time.
+            updated["aoi_path"] = ""
+            updated["aoi_file_name"] = ""
             updated["aoi_project_layer_id"] = ""
             updated["aoi_project_layer_name"] = ""
         return updated
@@ -270,7 +224,8 @@ def get_function_spec():
         display_name="Clip to AOI",
         description=(
             "Clip source imagery to AOI. "
-            "Double-click node to configure AOI source (project layer or file) and output path."
+            "Double-click node to configure AOI source (project layer, file, or canvas extent). "
+            "Output path is managed automatically."
         ),
         default_payload={
             "aoi_source_type": "project_layer",
@@ -280,6 +235,7 @@ def get_function_spec():
             "aoi_file_name": "",
             "output_path": "",
             "output_file_name": "",
+            "output_name_hint": "",
             "allow_project_layers_input": True,
         },
         on_node_double_click=_on_node_double_click,

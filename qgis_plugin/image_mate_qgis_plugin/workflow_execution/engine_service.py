@@ -12,10 +12,15 @@ import shutil
 from qgis import processing
 from qgis.core import (
     Qgis,
+    QgsCoordinateReferenceSystem,
+    QgsFeature,
+    QgsGeometry,
     QgsProject,
+    QgsRectangle,
     QgsVectorLayer,
 )
 
+from ..services.processing_runtime import ensure_processing_runtime
 from .worker import WorkflowExecutionWorker
 
 ADAPTER_ID_FOR_EACH_IMAGE_IN_STACK = "for_each_image_in_stack"
@@ -44,6 +49,48 @@ class WorkflowEngineService:
             callback(text, level)
         except TypeError:
             callback(text)
+
+    def ensure_processing_runtime(self, *, required_algorithms=None):
+        return ensure_processing_runtime(
+            required_algorithms=required_algorithms,
+            log_callback=lambda message, level=Qgis.Info: self._log(message, level=level),
+        )
+
+    @staticmethod
+    def _required_processing_algorithms_for_node_map(node_map):
+        required = set()
+        rows = node_map if isinstance(node_map, dict) else {}
+        for node in rows.values():
+            row = node if isinstance(node, dict) else {}
+            node_type = str(row.get("type") or "").strip().lower()
+            payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
+            if node_type == "source":
+                # Source tiles can require stitching into VRTs.
+                required.add("gdal:buildvirtualraster")
+                continue
+            if node_type == "function":
+                function_id = str(payload.get("function_id") or "").strip()
+                if function_id == "clip_to_aoi":
+                    required.add("gdal:cliprasterbymasklayer")
+                    source_type = str(payload.get("aoi_source_type") or "file").strip().lower()
+                    if source_type in {"project_layer", "canvas"}:
+                        required.add("native:savefeatures")
+                continue
+            if node_type != "adapter":
+                continue
+            adapted_function_id = str(payload.get("adapted_function_id") or "").strip()
+            if adapted_function_id != "clip_to_aoi":
+                continue
+            required.add("gdal:cliprasterbymasklayer")
+            adapted_payload = (
+                payload.get("adapted_function_payload")
+                if isinstance(payload.get("adapted_function_payload"), dict)
+                else {}
+            )
+            source_type = str(adapted_payload.get("aoi_source_type") or "file").strip().lower()
+            if source_type in {"project_layer", "canvas"}:
+                required.add("native:savefeatures")
+        return sorted(required)
 
     def prepare_graph(self, workflow_payload):
         payload = workflow_payload if isinstance(workflow_payload, dict) else {}
@@ -135,21 +182,25 @@ class WorkflowEngineService:
 
     def _validate_clip_to_aoi_payload(self, *, issues, node_id, payload, context_label):
         source_type = str(payload.get("aoi_source_type") or "file").strip().lower()
-        output_path = str(payload.get("output_path") or "").strip()
         aoi_layer_id = str(payload.get("aoi_project_layer_id") or "").strip()
         aoi_file = str(payload.get("aoi_path") or "").strip()
+        if source_type == "canvas":
+            return
         if source_type == "project_layer":
             if not aoi_layer_id:
                 issues.append(f"{node_id}: {context_label} missing AOI project layer id")
             elif QgsProject.instance().mapLayer(aoi_layer_id) is None:
                 issues.append(f"{node_id}: AOI project layer not found ({aoi_layer_id})")
-        else:
+        elif source_type == "file":
             if not aoi_file:
                 issues.append(f"{node_id}: {context_label} missing AOI file path")
             elif not Path(aoi_file).exists():
                 issues.append(f"{node_id}: AOI file not found ({aoi_file})")
-        if not output_path:
-            issues.append(f"{node_id}: {context_label} missing output path")
+        else:
+            issues.append(
+                f"{node_id}: {context_label} unsupported AOI source type '{source_type}' "
+                "(expected project_layer|file|canvas)"
+            )
 
     def validate_node_configs(self, node_map):
         issues = []
@@ -201,9 +252,6 @@ class WorkflowEngineService:
                     context_label="clip_to_aoi",
                 )
             elif function_id == "temporal_stack_to_video":
-                output_path = str(payload.get("output_path") or "").strip()
-                if not output_path:
-                    issues.append(f"{node_id}: temporal_stack_to_video missing output path")
                 if shutil.which("ffmpeg") is None:
                     issues.append(f"{node_id}: temporal_stack_to_video requires ffmpeg in PATH")
 
@@ -298,6 +346,12 @@ class WorkflowEngineService:
 
     def _prepare_clip_to_aoi_payload(self, *, node_id, payload):
         source_type = str(payload.get("aoi_source_type") or "file").strip().lower()
+        if source_type == "canvas":
+            resolved_mask_path = self._materialize_canvas_extent_mask(node_id=node_id)
+            payload["aoi_effective_mask_path"] = resolved_mask_path
+            payload["aoi_effective_mask_desc"] = "canvas-extent"
+            return
+
         if source_type == "project_layer":
             layer_id = str(payload.get("aoi_project_layer_id") or "").strip()
             layer = QgsProject.instance().mapLayer(layer_id)
@@ -314,6 +368,11 @@ class WorkflowEngineService:
                 f"{datetime.now(tz=timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')}.gpkg"
             )
             mask_path = self.temp_dir / file_name
+            self.ensure_processing_runtime(required_algorithms=("native:savefeatures",))
+            self._log(
+                f"{node_id}: materializing AOI project layer with native:savefeatures -> {mask_path}",
+                level=Qgis.Info,
+            )
             result = processing.run(
                 "native:savefeatures",
                 {"INPUT": layer, "OUTPUT": str(mask_path)},
@@ -328,6 +387,12 @@ class WorkflowEngineService:
             self._log(f"{node_id}: AOI project layer materialized -> {resolved_mask_path}", level=Qgis.Info)
             return
 
+        if source_type != "file":
+            raise RuntimeError(
+                f"{node_id}: unsupported AOI source type '{source_type}' "
+                "(expected project_layer|file|canvas)"
+            )
+
         aoi_path = str(payload.get("aoi_path") or "").strip()
         if not aoi_path:
             raise RuntimeError(f"{node_id}: AOI file path is required for clip_to_aoi")
@@ -335,6 +400,68 @@ class WorkflowEngineService:
             raise RuntimeError(f"{node_id}: AOI file not found ({aoi_path})")
         payload["aoi_effective_mask_path"] = aoi_path
         payload["aoi_effective_mask_desc"] = f"aoi-file:{aoi_path}"
+
+    def _materialize_canvas_extent_mask(self, *, node_id):
+        canvas = self.iface.mapCanvas() if self.iface is not None else None
+        if canvas is None:
+            raise RuntimeError(f"{node_id}: map canvas is unavailable for canvas clipping")
+
+        extent = QgsRectangle(canvas.extent())
+        if extent.isEmpty():
+            raise RuntimeError(f"{node_id}: map canvas extent is empty; cannot clip to canvas")
+
+        map_settings = canvas.mapSettings()
+        canvas_crs = (
+            map_settings.destinationCrs() if map_settings is not None else QgsCoordinateReferenceSystem()
+        )
+        if not canvas_crs.isValid():
+            canvas_crs = QgsProject.instance().crs()
+        if not canvas_crs.isValid():
+            raise RuntimeError(f"{node_id}: map canvas CRS is invalid; cannot clip to canvas")
+
+        crs_authid = str(canvas_crs.authid() or "").strip()
+        if not crs_authid:
+            raise RuntimeError(f"{node_id}: map canvas CRS has no authid; cannot clip to canvas")
+
+        mask_layer = QgsVectorLayer(
+            f"Polygon?crs={crs_authid}",
+            f"WorkflowCanvasMask-{node_id}",
+            "memory",
+        )
+        if not mask_layer.isValid():
+            raise RuntimeError(f"{node_id}: failed to allocate temporary canvas mask layer")
+
+        feature = QgsFeature()
+        feature.setGeometry(QgsGeometry.fromRect(extent))
+        add_result = mask_layer.dataProvider().addFeatures([feature])
+        add_ok = bool(add_result[0]) if isinstance(add_result, tuple) else bool(add_result)
+        if not add_ok:
+            raise RuntimeError(f"{node_id}: failed to build temporary canvas mask geometry")
+        mask_layer.updateExtents()
+
+        self.temp_dir.mkdir(parents=True, exist_ok=True)
+        file_name = (
+            f"workflow_{node_id.replace(':', '_').replace('/', '_')}_canvas_mask_"
+            f"{datetime.now(tz=timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')}.gpkg"
+        )
+        mask_path = self.temp_dir / file_name
+        self.ensure_processing_runtime(required_algorithms=("native:savefeatures",))
+        self._log(
+            f"{node_id}: materializing canvas extent with native:savefeatures -> {mask_path}",
+            level=Qgis.Info,
+        )
+        result = processing.run(
+            "native:savefeatures",
+            {"INPUT": mask_layer, "OUTPUT": str(mask_path)},
+        )
+        resolved_mask_path = str(result.get("OUTPUT") or mask_path).strip()
+        if not resolved_mask_path or not Path(resolved_mask_path).exists():
+            raise RuntimeError(
+                f"{node_id}: failed to materialize canvas extent to temporary file ({resolved_mask_path})"
+            )
+
+        self._log(f"{node_id}: canvas extent materialized -> {resolved_mask_path}", level=Qgis.Info)
+        return resolved_mask_path
 
     @staticmethod
     def _prepare_temporal_stack_to_video_payload(*, payload, **_kwargs):
@@ -346,19 +473,47 @@ class WorkflowEngineService:
         payload["aoi_effective_mask_desc"] = ""
 
     def preflight(self, workflow_payload):
+        payload = workflow_payload if isinstance(workflow_payload, dict) else {}
+        raw_nodes = payload.get("nodes")
+        raw_edges = payload.get("edges")
+        raw_node_count = len(raw_nodes) if isinstance(raw_nodes, list) else 0
+        raw_edge_count = len(raw_edges) if isinstance(raw_edges, list) else 0
+        self._log(
+            f"Workflow preflight started: raw_nodes={raw_node_count} raw_edges={raw_edge_count}",
+            level=Qgis.Info,
+        )
         node_map, incoming = self.prepare_graph(workflow_payload)
+        self._log(
+            f"Workflow graph prepared: reachable_nodes={len(node_map)} edges={sum(len(v) for v in incoming.values())}",
+            level=Qgis.Info,
+        )
+        required_algorithms = self._required_processing_algorithms_for_node_map(node_map)
+        if required_algorithms:
+            runtime_diag = self.ensure_processing_runtime(required_algorithms=required_algorithms)
+            self._log(
+                "Workflow processing runtime confirmed: "
+                f"algorithms={','.join(required_algorithms)} "
+                f"initialized_processing={bool(runtime_diag.get('initialized_processing'))}",
+                level=Qgis.Info,
+            )
         self.validate_node_configs(node_map)
+        self._log("Workflow node validation passed.", level=Qgis.Info)
         prepared_node_map = self.prepare_execution_node_map(node_map)
+        self._log(
+            f"Workflow payload preparation complete: prepared_nodes={len(prepared_node_map)}",
+            level=Qgis.Info,
+        )
         return prepared_node_map, incoming
 
     @staticmethod
-    def build_worker(*, source_service, search_items, temp_dir, node_map, incoming):
+    def build_worker(*, source_service, search_items, temp_dir, node_map, incoming, asset_cache_dir=None):
         return WorkflowExecutionWorker(
             source_service=source_service,
             search_items=search_items,
             temp_dir=temp_dir,
             node_map=node_map,
             incoming=incoming,
+            asset_cache_dir=asset_cache_dir,
         )
 
     def execute_sync(
@@ -367,6 +522,7 @@ class WorkflowEngineService:
         workflow_payload,
         source_service,
         search_items,
+        asset_cache_dir=None,
         log_callback=None,
         progress_callback=None,
         node_state_callback=None,
@@ -379,6 +535,7 @@ class WorkflowEngineService:
             temp_dir=self.temp_dir,
             node_map=prepared_node_map,
             incoming=incoming,
+            asset_cache_dir=asset_cache_dir,
         )
 
         if callable(log_callback):

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Documentation Engineer"
+  short_description: "Maintain high-quality engineering documentation"
+  default_prompt: "Use $documentation-engineer to plan, update, and verify engineering documentation for this change."

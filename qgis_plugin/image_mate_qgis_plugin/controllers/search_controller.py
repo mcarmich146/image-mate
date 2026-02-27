@@ -50,5 +50,6 @@ class SearchController:
             "satellite_name": str(payload.get("satellite_name") or "").strip() or None,
             "min_gsd": payload.get("min_gsd"),
             "max_gsd": payload.get("max_gsd"),
+            "require_full_aoi_overlap": bool(payload.get("require_full_aoi_overlap", False)),
             "geometry": extent_geometry,
         }
