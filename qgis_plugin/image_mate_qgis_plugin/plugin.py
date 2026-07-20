@@ -65,6 +65,7 @@ from .services.mosaic_contracts import (
     validate_project_id,
 )
 from .services.mosaic_grid_service import MosaicGridService
+from .services.mosaicking_service import MosaickingService, normalize_mosaicking_request
 from .services.mosaic_tasking_service import MosaicTaskingService
 from .services.mosaic_tracking_store import MosaicTrackingStore
 from .services.mosaic_preview_resolution import (
@@ -137,6 +138,7 @@ class ImageMatePlugin(SimulationExecutionMixin, WorkflowExecutionMixin, SearchSt
         self.vessel_detection_service = VesselDetectionService()
         self.vessel_training_service = VesselTrainingService(plugin_dir=self.plugin_dir)
         self.time_lapse_video_service = TimeLapseVideoService()
+        self.mosaicking_service = MosaickingService()
         self._asset_intel_error = ""
         self._configure_asset_intel_service()
         self.local_tile_proxy = LocalTileProxy(self.source_service)
@@ -319,6 +321,7 @@ class ImageMatePlugin(SimulationExecutionMixin, WorkflowExecutionMixin, SearchSt
             self.dock.workflow_side_by_side_review_requested.connect(self.handle_workflow_side_by_side_review_request)
             self.dock.workflow_side_by_side_stop_requested.connect(self.handle_workflow_side_by_side_stop_request)
             self.dock.create_vrt_requested.connect(self.handle_create_vrt_request)
+            self.dock.mosaicking_studio_requested.connect(self.handle_mosaicking_studio_request)
             self.dock.sharpen_image_requested.connect(self.handle_sharpen_image_request)
             self.dock.resample_image_10m_requested.connect(self.handle_resample_image_10m_request)
             self.dock.resample_image_10p8_to_3m_requested.connect(self.handle_resample_image_10p8_to_3m_request)
@@ -1479,6 +1482,124 @@ class ImageMatePlugin(SimulationExecutionMixin, WorkflowExecutionMixin, SearchSt
                 duration=10,
             )
             self._append_debug_log(f"Create VRT failed: {exc}", level=Qgis.Warning)
+
+    def handle_mosaicking_studio_request(self, payload):
+        request = payload if isinstance(payload, dict) else {}
+        raw_layer_ids = request.get("layer_ids") if isinstance(request.get("layer_ids"), list) else []
+        layer_ids = []
+        for value in raw_layer_ids:
+            layer_id = str(value or "").strip()
+            if layer_id and layer_id not in layer_ids:
+                layer_ids.append(layer_id)
+
+        try:
+            input_paths = []
+            unsupported_layers = []
+            for layer_id in layer_ids:
+                layer = self._project_raster_layer_by_id(layer_id)
+                if layer is None:
+                    unsupported_layers.append(layer_id)
+                    continue
+                input_path = self._resolve_local_raster_source_path(layer)
+                if not input_path:
+                    unsupported_layers.append(str(layer.name() or layer_id))
+                    continue
+                input_paths.append(input_path)
+
+            if unsupported_layers:
+                raise ValueError(
+                    "Mosaicker_v2 currently requires local raster files. Unsupported layer(s): "
+                    + ", ".join(unsupported_layers)
+                )
+
+            normalized = normalize_mosaicking_request(
+                input_paths=input_paths,
+                output_path=str(request.get("output_path") or "").strip(),
+                overwrite=bool(request.get("overwrite", False)),
+            )
+        except Exception as exc:
+            self.iface.messageBar().pushMessage(
+                "Image Mate",
+                f"Mosaicking Studio request is invalid: {exc}",
+                level=Qgis.Warning,
+                duration=12,
+            )
+            self._append_debug_log(f"Mosaicking Studio validation failed: {exc}", level=Qgis.Warning)
+            return
+
+        output_path = str(normalized.output_path)
+        input_path_values = [str(path) for path in normalized.input_paths]
+        overwrite = bool(normalized.overwrite)
+        self._append_debug_log(
+            "Mosaicking Studio request: "
+            f"inputs={len(input_path_values)} output={output_path} overwrite={overwrite}"
+        )
+        self.iface.messageBar().pushMessage(
+            "Image Mate",
+            f"Mosaic generation started in the task manager: {Path(output_path).name}",
+            level=Qgis.Info,
+            duration=8,
+        )
+
+        def _run_mosaicker(task):
+            if task.isCanceled():
+                raise RuntimeError("Mosaic task was canceled before processing started.")
+            result = self.mosaicking_service.create_mosaic(
+                input_paths=input_path_values,
+                output_path=output_path,
+                overwrite=overwrite,
+            )
+            task.setProgress(100.0)
+            return result
+
+        def _mosaicker_finished(exception, result=None):
+            if exception is not None:
+                self.iface.messageBar().pushMessage(
+                    "Image Mate",
+                    f"Mosaic generation failed: {exception}",
+                    level=Qgis.Warning,
+                    duration=15,
+                )
+                self._append_debug_log(f"Mosaic generation failed: {exception}", level=Qgis.Warning)
+                return
+
+            result_row = result if isinstance(result, dict) else {}
+            result_path = str(result_row.get("output_path") or output_path).strip()
+            mosaic_layer = QgsRasterLayer(result_path, f"Image Mate Mosaic {Path(result_path).stem}")
+            if not mosaic_layer.isValid():
+                self.iface.messageBar().pushMessage(
+                    "Image Mate",
+                    f"Mosaic was created but QGIS could not load it: {result_path}",
+                    level=Qgis.Warning,
+                    duration=15,
+                )
+                self._append_debug_log(
+                    f"Mosaic output is invalid in QGIS: {result_path}",
+                    level=Qgis.Warning,
+                )
+                return
+
+            self._add_layer_to_image_mate_group(mosaic_layer)
+            elapsed = float(result_row.get("elapsed_seconds") or 0.0)
+            self.iface.messageBar().pushMessage(
+                "Image Mate",
+                f"Mosaic created and added to the project: {result_path}",
+                level=Qgis.Success,
+                duration=12,
+            )
+            self._append_debug_log(
+                "Mosaic generation completed: "
+                f"inputs={result_row.get('input_count') or len(input_path_values)} "
+                f"elapsed_seconds={elapsed:.1f} output={result_path} "
+                f"analysis={result_row.get('analysis_path') or '(none)'}"
+            )
+
+        task = QgsTask.fromFunction(
+            f"Image Mate Mosaicking Studio: {Path(output_path).name}",
+            _run_mosaicker,
+            on_finished=_mosaicker_finished,
+        )
+        QgsApplication.taskManager().addTask(task)
 
     def handle_sharpen_image_request(self, payload):
         request = payload if isinstance(payload, dict) else {}

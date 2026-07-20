@@ -68,6 +68,7 @@ from ..services.mosaic_preview_resolution import should_enable_preview
 from ..services.simulation_day_navigation import navigation_button_state
 from ..workflow_plugins.manager import WorkflowPluginManager
 from .main_dock_workflow import WorkflowDockMixin
+from .mosaicking_studio_dialog import MosaickingStudioDialog
 
 
 class ImageMateMainDock(WorkflowDockMixin, QDockWidget):
@@ -85,6 +86,7 @@ class ImageMateMainDock(WorkflowDockMixin, QDockWidget):
     workflow_side_by_side_review_requested = pyqtSignal(dict)
     workflow_side_by_side_stop_requested = pyqtSignal()
     create_vrt_requested = pyqtSignal(dict)
+    mosaicking_studio_requested = pyqtSignal(dict)
     sharpen_image_requested = pyqtSignal(dict)
     resample_image_10m_requested = pyqtSignal(dict)
     resample_image_10p8_to_3m_requested = pyqtSignal(dict)
@@ -5829,6 +5831,22 @@ class ImageMateMainDock(WorkflowDockMixin, QDockWidget):
         create_vrt_layout.addWidget(create_vrt_desc)
         create_vrt_layout.addWidget(self.create_vrt_btn)
 
+        mosaicking_group = QGroupBox("Mosaicking")
+        mosaicking_layout = QVBoxLayout(mosaicking_group)
+        mosaicking_layout.setContentsMargins(8, 8, 8, 8)
+        mosaicking_layout.setSpacing(6)
+        mosaicking_desc = QLabel(
+            "Create a seamless GeoTIFF mosaic from local raster layers in this project."
+        )
+        mosaicking_desc.setWordWrap(True)
+        self.mosaicking_studio_btn = QPushButton("Mosaicking Studio")
+        self.mosaicking_studio_btn.setToolTip(
+            "Select project rasters, choose an output GeoTIFF, and run the Mosaicker_v2 engine."
+        )
+        self.mosaicking_studio_btn.clicked.connect(self._open_mosaicking_studio)
+        mosaicking_layout.addWidget(mosaicking_desc)
+        mosaicking_layout.addWidget(self.mosaicking_studio_btn)
+
         sharpen_group = QGroupBox("Image Processing")
         sharpen_layout = QVBoxLayout(sharpen_group)
         sharpen_layout.setContentsMargins(8, 8, 8, 8)
@@ -5943,11 +5961,34 @@ class ImageMateMainDock(WorkflowDockMixin, QDockWidget):
 
         layout.addWidget(info)
         layout.addWidget(create_vrt_group)
+        layout.addWidget(mosaicking_group)
         layout.addWidget(sharpen_group)
         layout.addWidget(vessel_group)
         layout.addWidget(vessel_qa_group)
         layout.addStretch(1)
         return tab
+
+    def _open_mosaicking_studio(self):
+        options = self._project_raster_layer_options()
+        if len(options) < 2:
+            QMessageBox.warning(
+                self,
+                "Mosaicking Studio",
+                "Add at least two raster layers to the project before creating a mosaic.",
+            )
+            return
+
+        project = QgsProject.instance()
+        default_dir = str(project.homePath() or project.absolutePath() or "").strip()
+        default_output = str(Path(default_dir) / "image_mate_mosaic.tif") if default_dir else ""
+        dialog = MosaickingStudioDialog(
+            layer_options=options,
+            default_output_path=default_output,
+            parent=self,
+        )
+        if dialog.exec_() != QDialog.Accepted:
+            return
+        self.mosaicking_studio_requested.emit(dialog.request_payload())
 
     def _open_create_vrt_dialog(self):
         options = self._project_raster_layer_options()
