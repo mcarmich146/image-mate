@@ -6,7 +6,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 import time
-from typing import Callable, Sequence
+from typing import Callable, Optional, Sequence, Union
 
 
 MOSAICKER_DEPENDENCIES = (
@@ -23,7 +23,7 @@ class MosaickingDependencyError(RuntimeError):
     """Raised when the QGIS Python runtime cannot import the vendored engine."""
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class MosaickingRequest:
     input_paths: tuple[Path, ...]
     output_path: Path
@@ -32,8 +32,8 @@ class MosaickingRequest:
 
 def normalize_mosaicking_request(
     *,
-    input_paths: Sequence[str | Path],
-    output_path: str | Path,
+    input_paths: Sequence[Union[str, Path]],
+    output_path: Union[str, Path],
     overwrite: bool = False,
 ) -> MosaickingRequest:
     """Validate and normalize the MVP's filesystem request contract."""
@@ -84,14 +84,14 @@ def normalize_mosaicking_request(
 class MosaickingService:
     """Translate a QGIS studio request to the unchanged Mosaicker_v2 CLI API."""
 
-    def __init__(self, *, runner: Callable[[Sequence[str]], int] | None = None) -> None:
+    def __init__(self, *, runner: Optional[Callable[[Sequence[str]], int]] = None) -> None:
         self._runner = runner
 
     def create_mosaic(
         self,
         *,
-        input_paths: Sequence[str | Path],
-        output_path: str | Path,
+        input_paths: Sequence[Union[str, Path]],
+        output_path: Union[str, Path],
         overwrite: bool = False,
     ) -> dict:
         request = normalize_mosaicking_request(
@@ -135,7 +135,8 @@ class MosaickingService:
         except Exception as exc:
             dependency_list = ", ".join(MOSAICKER_DEPENDENCIES)
             raise MosaickingDependencyError(
-                "Mosaicking Studio could not load its processing engine. Install the "
+                "Mosaicking Studio requires Python 3.10 or newer and could not load its "
+                "processing engine. Install the "
                 f"following packages into the QGIS Python environment: {dependency_list}. "
                 f"Import error: {exc}"
             ) from exc
