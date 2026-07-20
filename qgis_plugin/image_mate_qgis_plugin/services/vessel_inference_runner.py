@@ -3,12 +3,23 @@
 
 from __future__ import annotations
 
+import ast
 import argparse
 import json
 import math
 import os
 from pathlib import Path
 from typing import Any
+
+
+_VESSEL_CLASS_KEYWORDS = (
+    "vessel",
+    "ship",
+    "boat",
+    "tanker",
+    "ferry",
+    "cargo",
+)
 
 
 def _resolve_input_shape(shape: list[Any] | tuple[Any, ...]) -> tuple[int, int]:
@@ -50,6 +61,92 @@ def _normalize_band_uint8(arr, np):
     scaled = (values - low) / max(1e-6, high - low)
     scaled = np.clip(scaled, 0.0, 1.0)
     return np.rint(scaled * 255.0).astype(np.uint8)
+
+
+def _normalize_conf_score(value: float) -> float:
+    if not math.isfinite(value):
+        return 0.0
+    if value < 0.0 or value > 1.0:
+        # Some exports expose logits; map them to [0, 1].
+        return 1.0 / (1.0 + math.exp(-max(-20.0, min(20.0, value))))
+    return value
+
+
+def _parse_names_metadata(raw_value: Any) -> dict[int, str]:
+    if raw_value is None:
+        return {}
+    parsed = None
+    if isinstance(raw_value, dict):
+        parsed = raw_value
+    else:
+        text = str(raw_value or "").strip()
+        if not text:
+            return {}
+        try:
+            parsed = ast.literal_eval(text)
+        except Exception:
+            parsed = None
+    if not isinstance(parsed, dict):
+        return {}
+    out: dict[int, str] = {}
+    for raw_key, raw_name in parsed.items():
+        try:
+            key = int(raw_key)
+        except Exception:
+            continue
+        out[key] = str(raw_name or "").strip()
+    return out
+
+
+def _extract_model_metadata(session) -> dict[str, Any]:
+    task = ""
+    class_names: dict[int, str] = {}
+    try:
+        meta = session.get_modelmeta()
+        custom = dict(getattr(meta, "custom_metadata_map", {}) or {})
+        task = str(custom.get("task") or "").strip().lower()
+        class_names = _parse_names_metadata(custom.get("names"))
+    except Exception:
+        task = ""
+        class_names = {}
+    if class_names:
+        class_count = max([idx for idx in class_names.keys() if idx >= 0], default=-1) + 1
+    else:
+        class_count = None
+    vessel_class_ids = sorted(
+        [
+            idx
+            for idx, name in class_names.items()
+            if any(keyword in str(name or "").strip().lower() for keyword in _VESSEL_CLASS_KEYWORDS)
+        ]
+    )
+    return {
+        "task": task,
+        "class_names": class_names,
+        "class_count": class_count if class_count and class_count > 0 else None,
+        "vessel_class_ids": vessel_class_ids,
+    }
+
+
+def _letterbox_image(*, image_rgb, target_w: int, target_h: int, np, Image):
+    src_h = int(image_rgb.shape[0])
+    src_w = int(image_rgb.shape[1])
+    if src_w <= 0 or src_h <= 0:
+        raise RuntimeError("Input raster has invalid dimensions for preprocessing.")
+    gain = min(float(target_w) / float(src_w), float(target_h) / float(src_h))
+    resized_w = max(1, min(int(target_w), int(round(float(src_w) * gain))))
+    resized_h = max(1, min(int(target_h), int(round(float(src_h) * gain))))
+    resized = Image.fromarray(image_rgb, mode="RGB").resize((resized_w, resized_h))
+    canvas = np.full((int(target_h), int(target_w), 3), 114, dtype=np.uint8)
+    pad_x = max(0, int((int(target_w) - resized_w) // 2))
+    pad_y = max(0, int((int(target_h) - resized_h) // 2))
+    canvas[pad_y : pad_y + resized_h, pad_x : pad_x + resized_w] = np.asarray(resized, dtype=np.uint8)
+    return canvas, float(gain), float(pad_x), float(pad_y)
+
+
+def _unletterbox_coord(value: float, *, pad: float, gain: float, max_value: int) -> float:
+    raw = (float(value) - float(pad)) / max(1e-6, float(gain))
+    return max(0.0, min(float(max_value), raw))
 
 
 def _read_raster_rgb_uint8(raster_path: str):
@@ -149,7 +246,14 @@ def _read_raster_rgb_uint8_rasterio(raster_path: str, np):
         return rgb.astype(np.uint8, copy=False)
 
 
-def _parse_xywh_classprob_candidates(*, arr, input_width: int, input_height: int, conf: float):
+def _parse_xywh_classprob_candidates(
+    *,
+    arr,
+    input_width: int,
+    input_height: int,
+    conf: float,
+    expected_class_count: int | None = None,
+):
     out = []
     class_count = int(arr.shape[1] - 4)
     if class_count <= 0:
@@ -163,7 +267,9 @@ def _parse_xywh_classprob_candidates(*, arr, input_width: int, input_height: int
         if class_scores.size <= 0:
             continue
         class_id = int(class_scores.argmax())
-        score = float(class_scores[class_id])
+        if expected_class_count is not None and class_id >= int(expected_class_count):
+            continue
+        score = _normalize_conf_score(float(class_scores[class_id]))
         if score < conf:
             continue
         if max(abs(cx), abs(cy), abs(w), abs(h)) <= 2.0:
@@ -208,6 +314,8 @@ def _parse_xywhr_classprob_candidates(
     input_height: int,
     conf: float,
     angle_layout: str,
+    use_objectness: bool = False,
+    expected_class_count: int | None = None,
 ):
     out = []
     class_count = int(arr.shape[1] - 5)
@@ -223,22 +331,31 @@ def _parse_xywhr_classprob_candidates(
                 angle = float(row[-1])
             except Exception:
                 continue
-            class_scores = row[4:-1]
+            tail = row[4:-1]
         else:
             try:
                 angle = float(row[4])
             except Exception:
                 continue
-            class_scores = row[5:]
+            tail = row[5:]
+        if tail.size <= 0:
+            continue
+        obj_score = 1.0
+        class_scores = tail
+        if use_objectness:
+            if tail.size <= 1:
+                continue
+            obj_score = _normalize_conf_score(float(tail[0]))
+            class_scores = tail[1:]
+            if obj_score <= 0.0:
+                continue
         if class_scores.size <= 0:
             continue
         class_id = int(class_scores.argmax())
-        score = float(class_scores[class_id])
-        if not math.isfinite(score):
+        if expected_class_count is not None and class_id >= int(expected_class_count):
             continue
-        if score < 0.0 or score > 1.0:
-            # Some exports expose logits; map them to [0, 1].
-            score = 1.0 / (1.0 + math.exp(-max(-20.0, min(20.0, score))))
+        cls_score = _normalize_conf_score(float(class_scores[class_id]))
+        score = float(cls_score) * float(obj_score)
         if score < conf:
             continue
 
@@ -277,32 +394,40 @@ def _sample_out_of_unit_ratio(col, np) -> float:
     return float(np.mean((finite < -0.05) | (finite > 1.05)))
 
 
-def _select_obb_layout(arr, np) -> str | None:
+def _select_obb_layout(arr, np, *, force_obb: bool = False) -> str | None:
     if arr.shape[1] < 7 or arr.shape[1] > 50:
         return None
     col4_ratio = _sample_out_of_unit_ratio(arr[:, 4], np)
     col_last_ratio = _sample_out_of_unit_ratio(arr[:, -1], np)
-    best = max(col4_ratio, col_last_ratio)
-    if best < 0.02:
-        return None
     if col_last_ratio >= col4_ratio + 0.01:
         return "last"
     if col4_ratio >= col_last_ratio + 0.01:
         return "fifth"
-    # Prefer Ultralytics OBB export layout when both columns look similar.
+    # Prefer Ultralytics OBB export layout when both columns look similar or ambiguous.
+    if force_obb:
+        return "last"
     return "last"
 
 
-def _parse_xyxy_score_class_candidates(*, arr, input_width: int, input_height: int, conf: float):
+def _parse_xyxy_score_class_candidates(
+    *,
+    arr,
+    input_width: int,
+    input_height: int,
+    conf: float,
+    expected_class_count: int | None = None,
+):
     out = []
     for row in arr:
         if len(row) < 6:
             continue
         try:
             x1, y1, x2, y2 = (float(row[0]), float(row[1]), float(row[2]), float(row[3]))
-            score = float(row[4])
+            score = _normalize_conf_score(float(row[4]))
             class_id = int(round(float(row[5])))
         except Exception:
+            continue
+        if expected_class_count is not None and class_id >= int(expected_class_count):
             continue
         if score < conf:
             continue
@@ -323,7 +448,15 @@ def _parse_xyxy_score_class_candidates(*, arr, input_width: int, input_height: i
     return out
 
 
-def _parse_onnx_outputs(*, outputs: list[Any], input_width: int, input_height: int, conf: float):
+def _parse_onnx_outputs(
+    *,
+    outputs: list[Any],
+    input_width: int,
+    input_height: int,
+    conf: float,
+    expected_task: str = "",
+    expected_class_count: int | None = None,
+):
     try:
         import numpy as np
     except Exception as exc:
@@ -349,32 +482,52 @@ def _parse_onnx_outputs(*, outputs: list[Any], input_width: int, input_height: i
     if arr.shape[1] < 6:
         return []
 
-    obb_layout = _select_obb_layout(arr, np)
+    force_obb = str(expected_task or "").strip().lower() == "obb"
+    obb_layout = _select_obb_layout(arr, np, force_obb=force_obb)
     if obb_layout is not None:
-        parsed_obb = _parse_xywhr_classprob_candidates(
-            arr=arr,
-            input_width=input_width,
-            input_height=input_height,
-            conf=conf,
-            angle_layout=obb_layout,
-        )
-        if parsed_obb:
-            return parsed_obb
-        parsed_obb_alt = _parse_xywhr_classprob_candidates(
-            arr=arr,
-            input_width=input_width,
-            input_height=input_height,
-            conf=conf,
-            angle_layout=("fifth" if obb_layout == "last" else "last"),
-        )
-        if parsed_obb_alt:
-            return parsed_obb_alt
+        parse_modes: list[bool]
+        if expected_class_count is not None:
+            non_angle_columns = int(arr.shape[1]) - 5
+            if non_angle_columns == int(expected_class_count):
+                parse_modes = [False]
+            elif non_angle_columns == int(expected_class_count) + 1:
+                parse_modes = [True]
+            else:
+                parse_modes = [False, True]
+        else:
+            parse_modes = [False, True]
+        for use_objectness in parse_modes:
+            parsed_rows = _parse_xywhr_classprob_candidates(
+                arr=arr,
+                input_width=input_width,
+                input_height=input_height,
+                conf=conf,
+                angle_layout=obb_layout,
+                use_objectness=use_objectness,
+                expected_class_count=expected_class_count,
+            )
+            if parsed_rows:
+                return parsed_rows
+        alt_layout = "fifth" if obb_layout == "last" else "last"
+        for use_objectness in parse_modes:
+            parsed_rows = _parse_xywhr_classprob_candidates(
+                arr=arr,
+                input_width=input_width,
+                input_height=input_height,
+                conf=conf,
+                angle_layout=alt_layout,
+                use_objectness=use_objectness,
+                expected_class_count=expected_class_count,
+            )
+            if parsed_rows:
+                return parsed_rows
 
     parsed_xywh = _parse_xywh_classprob_candidates(
         arr=arr,
         input_width=input_width,
         input_height=input_height,
         conf=conf,
+        expected_class_count=expected_class_count,
     )
     if parsed_xywh:
         return parsed_xywh
@@ -383,6 +536,7 @@ def _parse_onnx_outputs(*, outputs: list[Any], input_width: int, input_height: i
         input_width=input_width,
         input_height=input_height,
         conf=conf,
+        expected_class_count=expected_class_count,
     )
 
 
@@ -467,10 +621,21 @@ def _infer(*, layer_path: str, model_path: str, conf: float, iou: float, max_det
     input_name = str(input_tensor.name or "").strip()
     if not input_name:
         raise RuntimeError("ONNX model input name is empty.")
+    model_meta = _extract_model_metadata(session)
+    task_hint = str(model_meta.get("task") or "").strip().lower()
+    class_names = dict(model_meta.get("class_names") or {})
+    class_count = model_meta.get("class_count")
+    vessel_class_ids = set(int(v) for v in (model_meta.get("vessel_class_ids") or []))
 
     target_w, target_h = _resolve_input_shape(input_tensor.shape)
-    image = Image.fromarray(image_rgb, mode="RGB").resize((target_w, target_h))
-    arr = np.asarray(image).astype(np.float32) / 255.0
+    preprocessed, gain, pad_x, pad_y = _letterbox_image(
+        image_rgb=image_rgb,
+        target_w=target_w,
+        target_h=target_h,
+        np=np,
+        Image=Image,
+    )
+    arr = np.asarray(preprocessed).astype(np.float32) / 255.0
     # Some Windows/OSGeo onnxruntime builds crash on non-contiguous tensors.
     arr = np.ascontiguousarray(np.transpose(arr, (2, 0, 1))[None, :, :, :], dtype=np.float32)
     outputs = session.run(None, {input_name: arr})
@@ -479,36 +644,49 @@ def _infer(*, layer_path: str, model_path: str, conf: float, iou: float, max_det
         input_width=target_w,
         input_height=target_h,
         conf=conf,
+        expected_task=task_hint,
+        expected_class_count=(int(class_count) if class_count is not None else None),
     )
     if not candidates:
         return []
 
     orig_h, orig_w = int(image_rgb.shape[0]), int(image_rgb.shape[1])
-    sx = float(orig_w) / float(target_w)
-    sy = float(orig_h) / float(target_h)
+    if vessel_class_ids:
+        candidates = [row for row in candidates if int(row.get("class_id", -1)) in vessel_class_ids]
+        if not candidates:
+            return []
+
+    projected: list[dict[str, Any]] = []
     for row in candidates:
-        x1, y1, x2, y2 = row["bbox_px"]
-        row["bbox_px"] = [
-            max(0.0, min(float(orig_w), float(x1) * sx)),
-            max(0.0, min(float(orig_h), float(y1) * sy)),
-            max(0.0, min(float(orig_w), float(x2) * sx)),
-            max(0.0, min(float(orig_h), float(y2) * sy)),
+        x1, y1, x2, y2 = row.get("bbox_px", [0.0, 0.0, 0.0, 0.0])[:4]
+        bbox = [
+            _unletterbox_coord(float(x1), pad=pad_x, gain=gain, max_value=orig_w),
+            _unletterbox_coord(float(y1), pad=pad_y, gain=gain, max_value=orig_h),
+            _unletterbox_coord(float(x2), pad=pad_x, gain=gain, max_value=orig_w),
+            _unletterbox_coord(float(y2), pad=pad_y, gain=gain, max_value=orig_h),
         ]
+        if bbox[2] <= bbox[0] or bbox[3] <= bbox[1]:
+            continue
         obb = row.get("obb_px")
         if isinstance(obb, list) and len(obb) >= 4:
-            scaled = []
+            scaled: list[list[float]] = []
             for pair in obb[:4]:
                 if not isinstance(pair, (list, tuple)) or len(pair) < 2:
                     continue
                 try:
-                    ox = max(0.0, min(float(orig_w), float(pair[0]) * sx))
-                    oy = max(0.0, min(float(orig_h), float(pair[1]) * sy))
+                    ox = _unletterbox_coord(float(pair[0]), pad=pad_x, gain=gain, max_value=orig_w)
+                    oy = _unletterbox_coord(float(pair[1]), pad=pad_y, gain=gain, max_value=orig_h)
                     scaled.append([ox, oy])
                 except Exception:
                     continue
-            row["obb_px"] = scaled if len(scaled) == 4 else _bbox_to_obb(row["bbox_px"])
+            row["obb_px"] = scaled if len(scaled) == 4 else _bbox_to_obb(bbox)
         else:
-            row["obb_px"] = _bbox_to_obb(row["bbox_px"])
+            row["obb_px"] = _bbox_to_obb(bbox)
+        row["bbox_px"] = bbox
+        projected.append(row)
+    candidates = projected
+    if not candidates:
+        return []
 
     pre_nms_limit = max(400, min(4000, int(max_det) * 200))
     if len(candidates) > pre_nms_limit:
@@ -522,7 +700,7 @@ def _infer(*, layer_path: str, model_path: str, conf: float, iou: float, max_det
     rows = []
     for idx, row in enumerate(filtered, start=1):
         class_id = int(row.get("class_id", 0))
-        class_name = "vessel" if class_id == 0 else f"class_{class_id}"
+        class_name = str(class_names.get(class_id) or ("vessel" if class_id == 0 else f"class_{class_id}"))
         rows.append(
             {
                 "detection_id": f"det_{idx:03d}",

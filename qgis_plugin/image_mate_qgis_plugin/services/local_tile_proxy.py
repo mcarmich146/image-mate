@@ -439,6 +439,7 @@ class LocalTileProxy:
     def _make_handler(self):
         proxy = self
         tile_path_rx = re.compile(r"^/satellogic/cog/tiles/(?P<z>\d+)/(?P<x>\d+)/(?P<y>\d+)$")
+        telluric_tile_path_rx = re.compile(r"^/satellogic/telluric/tiles/(?P<z>\d+)/(?P<x>\d+)/(?P<y>\d+)$")
 
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):  # noqa: N802
@@ -459,6 +460,11 @@ class LocalTileProxy:
                     return
                 if parsed.path == "/stats":
                     self._write(200, json.dumps(proxy.stats_snapshot()).encode("utf-8"), "application/json")
+                    return
+
+                telluric_match = telluric_tile_path_rx.match(parsed.path or "")
+                if telluric_match is not None:
+                    self._handle_telluric_tile_request(parsed=parsed, match=telluric_match)
                     return
 
                 match = tile_path_rx.match(parsed.path or "")
@@ -1017,6 +1023,216 @@ class LocalTileProxy:
                 self.end_headers()
                 if payload:
                     self.wfile.write(payload)
+
+            def _handle_telluric_tile_request(self, *, parsed, match):
+                tile_started = time.perf_counter()
+                z = int(match.group("z"))
+                x = int(match.group("x"))
+                y = int(match.group("y"))
+                qs = parse_qs(parsed.query or "", keep_blank_values=False)
+                scene_id = str((qs.get("scene_id") or [""])[0]).strip()
+                raster_name = str((qs.get("raster_name") or qs.get("raster") or [""])[0]).strip()
+                contract_id = str((qs.get("contract_id") or [""])[0]).strip() or None
+                if not scene_id:
+                    self._write(400, b'{"detail":"scene_id query param is required"}', "application/json")
+                    return
+                if not raster_name:
+                    self._write(400, b'{"detail":"raster_name query param is required"}', "application/json")
+                    return
+
+                cache_key = proxy._cache_key(
+                    z=z,
+                    x=x,
+                    y=y,
+                    source_urls=[f"telluric://{scene_id}/{raster_name}"],
+                    contract_id=contract_id,
+                    scale=1,
+                    buffer=0,
+                    tile_matrix_set_id="Telluric",
+                    image_format="png",
+                    bands=[1, 2, 3],
+                )
+
+                proxy._request_started()
+                owns_inflight_slot = False
+                inflight_event: threading.Event | None = None
+                try:
+                    cached = proxy._cache_get(cache_key, allow_stale=False)
+                    if cached is not None:
+                        proxy._stat_inc("cache_hits")
+                        proxy._stat_inc("served_success")
+                        proxy._set_last(status=200)
+                        proxy._record_perf_sample(
+                            z=z,
+                            x=x,
+                            y=y,
+                            path="cache_hit",
+                            total_ms=(time.perf_counter() - tile_started) * 1000.0,
+                            source_count_used=1,
+                            source_count_total=1,
+                        )
+                        self._write(
+                            200,
+                            cached["content"],
+                            cached["media_type"],
+                            headers={"Cache-Control": "public, max-age=300", "X-Proxy-Cache": "hit"},
+                        )
+                        return
+                    proxy._stat_inc("cache_misses")
+
+                    owns_inflight_slot, inflight_event = proxy._acquire_inflight_tile(cache_key)
+                    if not owns_inflight_slot:
+                        wait_timeout = max(2.0, float(proxy._coalesce_wait_seconds or 2.0))
+                        try:
+                            inflight_event.wait(timeout=wait_timeout)
+                        except Exception:
+                            pass
+                        cached_after_wait = proxy._cache_get(cache_key, allow_stale=False)
+                        if cached_after_wait is not None:
+                            proxy._stat_inc("cache_hits")
+                            proxy._stat_inc("served_success")
+                            proxy._set_last(status=200)
+                            proxy._record_perf_sample(
+                                z=z,
+                                x=x,
+                                y=y,
+                                path="coalesced_hit",
+                                total_ms=(time.perf_counter() - tile_started) * 1000.0,
+                                source_count_used=1,
+                                source_count_total=1,
+                            )
+                            self._write(
+                                200,
+                                cached_after_wait["content"],
+                                cached_after_wait["media_type"],
+                                headers={"Cache-Control": "public, max-age=300", "X-Proxy-Cache": "coalesced"},
+                            )
+                            return
+                        owns_inflight_slot, inflight_event = proxy._acquire_inflight_tile(cache_key)
+
+                    with proxy._source_lock:
+                        service = proxy._source_service
+                    status, content, media_type = service.fetch_satellogic_telluric_tile(
+                        z=z,
+                        x=x,
+                        y=y,
+                        scene_id=scene_id,
+                        raster_name=raster_name,
+                        contract_id=contract_id,
+                        max_attempts=max(1, int(proxy._upstream_max_attempts or 1)),
+                        request_timeout=max(8, int(proxy._upstream_timeout_seconds or 8)),
+                    )
+                    status = int(status)
+                    media_type = str(media_type or "image/png").split(";")[0].strip() or "image/png"
+                    if status < 400 and media_type.lower() == "image/png" and not _is_valid_png(content):
+                        status = 502
+                        content = b'{"detail":"invalid PNG from telluric upstream"}'
+
+                    if status < 400:
+                        proxy._cache_put(cache_key, bytes(content or b""), media_type)
+                        proxy._stat_inc("served_success")
+                        proxy._set_last(status=200)
+                        proxy._record_perf_sample(
+                            z=z,
+                            x=x,
+                            y=y,
+                            path="mosaic",
+                            total_ms=(time.perf_counter() - tile_started) * 1000.0,
+                            source_count_used=1,
+                            source_count_total=1,
+                        )
+                        self._write(
+                            200,
+                            bytes(content or b""),
+                            media_type,
+                            headers={"Cache-Control": "public, max-age=300", "X-Proxy-Cache": "miss"},
+                        )
+                        return
+
+                    stale = proxy._cache_get(cache_key, allow_stale=True)
+                    if stale is not None:
+                        proxy._stat_inc("served_stale")
+                        proxy._set_last(status=200, error=f"telluric_stale_from_{status}")
+                        proxy._record_perf_sample(
+                            z=z,
+                            x=x,
+                            y=y,
+                            path="stale",
+                            total_ms=(time.perf_counter() - tile_started) * 1000.0,
+                            source_count_used=1,
+                            source_count_total=1,
+                        )
+                        self._write(
+                            200,
+                            stale["content"],
+                            stale["media_type"],
+                            headers={"Cache-Control": "public, max-age=120", "X-Proxy-Cache": "stale"},
+                        )
+                        return
+
+                    fallback_ttl = 60 if status == 404 else 20
+                    empty_tile = _transparent_png(256)
+                    proxy._cache_put(
+                        cache_key,
+                        empty_tile,
+                        "image/png",
+                        ttl_seconds=fallback_ttl,
+                        stale_ttl_seconds=max(120, fallback_ttl),
+                    )
+                    proxy._stat_inc("served_success")
+                    proxy._stat_inc("served_empty")
+                    if status != 404:
+                        proxy._stat_inc("upstream_errors")
+                    proxy._set_last(status=200, error=f"telluric_upstream_status_{status}_empty")
+                    proxy._emit_event(
+                        (
+                            f"served empty telluric tile zxy={z}/{x}/{y} status={status} "
+                            f"scene={scene_id} raster={raster_name} detail={_payload_snippet(content)}"
+                        ),
+                        level="warning",
+                    )
+                    proxy._record_perf_sample(
+                        z=z,
+                        x=x,
+                        y=y,
+                        path="empty",
+                        total_ms=(time.perf_counter() - tile_started) * 1000.0,
+                        source_count_used=1,
+                        source_count_total=1,
+                    )
+                    self._write(
+                        200,
+                        empty_tile,
+                        "image/png",
+                        headers={
+                            "Cache-Control": f"public, max-age={fallback_ttl}",
+                            "X-Proxy-Cache": "empty",
+                            "X-Tile-Empty": "1",
+                            "X-Upstream-Status": str(int(status)),
+                        },
+                    )
+                except Exception as exc:
+                    proxy._stat_inc("upstream_errors")
+                    proxy._set_last(status=502, error=str(exc))
+                    proxy._record_perf_sample(
+                        z=z,
+                        x=x,
+                        y=y,
+                        path="exception",
+                        total_ms=(time.perf_counter() - tile_started) * 1000.0,
+                        source_count_used=1,
+                        source_count_total=1,
+                    )
+                    proxy._emit_event(
+                        f"telluric tile proxy exception zxy={z}/{x}/{y} scene={scene_id} raster={raster_name} error={exc}",
+                        level="warning",
+                    )
+                    detail = {"detail": f"Telluric tile proxy failed: {exc}"}
+                    self._write(502, json.dumps(detail).encode("utf-8"), "application/json")
+                finally:
+                    if owns_inflight_slot and inflight_event is not None:
+                        proxy._release_inflight_tile(cache_key, inflight_event)
+                    proxy._request_finished()
 
         return Handler
 

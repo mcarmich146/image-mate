@@ -37,8 +37,11 @@ from qgis.PyQt.QtWidgets import (
     QPushButton,
     QProgressBar,
     QGroupBox,
+    QSizePolicy,
     QTabWidget,
     QTextEdit,
+    QTreeWidget,
+    QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -206,11 +209,297 @@ class WorkflowDockMixin:
         self.workflow_tabs = QTabWidget()
         self.workflow_canvas_tab = self._build_workflow_canvas_tab()
         self.workflow_log_tab = self._build_workflow_log_tab()
+        self.workflow_side_by_side_tab = self._build_workflow_side_by_side_tab()
         self.workflow_tabs.addTab(self.workflow_canvas_tab, "Canvas")
         self.workflow_tabs.addTab(self.workflow_log_tab, "Execution Log")
+        self.workflow_tabs.addTab(self.workflow_side_by_side_tab, "Side-By-Side")
 
         layout.addWidget(self.workflow_tabs, 1)
         return tab
+
+    def _build_workflow_side_by_side_tab(self):
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(8)
+
+        intro = QLabel(
+            "Choose project layers for left and right views, then turn on side-by-side mode. "
+            "Each view keeps independent layer selection while map panning/zooming stays synchronized."
+        )
+        intro.setWordWrap(True)
+
+        refresh_row = QHBoxLayout()
+        self.workflow_side_by_side_refresh_btn = QPushButton("Refresh Layer Tree")
+        self.workflow_side_by_side_refresh_btn.clicked.connect(self._emit_workflow_side_by_side_refresh_requested)
+        refresh_row.addWidget(self.workflow_side_by_side_refresh_btn)
+        refresh_row.addStretch(1)
+
+        trees_panel = QWidget(tab)
+        trees_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        trees_row = QHBoxLayout(trees_panel)
+        trees_row.setContentsMargins(0, 0, 0, 0)
+        trees_row.setSpacing(8)
+
+        lhs_group = QGroupBox("LHS Layers")
+        lhs_layout = QVBoxLayout(lhs_group)
+        lhs_layout.setContentsMargins(6, 6, 6, 6)
+        lhs_layout.setSpacing(6)
+        self.workflow_side_by_side_lhs_tree = QTreeWidget(lhs_group)
+        self.workflow_side_by_side_lhs_tree.setHeaderHidden(True)
+        self.workflow_side_by_side_lhs_tree.setAlternatingRowColors(True)
+        self.workflow_side_by_side_lhs_tree.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        lhs_layout.addWidget(self.workflow_side_by_side_lhs_tree, 1)
+        lhs_controls = QHBoxLayout()
+        lhs_select_all_btn = QPushButton("Select All")
+        lhs_select_all_btn.clicked.connect(
+            lambda: self._workflow_side_by_side_set_all_checks(self.workflow_side_by_side_lhs_tree, Qt.Checked)
+        )
+        lhs_clear_btn = QPushButton("Clear")
+        lhs_clear_btn.clicked.connect(
+            lambda: self._workflow_side_by_side_set_all_checks(self.workflow_side_by_side_lhs_tree, Qt.Unchecked)
+        )
+        lhs_controls.addWidget(lhs_select_all_btn)
+        lhs_controls.addWidget(lhs_clear_btn)
+        lhs_controls.addStretch(1)
+        lhs_layout.addLayout(lhs_controls)
+
+        rhs_group = QGroupBox("RHS Layers")
+        rhs_layout = QVBoxLayout(rhs_group)
+        rhs_layout.setContentsMargins(6, 6, 6, 6)
+        rhs_layout.setSpacing(6)
+        self.workflow_side_by_side_rhs_tree = QTreeWidget(rhs_group)
+        self.workflow_side_by_side_rhs_tree.setHeaderHidden(True)
+        self.workflow_side_by_side_rhs_tree.setAlternatingRowColors(True)
+        self.workflow_side_by_side_rhs_tree.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        rhs_layout.addWidget(self.workflow_side_by_side_rhs_tree, 1)
+        rhs_controls = QHBoxLayout()
+        rhs_select_all_btn = QPushButton("Select All")
+        rhs_select_all_btn.clicked.connect(
+            lambda: self._workflow_side_by_side_set_all_checks(self.workflow_side_by_side_rhs_tree, Qt.Checked)
+        )
+        rhs_clear_btn = QPushButton("Clear")
+        rhs_clear_btn.clicked.connect(
+            lambda: self._workflow_side_by_side_set_all_checks(self.workflow_side_by_side_rhs_tree, Qt.Unchecked)
+        )
+        rhs_controls.addWidget(rhs_select_all_btn)
+        rhs_controls.addWidget(rhs_clear_btn)
+        rhs_controls.addStretch(1)
+        rhs_layout.addLayout(rhs_controls)
+
+        lhs_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        rhs_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        trees_row.addWidget(lhs_group, 1)
+        trees_row.addWidget(rhs_group, 1)
+
+        mode_row = QHBoxLayout()
+        self.workflow_side_by_side_start_btn = QPushButton("Turn On Side-By-Side")
+        self.workflow_side_by_side_start_btn.clicked.connect(self._emit_workflow_side_by_side_start_requested)
+        self.workflow_side_by_side_review_btn = QPushButton("Refresh View")
+        self.workflow_side_by_side_review_btn.clicked.connect(self._emit_workflow_side_by_side_review_requested)
+        self.workflow_side_by_side_stop_btn = QPushButton("Turn Off Side-By-Side")
+        self.workflow_side_by_side_stop_btn.clicked.connect(self._emit_workflow_side_by_side_stop_requested)
+        mode_row.addWidget(self.workflow_side_by_side_start_btn)
+        mode_row.addWidget(self.workflow_side_by_side_review_btn)
+        mode_row.addWidget(self.workflow_side_by_side_stop_btn)
+        mode_row.addStretch(1)
+
+        self.workflow_side_by_side_status_label = QLabel("")
+        self.workflow_side_by_side_status_label.setWordWrap(True)
+
+        layout.addWidget(intro)
+        layout.addLayout(refresh_row)
+        layout.addWidget(trees_panel, 1)
+        layout.addLayout(mode_row)
+        layout.addWidget(self.workflow_side_by_side_status_label)
+        self.set_side_by_side_mode_state(False, "Side-by-side mode is off.")
+        return tab
+
+    def _emit_workflow_side_by_side_refresh_requested(self):
+        if hasattr(self, "workflow_side_by_side_refresh_requested"):
+            self.workflow_side_by_side_refresh_requested.emit()
+
+    def _emit_workflow_side_by_side_start_requested(self):
+        if not hasattr(self, "workflow_side_by_side_start_requested"):
+            return
+        lhs_layer_ids = self._workflow_side_by_side_collect_checked_layer_ids(
+            getattr(self, "workflow_side_by_side_lhs_tree", None)
+        )
+        rhs_layer_ids = self._workflow_side_by_side_collect_checked_layer_ids(
+            getattr(self, "workflow_side_by_side_rhs_tree", None)
+        )
+        self.workflow_side_by_side_start_requested.emit(
+            {
+                "lhs_layer_ids": lhs_layer_ids,
+                "rhs_layer_ids": rhs_layer_ids,
+            }
+        )
+
+    def _emit_workflow_side_by_side_stop_requested(self):
+        if hasattr(self, "workflow_side_by_side_stop_requested"):
+            self.workflow_side_by_side_stop_requested.emit()
+
+    def _emit_workflow_side_by_side_review_requested(self):
+        if not hasattr(self, "workflow_side_by_side_review_requested"):
+            return
+        lhs_layer_ids = self._workflow_side_by_side_collect_checked_layer_ids(
+            getattr(self, "workflow_side_by_side_lhs_tree", None)
+        )
+        rhs_layer_ids = self._workflow_side_by_side_collect_checked_layer_ids(
+            getattr(self, "workflow_side_by_side_rhs_tree", None)
+        )
+        self.workflow_side_by_side_review_requested.emit(
+            {
+                "lhs_layer_ids": lhs_layer_ids,
+                "rhs_layer_ids": rhs_layer_ids,
+            }
+        )
+
+    @staticmethod
+    def _workflow_side_by_side_capture_tree_state(tree_widget):
+        checked_layer_ids = set()
+        expanded_keys = set()
+        if tree_widget is None:
+            return checked_layer_ids, expanded_keys
+
+        def walk(item):
+            if item is None:
+                return
+            node_key = str(item.data(0, Qt.UserRole + 2) or "").strip()
+            node_type = str(item.data(0, Qt.UserRole + 1) or "").strip().lower()
+            if node_key and item.isExpanded():
+                expanded_keys.add(node_key)
+            if node_type == "layer" and item.checkState(0) == Qt.Checked:
+                layer_id = str(item.data(0, Qt.UserRole) or "").strip()
+                if layer_id:
+                    checked_layer_ids.add(layer_id)
+            for child_idx in range(item.childCount()):
+                walk(item.child(child_idx))
+
+        for idx in range(tree_widget.topLevelItemCount()):
+            walk(tree_widget.topLevelItem(idx))
+        return checked_layer_ids, expanded_keys
+
+    @staticmethod
+    def _workflow_side_by_side_set_all_checks(tree_widget, check_state):
+        if tree_widget is None:
+            return
+
+        def walk(item):
+            if item is None:
+                return
+            node_type = str(item.data(0, Qt.UserRole + 1) or "").strip().lower()
+            if node_type in {"group", "layer"}:
+                item.setCheckState(0, check_state)
+            for child_idx in range(item.childCount()):
+                walk(item.child(child_idx))
+
+        for idx in range(tree_widget.topLevelItemCount()):
+            walk(tree_widget.topLevelItem(idx))
+
+    @staticmethod
+    def _workflow_side_by_side_collect_checked_layer_ids(tree_widget):
+        selected_ids = []
+        if tree_widget is None:
+            return selected_ids
+
+        def walk(item):
+            if item is None:
+                return
+            node_type = str(item.data(0, Qt.UserRole + 1) or "").strip().lower()
+            if node_type == "layer":
+                layer_id = str(item.data(0, Qt.UserRole) or "").strip()
+                if layer_id and item.checkState(0) == Qt.Checked and layer_id not in selected_ids:
+                    selected_ids.append(layer_id)
+            for child_idx in range(item.childCount()):
+                walk(item.child(child_idx))
+
+        for idx in range(tree_widget.topLevelItemCount()):
+            walk(tree_widget.topLevelItem(idx))
+        return selected_ids
+
+    def _workflow_side_by_side_build_tree_item(self, node, *, checked_layer_ids, expanded_keys, depth):
+        if not isinstance(node, dict):
+            return None
+
+        node_type = str(node.get("type") or "").strip().lower()
+        node_name = str(node.get("name") or "").strip() or ("Group" if node_type == "group" else "Layer")
+        node_key = str(node.get("key") or "").strip()
+
+        item = QTreeWidgetItem([node_name])
+        item.setData(0, Qt.UserRole + 1, node_type)
+        item.setData(0, Qt.UserRole + 2, node_key)
+
+        if node_type == "group":
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable | Qt.ItemIsTristate)
+            item.setCheckState(0, Qt.Unchecked)
+            children = node.get("children") if isinstance(node.get("children"), list) else []
+            for child in children:
+                child_item = self._workflow_side_by_side_build_tree_item(
+                    child,
+                    checked_layer_ids=checked_layer_ids,
+                    expanded_keys=expanded_keys,
+                    depth=depth + 1,
+                )
+                if child_item is not None:
+                    item.addChild(child_item)
+            if node_key in expanded_keys or (depth == 0 and not expanded_keys):
+                item.setExpanded(True)
+            return item
+
+        if node_type == "layer":
+            layer_id = str(node.get("layer_id") or "").strip()
+            if not layer_id:
+                return None
+            item.setData(0, Qt.UserRole, layer_id)
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            item.setCheckState(0, Qt.Checked if layer_id in checked_layer_ids else Qt.Unchecked)
+            return item
+
+        return None
+
+    def _set_side_by_side_tree_payload(self, tree_widget, nodes):
+        if tree_widget is None:
+            return
+        checked_layer_ids, expanded_keys = self._workflow_side_by_side_capture_tree_state(tree_widget)
+        tree_widget.clear()
+
+        has_rows = False
+        for node in nodes:
+            item = self._workflow_side_by_side_build_tree_item(
+                node,
+                checked_layer_ids=checked_layer_ids,
+                expanded_keys=expanded_keys,
+                depth=0,
+            )
+            if item is not None:
+                tree_widget.addTopLevelItem(item)
+                has_rows = True
+
+        if not has_rows:
+            empty_item = QTreeWidgetItem(["No project layers available."])
+            empty_item.setFlags(empty_item.flags() & ~(Qt.ItemIsUserCheckable | Qt.ItemIsSelectable))
+            tree_widget.addTopLevelItem(empty_item)
+
+    def set_side_by_side_layer_tree(self, payload):
+        nodes = payload.get("nodes") if isinstance(payload, dict) else []
+        nodes = nodes if isinstance(nodes, list) else []
+        self._set_side_by_side_tree_payload(getattr(self, "workflow_side_by_side_lhs_tree", None), nodes)
+        self._set_side_by_side_tree_payload(getattr(self, "workflow_side_by_side_rhs_tree", None), nodes)
+
+    def set_side_by_side_mode_state(self, active, message=""):
+        is_active = bool(active)
+        if hasattr(self, "workflow_side_by_side_start_btn"):
+            self.workflow_side_by_side_start_btn.setEnabled(not is_active)
+        if hasattr(self, "workflow_side_by_side_review_btn"):
+            self.workflow_side_by_side_review_btn.setEnabled(True)
+        if hasattr(self, "workflow_side_by_side_stop_btn"):
+            self.workflow_side_by_side_stop_btn.setEnabled(is_active)
+        if hasattr(self, "workflow_side_by_side_status_label"):
+            text = str(message or "").strip()
+            if not text:
+                text = "Side-by-side mode is on." if is_active else "Side-by-side mode is off."
+            self.workflow_side_by_side_status_label.setText(text)
 
     def _build_workflow_source_tab(self):
         tab = QWidget()

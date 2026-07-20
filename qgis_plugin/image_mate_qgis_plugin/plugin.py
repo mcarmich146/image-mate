@@ -3,6 +3,7 @@
 
 from pathlib import Path
 from datetime import datetime, timezone
+import gc
 import json
 import tempfile
 import re
@@ -15,9 +16,12 @@ from urllib.parse import quote, urlencode, urlparse
 from urllib.request import Request, urlopen
 
 from qgis import processing
+from qgis.PyQt.QtCore import QCoreApplication
 from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtCore import QTimer
+from qgis.PyQt.QtCore import QUrl
 from qgis.PyQt.QtCore import QVariant
+from qgis.PyQt.QtGui import QDesktopServices
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import QAction
 from qgis.gui import QgsMapToolEmitPoint
@@ -70,6 +74,11 @@ from .services.mosaic_preview_resolution import (
     preview_item_id_candidates,
     preview_search_window,
 )
+from .services.side_by_side_layer_tree_service import (
+    build_project_layer_tree_snapshot,
+    resolve_selected_layers_for_canvas,
+)
+from .services.side_by_side_map_controller import SideBySideMapController
 from .services.simulation_config_service import SimulationConfigService
 from .services.settings_service import DEFAULT_CAMPAIGN_BASE_DIR
 from .services.settings_service import SettingsService
@@ -83,6 +92,12 @@ from .services.resample_workflows import (
     ResampleWorkflowSpec,
     resolution_hint_token,
 )
+from .services.time_lapse_video_service import (
+    TimeLapseVideoService,
+    normalize_time_lapse_fps,
+    normalize_time_lapse_frames,
+)
+from .services.vessel_training_service import VesselTrainingService
 from .services.vessel_detection_service import VesselDetectionService
 from .ui.main_dock import ImageMateMainDock
 from .mixins import SearchStreamingMixin
@@ -120,6 +135,8 @@ class ImageMatePlugin(SimulationExecutionMixin, WorkflowExecutionMixin, SearchSt
         self.source_service = SourceService(self.provider_settings)
         self.asset_intel_service = AssetIntelService(self.provider_settings.asset_intel_db_path)
         self.vessel_detection_service = VesselDetectionService()
+        self.vessel_training_service = VesselTrainingService(plugin_dir=self.plugin_dir)
+        self.time_lapse_video_service = TimeLapseVideoService()
         self._asset_intel_error = ""
         self._configure_asset_intel_service()
         self.local_tile_proxy = LocalTileProxy(self.source_service)
@@ -174,6 +191,7 @@ class ImageMatePlugin(SimulationExecutionMixin, WorkflowExecutionMixin, SearchSt
         self._sat_capture_group_fetch_state = {}
         self._disk_log_path = ""
         self._disk_log_fp = None
+        self._last_vessel_qa_batch_dir = ""
         self._show_debug_on_screen = False
         self._show_search_log_on_screen = False
         self._message_log_connected = False
@@ -201,12 +219,16 @@ class ImageMatePlugin(SimulationExecutionMixin, WorkflowExecutionMixin, SearchSt
         self._asset_intel_polygon_pick_tool = None
         self._asset_intel_polygon_prev_map_tool = None
         self._mosaic_preview_layer_id = None
-        self._mosaic_tracking_preview_layer_id = None
+        self._mosaic_tracking_preview_layer_ids = {}
         self._mosaic_tracking_preview_project_id = ""
         self._mosaic_tiling_layer_id = None
         self._mosaic_tiling_sync_guard = False
         self._mosaic_breakdown_rows = []
         self._mosaic_breakdown_context = {}
+        self._side_by_side_map_controller = SideBySideMapController(
+            self.iface,
+            mode_state_callback=self._on_workflow_side_by_side_mode_state_changed,
+        )
         self.local_tile_proxy.set_event_logger(self._on_local_proxy_event)
 
     def initGui(self):
@@ -256,6 +278,7 @@ class ImageMatePlugin(SimulationExecutionMixin, WorkflowExecutionMixin, SearchSt
         self._clear_mosaic_preview_layer()
         self._clear_mosaic_tracking_preview_layer()
         self._clear_mosaic_tiling_layer()
+        self._side_by_side_map_controller.cleanup()
         self._close_dock()
         if self.local_tile_proxy is not None:
             self.local_tile_proxy.stop()
@@ -281,6 +304,7 @@ class ImageMatePlugin(SimulationExecutionMixin, WorkflowExecutionMixin, SearchSt
             self.dock.destroyed.connect(self._on_dock_destroyed)
             self.dock.destroyed.connect(self._on_simulation_dock_destroyed)
             self.dock.destroyed.connect(self._on_asset_intel_dock_destroyed)
+            self.dock.destroyed.connect(self._on_side_by_side_dock_destroyed)
             self.dock.validate_requested.connect(self.validate_setup)
             self.dock.settings_saved.connect(self.save_settings_from_dock)
             self.dock.campaign_apply_requested.connect(self.handle_campaign_apply_request)
@@ -290,17 +314,24 @@ class ImageMatePlugin(SimulationExecutionMixin, WorkflowExecutionMixin, SearchSt
             self.dock.location_suggestions_requested.connect(self.handle_location_suggestions_request)
             self.dock.result_selected.connect(self.handle_result_selected)
             self.dock.execute_workflow_requested.connect(self.handle_execute_workflow_request)
+            self.dock.workflow_side_by_side_refresh_requested.connect(self.handle_workflow_side_by_side_refresh_request)
+            self.dock.workflow_side_by_side_start_requested.connect(self.handle_workflow_side_by_side_start_request)
+            self.dock.workflow_side_by_side_review_requested.connect(self.handle_workflow_side_by_side_review_request)
+            self.dock.workflow_side_by_side_stop_requested.connect(self.handle_workflow_side_by_side_stop_request)
             self.dock.create_vrt_requested.connect(self.handle_create_vrt_request)
             self.dock.sharpen_image_requested.connect(self.handle_sharpen_image_request)
             self.dock.resample_image_10m_requested.connect(self.handle_resample_image_10m_request)
             self.dock.resample_image_10p8_to_3m_requested.connect(self.handle_resample_image_10p8_to_3m_request)
             self.dock.resample_image_2m_to_1m_requested.connect(self.handle_resample_image_2m_to_1m_request)
             self.dock.resample_image_3p76m_to_1m_requested.connect(self.handle_resample_image_3p76m_to_1m_request)
+            self.dock.generate_time_lapse_requested.connect(self.handle_generate_time_lapse_request)
             self.dock.vessel_detect_requested.connect(self.handle_vessel_detect_request)
             self.dock.vessel_detect_extent_requested.connect(self.handle_vessel_detect_current_extent_request)
             self.dock.vessel_qa_layer_create_requested.connect(self.handle_vessel_create_qa_layer_request)
             self.dock.vessel_qa_status_set_requested.connect(self.handle_vessel_set_qa_status_request)
             self.dock.vessel_qa_finalize_requested.connect(self.handle_vessel_finalize_qa_batch_request)
+            self.dock.vessel_qa_open_batch_folder_requested.connect(self.handle_vessel_open_qa_batch_folder_request)
+            self.dock.vessel_qa_model_update_requested.connect(self.handle_vessel_model_update_request)
             self.dock.tasking_refresh_requested.connect(self.handle_tasking_refresh_request)
             self.dock.tasking_submit_requested.connect(self.handle_tasking_submit_request)
             self.dock.tasking_order_selected.connect(self.handle_tasking_order_selected)
@@ -315,6 +346,7 @@ class ImageMatePlugin(SimulationExecutionMixin, WorkflowExecutionMixin, SearchSt
             self.dock.mosaic_mark_accepted_requested.connect(self.handle_mosaic_mark_accepted_request)
             self.dock.mosaic_retask_requested.connect(self.handle_mosaic_retask_request)
             self.dock.mosaic_cancel_requested.connect(self.handle_mosaic_cancel_request)
+            self.dock.mosaic_more_requested.connect(self.handle_mosaic_more_request)
             self.dock.mosaic_refresh_projects_requested.connect(self.handle_mosaic_refresh_projects_request)
             self.dock.monitoring_refresh_requested.connect(self.handle_monitoring_refresh_request)
             self.dock.monitoring_create_subscription_requested.connect(self.handle_monitoring_create_subscription_request)
@@ -353,8 +385,12 @@ class ImageMatePlugin(SimulationExecutionMixin, WorkflowExecutionMixin, SearchSt
             self._sync_download_monitor_to_dock()
             self._simulation_bind_dock_data()
             self._refresh_asset_intel_data()
+            self._refresh_workflow_side_by_side_layer_tree()
+            self._sync_workflow_side_by_side_mode_to_dock()
             self.iface.addDockWidget(Qt.RightDockWidgetArea, self.dock)
 
+        self._refresh_workflow_side_by_side_layer_tree()
+        self._sync_workflow_side_by_side_mode_to_dock()
         self.dock.show()
         self.dock.raise_()
         self._log_info("Dock opened")
@@ -364,6 +400,223 @@ class ImageMatePlugin(SimulationExecutionMixin, WorkflowExecutionMixin, SearchSt
 
     def _on_asset_intel_dock_destroyed(self, _obj=None):
         self._stop_asset_intel_polygon_pick_mode(set_pan=False)
+
+    def _on_side_by_side_dock_destroyed(self, _obj=None):
+        self._side_by_side_map_controller.stop()
+
+    @staticmethod
+    def _normalize_layer_id_list(values):
+        if not isinstance(values, list):
+            return []
+        out = []
+        for value in values:
+            layer_id = str(value or "").strip()
+            if layer_id and layer_id not in out:
+                out.append(layer_id)
+        return out
+
+    def _on_workflow_side_by_side_mode_state_changed(self, active):
+        is_active = bool(active)
+        message = "Side-by-side mode is on." if is_active else "Side-by-side mode is off."
+        self._sync_workflow_side_by_side_mode_to_dock(active=is_active, message=message)
+
+    def _sync_workflow_side_by_side_mode_to_dock(self, *, active=None, message=""):
+        if self.dock is None or not hasattr(self.dock, "set_side_by_side_mode_state"):
+            return
+        if active is None:
+            active = self._side_by_side_map_controller.is_active()
+        self.dock.set_side_by_side_mode_state(bool(active), message=message)
+
+    def _refresh_workflow_side_by_side_layer_tree(self):
+        if self.dock is None or not hasattr(self.dock, "set_side_by_side_layer_tree"):
+            return
+        payload = build_project_layer_tree_snapshot(project=QgsProject.instance())
+        self.dock.set_side_by_side_layer_tree(payload)
+
+    def handle_workflow_side_by_side_refresh_request(self):
+        self._refresh_workflow_side_by_side_layer_tree()
+        self._sync_workflow_side_by_side_mode_to_dock()
+
+    @staticmethod
+    def _side_by_side_title_for_selection(*, layer_ids, resolved_layers, default_title):
+        ids = layer_ids if isinstance(layer_ids, list) else []
+        for layer_id in ids:
+            if not layer_id:
+                continue
+            layer = QgsProject.instance().mapLayer(str(layer_id))
+            if layer is None:
+                continue
+            name = str(layer.name() or "").strip()
+            if name:
+                return name
+        for layer in resolved_layers or []:
+            name = str(getattr(layer, "name", lambda: "")() or "").strip()
+            if name:
+                return name
+        return str(default_title or "").strip() or "View"
+
+    def _resolve_side_by_side_selection(self, payload):
+        request = payload if isinstance(payload, dict) else {}
+        lhs_layer_ids = self._normalize_layer_id_list(request.get("lhs_layer_ids"))
+        rhs_layer_ids = self._normalize_layer_id_list(request.get("rhs_layer_ids"))
+
+        if not lhs_layer_ids:
+            return {
+                "ok": False,
+                "message": "Side-by-side mode requires at least one LHS layer selection.",
+                "dock_message": "Select at least one LHS layer.",
+            }
+        if not rhs_layer_ids:
+            return {
+                "ok": False,
+                "message": "Side-by-side mode requires at least one RHS layer selection.",
+                "dock_message": "Select at least one RHS layer.",
+            }
+
+        project = QgsProject.instance()
+        lhs_layers = resolve_selected_layers_for_canvas(selected_layer_ids=lhs_layer_ids, project=project)
+        rhs_layers = resolve_selected_layers_for_canvas(selected_layer_ids=rhs_layer_ids, project=project)
+
+        if not lhs_layers:
+            return {
+                "ok": False,
+                "message": "Selected LHS layers are not available in the current project.",
+                "dock_message": "LHS layer selection is invalid for the current project state.",
+            }
+        if not rhs_layers:
+            return {
+                "ok": False,
+                "message": "Selected RHS layers are not available in the current project.",
+                "dock_message": "RHS layer selection is invalid for the current project state.",
+            }
+
+        lhs_title = self._side_by_side_title_for_selection(
+            layer_ids=lhs_layer_ids,
+            resolved_layers=lhs_layers,
+            default_title="LHS",
+        )
+        rhs_title = self._side_by_side_title_for_selection(
+            layer_ids=rhs_layer_ids,
+            resolved_layers=rhs_layers,
+            default_title="RHS",
+        )
+
+        return {
+            "ok": True,
+            "lhs_layer_ids": lhs_layer_ids,
+            "rhs_layer_ids": rhs_layer_ids,
+            "lhs_layers": lhs_layers,
+            "rhs_layers": rhs_layers,
+            "lhs_title": lhs_title,
+            "rhs_title": rhs_title,
+        }
+
+    def _side_by_side_canvas_context(self):
+        canvas = self.iface.mapCanvas() if self.iface is not None else None
+        initial_extent = None
+        destination_crs = None
+        if canvas is not None:
+            try:
+                initial_extent = QgsRectangle(canvas.extent())
+            except Exception:
+                initial_extent = None
+            try:
+                destination_crs = canvas.mapSettings().destinationCrs()
+            except Exception:
+                destination_crs = None
+        return initial_extent, destination_crs
+
+    def handle_workflow_side_by_side_start_request(self, payload):
+        resolved = self._resolve_side_by_side_selection(payload)
+        if not bool(resolved.get("ok")):
+            message = str(resolved.get("message") or "Invalid side-by-side layer selection.").strip()
+            dock_message = str(resolved.get("dock_message") or "").strip()
+            self.iface.messageBar().pushMessage(
+                "Image Mate",
+                message,
+                level=Qgis.Warning,
+                duration=8,
+            )
+            self._sync_workflow_side_by_side_mode_to_dock(active=False, message=dock_message)
+            return
+
+        initial_extent, destination_crs = self._side_by_side_canvas_context()
+        lhs_layers = list(resolved.get("lhs_layers") or [])
+        rhs_layers = list(resolved.get("rhs_layers") or [])
+
+        self._side_by_side_map_controller.start(
+            lhs_layers=lhs_layers,
+            rhs_layers=rhs_layers,
+            initial_extent=initial_extent,
+            destination_crs=destination_crs,
+            lhs_default_title=str(resolved.get("lhs_title") or "").strip(),
+            rhs_default_title=str(resolved.get("rhs_title") or "").strip(),
+            preserve_extent_if_active=False,
+        )
+        self._sync_workflow_side_by_side_mode_to_dock(
+            active=True,
+            message=(
+                "Side-by-side mode active: "
+                f"LHS {len(lhs_layers)} layer(s), RHS {len(rhs_layers)} layer(s)."
+            ),
+        )
+        self.iface.messageBar().pushMessage(
+            "Image Mate",
+            "Side-by-side mode started.",
+            level=Qgis.Info,
+            duration=5,
+        )
+
+    def handle_workflow_side_by_side_review_request(self, payload):
+        resolved = self._resolve_side_by_side_selection(payload)
+        if not bool(resolved.get("ok")):
+            message = str(resolved.get("message") or "Invalid side-by-side layer selection.").strip()
+            dock_message = str(resolved.get("dock_message") or "").strip()
+            self.iface.messageBar().pushMessage(
+                "Image Mate",
+                message,
+                level=Qgis.Warning,
+                duration=8,
+            )
+            self._sync_workflow_side_by_side_mode_to_dock(active=False, message=dock_message)
+            return
+
+        mode_was_active = self._side_by_side_map_controller.is_active()
+        initial_extent, destination_crs = self._side_by_side_canvas_context()
+        lhs_layers = list(resolved.get("lhs_layers") or [])
+        rhs_layers = list(resolved.get("rhs_layers") or [])
+
+        self._side_by_side_map_controller.start(
+            lhs_layers=lhs_layers,
+            rhs_layers=rhs_layers,
+            initial_extent=initial_extent,
+            destination_crs=destination_crs,
+            lhs_default_title=str(resolved.get("lhs_title") or "").strip(),
+            rhs_default_title=str(resolved.get("rhs_title") or "").strip(),
+            preserve_extent_if_active=True,
+        )
+        message = (
+            "Side-by-side review refreshed."
+            if mode_was_active
+            else "Side-by-side mode started from Refresh View."
+        )
+        self._sync_workflow_side_by_side_mode_to_dock(
+            active=True,
+            message=(
+                "Side-by-side mode active: "
+                f"LHS {len(lhs_layers)} layer(s), RHS {len(rhs_layers)} layer(s)."
+            ),
+        )
+        self.iface.messageBar().pushMessage(
+            "Image Mate",
+            message,
+            level=Qgis.Info,
+            duration=5,
+        )
+
+    def handle_workflow_side_by_side_stop_request(self):
+        self._side_by_side_map_controller.stop()
+        self._sync_workflow_side_by_side_mode_to_dock(active=False, message="Side-by-side mode is off.")
 
     def handle_simulation_scenario_changed(self, scenario_id):
         scenario = str(scenario_id or "").strip().lower()
@@ -1387,6 +1640,102 @@ class ImageMatePlugin(SimulationExecutionMixin, WorkflowExecutionMixin, SearchSt
             payload=payload,
             workflow=RESAMPLE_WORKFLOW_MERLIN_3P76M_TO_1M,
         )
+
+    def handle_generate_time_lapse_request(self, payload):
+        request = payload if isinstance(payload, dict) else {}
+        try:
+            frame_specs = normalize_time_lapse_frames(request.get("frames"))
+        except Exception as exc:
+            self.iface.messageBar().pushMessage(
+                "Image Mate",
+                f"Generate Time Lapse request is invalid: {exc}",
+                level=Qgis.Warning,
+                duration=10,
+            )
+            return
+
+        fps = normalize_time_lapse_fps(request.get("frames_per_second"), default=2, min_value=1, max_value=60)
+        output_path_value = str(request.get("output_path") or "").strip()
+        output_name_hint = str(request.get("output_name_hint") or "").strip()
+
+        try:
+            if not output_path_value:
+                output_path_value = str(
+                    self._campaign_geoprocessing_output_path(
+                        operation="time_lapse_video",
+                        suffix=".mp4",
+                        hint=output_name_hint or "time_lapse",
+                    )
+                )
+            elif not output_path_value.lower().endswith(".mp4"):
+                output_path_value = f"{output_path_value}.mp4"
+        except Exception as exc:
+            self.iface.messageBar().pushMessage(
+                "Image Mate",
+                f"Time lapse output path could not be resolved: {exc}",
+                level=Qgis.Warning,
+                duration=10,
+            )
+            return
+
+        output_path = Path(output_path_value)
+        if output_path.parent and not output_path.parent.exists():
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        canvas = self.iface.mapCanvas() if self.iface is not None else None
+        map_extent = None
+        destination_crs = None
+        if canvas is not None:
+            try:
+                current_extent = canvas.extent()
+                if current_extent is not None and not current_extent.isEmpty():
+                    map_extent = QgsRectangle(current_extent)
+            except Exception:
+                map_extent = None
+            try:
+                map_crs = canvas.mapSettings().destinationCrs()
+                if map_crs is not None and map_crs.isValid():
+                    destination_crs = map_crs
+            except Exception:
+                destination_crs = None
+
+        self._append_debug_log(
+            "Generate Time Lapse request: "
+            f"frames={len(frame_specs)} fps={fps} output={output_path}"
+        )
+
+        try:
+            result = self.time_lapse_video_service.render_project_time_lapse(
+                frame_specs=frame_specs,
+                output_path=output_path,
+                frames_per_second=fps,
+                temp_dir=self.temp_dir,
+                map_extent=map_extent,
+                destination_crs=destination_crs,
+                log_callback=lambda message, level=Qgis.Info: self._append_debug_log(
+                    f"[Time Lapse] {message}",
+                    level=level,
+                ),
+            )
+            self.iface.messageBar().pushMessage(
+                "Image Mate",
+                f"Time lapse video created: {result.get('output_path')}",
+                level=Qgis.Success,
+                duration=10,
+            )
+            self._append_debug_log(
+                "Time lapse generated successfully: "
+                f"path={result.get('output_path')} "
+                f"frames={result.get('frame_count')} sequence_frames={result.get('sequence_frames')}"
+            )
+        except Exception as exc:
+            self.iface.messageBar().pushMessage(
+                "Image Mate",
+                f"Generate Time Lapse failed: {exc}",
+                level=Qgis.Warning,
+                duration=12,
+            )
+            self._append_debug_log(f"Generate Time Lapse failed: {exc}", level=Qgis.Warning)
 
     def _handle_resample_chain_workflow_request(self, *, payload, workflow: ResampleWorkflowSpec):
         request = payload if isinstance(payload, dict) else {}
@@ -3212,6 +3561,7 @@ class ImageMatePlugin(SimulationExecutionMixin, WorkflowExecutionMixin, SearchSt
                 },
             }
             manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+            self._last_vessel_qa_batch_dir = str(Path(export_dir).resolve())
 
             self.iface.messageBar().pushMessage(
                 "Image Mate",
@@ -3230,6 +3580,88 @@ class ImageMatePlugin(SimulationExecutionMixin, WorkflowExecutionMixin, SearchSt
                 duration=12,
             )
             self._append_debug_log(f"Finalize vessel QA batch failed: {exc}", level=Qgis.Warning)
+
+    def handle_vessel_open_qa_batch_folder_request(self, payload):
+        request = payload if isinstance(payload, dict) else {}
+        try:
+            batch_id = str(request.get("batch_id") or "").strip()
+            preferred_batch_dir = str(request.get("batch_dir") or self._last_vessel_qa_batch_dir).strip()
+            batch_context = self.vessel_training_service.resolve_batch_context(
+                campaign_storage_enabled=self._campaign_storage_enabled(),
+                campaign_storage=self.campaign_storage,
+                current_campaign_uid=self.current_campaign_uid,
+                temp_dir=self.temp_dir,
+                batch_id=batch_id,
+                preferred_batch_dir=preferred_batch_dir,
+            )
+            self._last_vessel_qa_batch_dir = str(batch_context.batch_dir)
+            opened = QDesktopServices.openUrl(QUrl.fromLocalFile(str(batch_context.batch_dir)))
+            if not opened:
+                raise RuntimeError(f"Failed to open folder: {batch_context.batch_dir}")
+            self.iface.messageBar().pushMessage(
+                "Image Mate",
+                f"Opened vessel QA batch folder: {batch_context.batch_dir}",
+                level=Qgis.Success,
+                duration=10,
+            )
+            self._append_debug_log(
+                f"Vessel QA batch folder opened: batch_id={batch_context.batch_id} path={batch_context.batch_dir}"
+            )
+        except Exception as exc:
+            self.iface.messageBar().pushMessage(
+                "Image Mate",
+                f"Open vessel QA batch folder failed: {exc}",
+                level=Qgis.Warning,
+                duration=12,
+            )
+            self._append_debug_log(f"Open vessel QA batch folder failed: {exc}", level=Qgis.Warning)
+
+    def handle_vessel_model_update_request(self, payload):
+        request = payload if isinstance(payload, dict) else {}
+        try:
+            result = self.vessel_training_service.initialize_model_update_from_batch(
+                campaign_storage_enabled=self._campaign_storage_enabled(),
+                campaign_storage=self.campaign_storage,
+                current_campaign_uid=self.current_campaign_uid,
+                temp_dir=self.temp_dir,
+                request=request,
+                preferred_batch_dir=self._last_vessel_qa_batch_dir,
+            )
+            self._last_vessel_qa_batch_dir = str(result.get("batch_dir") or self._last_vessel_qa_batch_dir).strip()
+
+            train_manifest_path = str(result.get("train_run_manifest_path") or "").strip()
+            self.iface.messageBar().pushMessage(
+                "Image Mate",
+                (
+                    "Vessel model update scaffold initialized: "
+                    f"dataset={result.get('dataset_id')} run={Path(train_manifest_path).parent.name if train_manifest_path else '(unknown)'}"
+                ),
+                level=Qgis.Success,
+                duration=12,
+            )
+            self._append_debug_log(
+                "Vessel model update scaffold initialized: "
+                f"batch_id={result.get('batch_id')} dataset_id={result.get('dataset_id')} "
+                f"dataset_dir={result.get('dataset_dir')} train_manifest={train_manifest_path}"
+            )
+
+            if bool(request.get("open_batch_folder")):
+                batch_dir = str(result.get("batch_dir") or "").strip()
+                if batch_dir:
+                    opened = QDesktopServices.openUrl(QUrl.fromLocalFile(batch_dir))
+                    if not opened:
+                        self._append_debug_log(
+                            f"Model update scaffold: failed to open batch folder {batch_dir}",
+                            level=Qgis.Warning,
+                        )
+        except Exception as exc:
+            self.iface.messageBar().pushMessage(
+                "Image Mate",
+                f"Vessel model update failed: {exc}",
+                level=Qgis.Warning,
+                duration=12,
+            )
+            self._append_debug_log(f"Vessel model update failed: {exc}", level=Qgis.Warning)
 
     @staticmethod
     def _project_raster_layer_by_id(layer_id):
@@ -3439,34 +3871,44 @@ class ImageMatePlugin(SimulationExecutionMixin, WorkflowExecutionMixin, SearchSt
             self._last_search_request = dict(request_payload)
             items = list(self._search_with_satellogic_detail_parity(request_payload) or [])
             source_id = str(request_payload.get("source_id") or "").strip().lower()
-            require_full_overlap = bool(request_payload.get("require_full_aoi_overlap", False))
-            if require_full_overlap:
+            coverage_mode = str(request_payload.get("min_coverage_filter") or "").strip().lower()
+            if coverage_mode not in {"touching", "full", "half"}:
+                coverage_mode = "full" if bool(request_payload.get("require_full_aoi_overlap", False)) else "half"
+            min_overlap_ratio = 1.0 if coverage_mode == "full" else (0.5 if coverage_mode == "half" else None)
+            if min_overlap_ratio is not None:
                 original_items = list(items)
                 original_count = len(original_items)
-                filtered_items, dropped_count, invalid_geometry_count = self._filter_items_full_aoi_overlap(
+                filtered_items, dropped_count, invalid_geometry_count = self._filter_items_min_aoi_overlap(
                     items=items,
                     aoi_geometry=geometry,
+                    min_overlap_ratio=float(min_overlap_ratio),
                 )
-                if source_id == "merlin-s2" and original_count > 0 and len(filtered_items) == 0:
+                if (
+                    source_id == "merlin-s2"
+                    and coverage_mode == "full"
+                    and original_count > 0
+                    and len(filtered_items) == 0
+                ):
                     items = original_items
                     self._append_search_log(
-                        "Coverage filter ON (full AOI overlap): produced 0 Sentinel-2 results; "
+                        "Coverage filter ON (Full Coverage): produced 0 Sentinel-2 results; "
                         "auto-fallback applied to keep overlap matches."
                     )
                 else:
                     items = filtered_items
                     self._append_search_log(
-                        f"Coverage filter ON (full AOI overlap): kept {len(items)}/{original_count} item(s)."
+                        f"Coverage filter ON ({coverage_mode.title()} Coverage): "
+                        f"kept {len(items)}/{original_count} item(s)."
                     )
                     if dropped_count > 0:
-                        self._append_search_log(f"Coverage filter removed {dropped_count} partial/non-covering item(s).")
+                        self._append_search_log(f"Coverage filter removed {dropped_count} item(s) below threshold.")
                     if invalid_geometry_count > 0:
                         self._append_search_log(
                             f"Coverage filter skipped {invalid_geometry_count} item(s) with invalid geometry.",
                             level=Qgis.Warning,
                         )
             else:
-                self._append_search_log("Coverage filter OFF: partial AOI overlap results are allowed.")
+                self._append_search_log("Coverage filter OFF: overlap results are allowed.")
             self.search_items = {str(item.get("id") or ""): item for item in items or []}
             self._auto_stream_pinned_item_id = ""
             self._render_search_results_layer(items)
@@ -3508,6 +3950,13 @@ class ImageMatePlugin(SimulationExecutionMixin, WorkflowExecutionMixin, SearchSt
                 self.dock.set_search_enabled(True)
 
     def _filter_items_full_aoi_overlap(self, *, items, aoi_geometry):
+        return self._filter_items_min_aoi_overlap(
+            items=items,
+            aoi_geometry=aoi_geometry,
+            min_overlap_ratio=1.0,
+        )
+
+    def _filter_items_min_aoi_overlap(self, *, items, aoi_geometry, min_overlap_ratio):
         rows = [row for row in (items or []) if isinstance(row, dict)]
         aoi_geom = self._geometry_from_geojson(aoi_geometry if isinstance(aoi_geometry, dict) else None)
         if aoi_geom is None or aoi_geom.isEmpty():
@@ -3521,6 +3970,18 @@ class ImageMatePlugin(SimulationExecutionMixin, WorkflowExecutionMixin, SearchSt
             aoi_bbox = aoi_geom.boundingBox()
         except Exception:
             aoi_bbox = None
+        try:
+            aoi_area = abs(float(aoi_geom.area()))
+        except Exception:
+            aoi_area = 0.0
+        if aoi_area <= 0.0:
+            self._append_search_log(
+                "Coverage filter skipped: AOI area is zero.",
+                level=Qgis.Warning,
+            )
+            return rows, 0, 0
+
+        threshold = max(0.0, min(1.0, float(min_overlap_ratio or 0.0)))
 
         kept = []
         invalid_geometry_count = 0
@@ -3536,22 +3997,37 @@ class ImageMatePlugin(SimulationExecutionMixin, WorkflowExecutionMixin, SearchSt
             if aoi_bbox is not None:
                 try:
                     candidate_bbox = candidate_geom.boundingBox()
-                    if candidate_bbox is not None and not candidate_bbox.contains(aoi_bbox):
+                    if threshold >= 0.999999:
+                        if candidate_bbox is not None and not candidate_bbox.contains(aoi_bbox):
+                            continue
+                    elif candidate_bbox is not None and not candidate_bbox.intersects(aoi_bbox):
                         continue
                 except Exception:
                     pass
-            contains = False
-            try:
-                contains = candidate_geom.contains(aoi_geom)
-            except Exception:
+
+            overlap_ratio = 0.0
+            if threshold >= 0.999999:
                 contains = False
-            if not contains:
                 try:
-                    uncovered = aoi_geom.difference(candidate_geom)
-                    contains = uncovered is not None and uncovered.isEmpty()
+                    contains = candidate_geom.contains(aoi_geom)
                 except Exception:
                     contains = False
-            if contains:
+                if not contains:
+                    try:
+                        uncovered = aoi_geom.difference(candidate_geom)
+                        contains = uncovered is not None and uncovered.isEmpty()
+                    except Exception:
+                        contains = False
+                overlap_ratio = 1.0 if contains else 0.0
+            else:
+                try:
+                    overlap_geom = candidate_geom.intersection(aoi_geom)
+                    overlap_area = abs(float(overlap_geom.area())) if overlap_geom is not None else 0.0
+                    overlap_ratio = overlap_area / aoi_area if aoi_area > 0.0 else 0.0
+                except Exception:
+                    overlap_ratio = 0.0
+
+            if overlap_ratio + 1e-9 >= threshold:
                 kept.append(row)
 
         dropped_count = max(0, len(rows) - len(kept))
@@ -3948,6 +4424,192 @@ class ImageMatePlugin(SimulationExecutionMixin, WorkflowExecutionMixin, SearchSt
                 out.append(row)
         return out
 
+    @staticmethod
+    def _format_download_layer_timestamp(value):
+        text = str(value or "").strip()
+        if not text:
+            return ""
+        candidate = text
+        if candidate.endswith("Z"):
+            candidate = f"{candidate[:-1]}+00:00"
+        try:
+            parsed = datetime.fromisoformat(candidate)
+            if parsed.tzinfo is not None:
+                parsed = parsed.astimezone(timezone.utc)
+            return parsed.strftime("%Y-%m-%dT%H:%M:%S")
+        except Exception:
+            pass
+        match = re.match(r"^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})", text)
+        if match:
+            return f"{match.group(1)}T{match.group(2)}"
+        return ""
+
+    def _download_group_display_timestamp(self, group_items):
+        rows = [row for row in (group_items or []) if isinstance(row, dict)]
+        for row in rows:
+            stamp = self._format_download_layer_timestamp(row.get("datetime"))
+            if stamp:
+                return stamp
+        return datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+
+    @staticmethod
+    def _download_group_layer_name(*, group, fallback_hint):
+        row = group if isinstance(group, dict) else {}
+        stamp = str(row.get("display_timestamp") or "").strip()
+        outcome_id = str(row.get("outcome_id") or "").strip() or str(fallback_hint or "").strip()
+        if stamp and outcome_id:
+            return f"{stamp} {outcome_id}"
+        return outcome_id or stamp or "downloaded_imagery"
+
+    @staticmethod
+    def _normalized_band_token(value):
+        token = str(value or "").strip().lower()
+        if token in {"r", "red"}:
+            return "red"
+        if token in {"g", "green"}:
+            return "green"
+        if token in {"b", "blue"}:
+            return "blue"
+        if token in {"nir", "nearinfrared", "near_infrared"}:
+            return "nir"
+        return ""
+
+    @classmethod
+    def _band_tokens_from_band_order_text(cls, text):
+        raw = str(text or "").strip().lower()
+        if not raw:
+            return []
+        normalized = re.sub(r"[^a-z0-9]+", " ", raw).strip()
+        if not normalized:
+            return []
+        tokens = []
+        for token in normalized.split():
+            if token == "rgb":
+                tokens.extend(["red", "green", "blue"])
+                continue
+            normalized_token = cls._normalized_band_token(token)
+            if normalized_token:
+                tokens.append(normalized_token)
+        return tokens
+
+    @classmethod
+    def _rgb_band_map_from_band_order_text(cls, text, *, band_count):
+        tokens = cls._band_tokens_from_band_order_text(text)
+        if len(tokens) < 3:
+            return None
+        if "red" not in tokens or "green" not in tokens or "blue" not in tokens:
+            return None
+        red_band = int(tokens.index("red")) + 1
+        green_band = int(tokens.index("green")) + 1
+        blue_band = int(tokens.index("blue")) + 1
+        max_idx = max(red_band, green_band, blue_band)
+        if int(max_idx) > int(max(1, int(band_count or 0))):
+            return None
+        return (red_band, green_band, blue_band)
+
+    @classmethod
+    def _band_order_text_from_item(cls, item):
+        row = item if isinstance(item, dict) else {}
+        for key in ("band_order", "bandOrder", "band_order_string", "bandOrderString"):
+            value = row.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+
+        raw = row.get("raw")
+        raw_row = raw if isinstance(raw, dict) else {}
+        properties = raw_row.get("properties") if isinstance(raw_row.get("properties"), dict) else {}
+
+        band_rows = properties.get("eo:bands")
+        if isinstance(band_rows, list):
+            band_names = []
+            for band in band_rows:
+                band_row = band if isinstance(band, dict) else {}
+                token = (
+                    str(band_row.get("common_name") or "").strip()
+                    or str(band_row.get("name") or "").strip()
+                    or str(band_row.get("id") or "").strip()
+                )
+                normalized = cls._normalized_band_token(token)
+                if normalized:
+                    band_names.append(normalized)
+            if band_names:
+                return " ".join(band_names)
+
+        for scope in (properties, raw_row):
+            if not isinstance(scope, dict):
+                continue
+            for key, value in scope.items():
+                if not isinstance(value, str):
+                    continue
+                key_norm = re.sub(r"[^a-z0-9]+", "_", str(key or "").strip().lower())
+                if "band" not in key_norm:
+                    continue
+                if "order" not in key_norm and "name" not in key_norm:
+                    continue
+                text = str(value or "").strip()
+                if text:
+                    return text
+        return ""
+
+    def _download_group_band_order_text(self, group_items):
+        rows = [row for row in (group_items or []) if isinstance(row, dict)]
+        for row in rows:
+            text = self._band_order_text_from_item(row)
+            if text:
+                return text
+        return ""
+
+    def _apply_download_layer_rendering(self, *, layer, band_order_text):
+        if layer is None or not layer.isValid():
+            return
+
+        rgb_map = self._rgb_band_map_from_band_order_text(
+            band_order_text,
+            band_count=int(layer.bandCount() or 0),
+        )
+        if rgb_map:
+            red_band, green_band, blue_band = rgb_map
+            renderer = layer.renderer()
+            applied_rgb_map = False
+            if renderer is not None and all(
+                hasattr(renderer, name) for name in ("setRedBand", "setGreenBand", "setBlueBand")
+            ):
+                try:
+                    renderer.setRedBand(int(red_band))
+                    renderer.setGreenBand(int(green_band))
+                    renderer.setBlueBand(int(blue_band))
+                    applied_rgb_map = True
+                except Exception:
+                    applied_rgb_map = False
+            if applied_rgb_map:
+                self._append_search_log(
+                    "Download Selected display bands mapped via band order "
+                    f"'{band_order_text}': R={red_band}, G={green_band}, B={blue_band}"
+                )
+
+        try:
+            from qgis.core import QgsCubicRasterResampler  # noqa: PLC0415
+
+            resample_filter = layer.resampleFilter() if hasattr(layer, "resampleFilter") else None
+            if resample_filter is not None:
+                if hasattr(resample_filter, "setZoomedInResampler"):
+                    resample_filter.setZoomedInResampler(QgsCubicRasterResampler())
+                if hasattr(resample_filter, "setZoomedOutResampler"):
+                    resample_filter.setZoomedOutResampler(QgsCubicRasterResampler())
+                if hasattr(resample_filter, "setMaxOversampling"):
+                    resample_filter.setMaxOversampling(float(5.0))
+        except Exception as exc:
+            self._append_search_log(
+                f"Download Selected resampling configuration skipped: {exc}",
+                level=Qgis.Warning,
+            )
+
+        if hasattr(layer, "triggerRepaint"):
+            try:
+                layer.triggerRepaint()
+            except Exception:
+                pass
+
     def _geotiff_asset_candidates_for_item(self, item):
         row = item if isinstance(item, dict) else {}
         assets = row.get("assets") if isinstance(row.get("assets"), dict) else {}
@@ -4096,13 +4758,16 @@ class ImageMatePlugin(SimulationExecutionMixin, WorkflowExecutionMixin, SearchSt
                 return result
             outcome_id = str(group.get("outcome_id") or "").strip()
             item_ids = [str(value or "").strip() for value in (group.get("item_ids") or []) if str(value or "").strip()]
+            group_items = [dict(row) for row in (group.get("items") or []) if isinstance(row, dict)]
             group_result = {
                 "outcome_id": outcome_id,
                 "item_ids": item_ids,
                 "downloads": [],
                 "errors": [],
+                "display_timestamp": self._download_group_display_timestamp(group_items),
+                "band_order_text": self._download_group_band_order_text(group_items),
             }
-            for item in group.get("items") or []:
+            for item in group_items:
                 if task.isCanceled():
                     result["canceled"] = True
                     return result
@@ -4206,6 +4871,7 @@ class ImageMatePlugin(SimulationExecutionMixin, WorkflowExecutionMixin, SearchSt
             item_ids = group.get("item_ids") if isinstance(group.get("item_ids"), list) else []
             fallback_hint = str(item_ids[0] if item_ids else f"group_{idx}").strip() or f"group_{idx}"
             hint = outcome_id or fallback_hint
+            band_order_text = str(group.get("band_order_text") or "").strip()
 
             raster_path = ""
             if len(tif_paths) == 1:
@@ -4239,11 +4905,12 @@ class ImageMatePlugin(SimulationExecutionMixin, WorkflowExecutionMixin, SearchSt
                 layer_errors.append(f"{hint}: output raster path missing")
                 continue
 
-            layer_name = f"Image Mate Download {hint}"
+            layer_name = self._download_group_layer_name(group=group, fallback_hint=fallback_hint)
             layer = QgsRasterLayer(raster_path, layer_name)
             if not layer.isValid():
                 layer_errors.append(f"{hint}: QGIS failed to open raster ({raster_path})")
                 continue
+            self._apply_download_layer_rendering(layer=layer, band_order_text=band_order_text)
             self._add_layer_to_image_mate_group(layer, insert_on_top=True)
             layers_added += 1
 
@@ -4524,13 +5191,44 @@ class ImageMatePlugin(SimulationExecutionMixin, WorkflowExecutionMixin, SearchSt
         self._mosaic_preview_layer_id = None
 
     def _clear_mosaic_tracking_preview_layer(self):
-        layer_id = str(getattr(self, "_mosaic_tracking_preview_layer_id", "") or "").strip()
-        if layer_id:
+        preview_map = getattr(self, "_mosaic_tracking_preview_layer_ids", {})
+        if not isinstance(preview_map, dict):
+            preview_map = {}
+        for layer_value in list(preview_map.values()):
+            layer_ids = []
+            if isinstance(layer_value, list):
+                layer_ids = [str(row or "").strip() for row in layer_value if str(row or "").strip()]
+            else:
+                layer_key = str(layer_value or "").strip()
+                if layer_key:
+                    layer_ids = [layer_key]
+            for layer_id in layer_ids:
+                layer = QgsProject.instance().mapLayer(layer_id)
+                if layer is not None:
+                    QgsProject.instance().removeMapLayer(layer_id)
+        self._mosaic_tracking_preview_layer_ids = {}
+        self._mosaic_tracking_preview_project_id = ""
+
+    def _clear_mosaic_tracking_preview_layer_for_tile(self, *, tile_id):
+        tile_key = str(tile_id or "").strip()
+        if not tile_key:
+            return
+        preview_map = getattr(self, "_mosaic_tracking_preview_layer_ids", {})
+        if not isinstance(preview_map, dict):
+            preview_map = {}
+        layer_value = preview_map.pop(tile_key, "")
+        layer_ids = []
+        if isinstance(layer_value, list):
+            layer_ids = [str(row or "").strip() for row in layer_value if str(row or "").strip()]
+        else:
+            layer_key = str(layer_value or "").strip()
+            if layer_key:
+                layer_ids = [layer_key]
+        for layer_id in layer_ids:
             layer = QgsProject.instance().mapLayer(layer_id)
             if layer is not None:
                 QgsProject.instance().removeMapLayer(layer_id)
-        self._mosaic_tracking_preview_layer_id = None
-        self._mosaic_tracking_preview_project_id = ""
+        self._mosaic_tracking_preview_layer_ids = preview_map
 
     def _clear_mosaic_tiling_layer(self):
         layer_id = str(getattr(self, "_mosaic_tiling_layer_id", "") or "").strip()
@@ -4544,6 +5242,74 @@ class ImageMatePlugin(SimulationExecutionMixin, WorkflowExecutionMixin, SearchSt
                 pass
             QgsProject.instance().removeMapLayer(layer_id)
         self._mosaic_tiling_layer_id = None
+
+    @staticmethod
+    def _mosaic_layer_source_path(layer):
+        raw_source = str(getattr(layer, "source", lambda: "")() or "").strip()
+        if not raw_source:
+            return ""
+        path_token = raw_source.split("|", 1)[0].strip()
+        if not path_token:
+            return ""
+        if path_token.lower().startswith("file://"):
+            parsed = QUrl(path_token)
+            if parsed.isValid() and parsed.isLocalFile():
+                return str(parsed.toLocalFile() or "").strip()
+        return path_token
+
+    @staticmethod
+    def _mosaic_path_is_within(parent_path: Path, child_path: Path) -> bool:
+        try:
+            child_path.relative_to(parent_path)
+            return True
+        except Exception:
+            return False
+
+    def _release_mosaic_project_layers(self, *, project_id: str, project_dir: Path, shapefile_path: Path) -> int:
+        project_key = str(project_id or "").strip()
+        if not project_key:
+            return 0
+        project_dir_path = Path(project_dir).expanduser()
+        project_dir_resolved = project_dir_path.resolve()
+        shapefile_resolved = Path(shapefile_path).expanduser().resolve()
+        tracked_layer_id = str(getattr(self, "_mosaic_tiling_layer_id", "") or "").strip()
+        removed_count = 0
+        map_layers = list(QgsProject.instance().mapLayers().items())
+        for layer_id, layer in map_layers:
+            if layer is None:
+                continue
+            remove_layer = False
+            layer_project_id = str(layer.customProperty("image_mate/mosaic_project_id") or "").strip()
+            if layer_project_id and layer_project_id == project_key:
+                remove_layer = True
+            source_path = self._mosaic_layer_source_path(layer)
+            source_path_text = str(source_path or "").strip()
+            if source_path_text:
+                try:
+                    source_path_resolved = Path(source_path_text).expanduser().resolve()
+                except Exception:
+                    source_path_resolved = Path(source_path_text)
+                if source_path_resolved == shapefile_resolved:
+                    remove_layer = True
+                elif self._mosaic_path_is_within(project_dir_resolved, source_path_resolved):
+                    remove_layer = True
+                else:
+                    source_norm = source_path_text.replace("\\", "/").lower()
+                    project_norm = project_key.lower()
+                    if f"/{project_norm}/" in source_norm and source_norm.endswith("/tiles.shp"):
+                        remove_layer = True
+            if not remove_layer:
+                continue
+            if layer_id == tracked_layer_id:
+                try:
+                    layer.selectionChanged.disconnect(self._on_mosaic_tiling_layer_selection_changed)
+                except Exception:
+                    pass
+            QgsProject.instance().removeMapLayer(layer_id)
+            removed_count += 1
+        if tracked_layer_id and QgsProject.instance().mapLayer(tracked_layer_id) is None:
+            self._mosaic_tiling_layer_id = None
+        return removed_count
 
     def _render_mosaic_breakdown_preview(self, rows):
         self._clear_mosaic_preview_layer()
@@ -4794,19 +5560,25 @@ class ImageMatePlugin(SimulationExecutionMixin, WorkflowExecutionMixin, SearchSt
             return
         if not project_key:
             self._clear_mosaic_tracking_preview_layer()
-            if hasattr(self.dock, "set_mosaic_tracking_preview_tile"):
-                self.dock.set_mosaic_tracking_preview_tile("")
+            if hasattr(self.dock, "set_mosaic_tracking_preview_tiles"):
+                self.dock.set_mosaic_tracking_preview_tiles([])
             self.dock.set_mosaic_tracking_rows([])
             self.dock.set_mosaic_tracking_status("Mosaic tracking: select a project.")
             return
         shown_preview_project = str(getattr(self, "_mosaic_tracking_preview_project_id", "") or "").strip()
         if shown_preview_project and shown_preview_project != project_key:
             self._clear_mosaic_tracking_preview_layer()
-            if hasattr(self.dock, "set_mosaic_tracking_preview_tile"):
-                self.dock.set_mosaic_tracking_preview_tile("")
+            if hasattr(self.dock, "set_mosaic_tracking_preview_tiles"):
+                self.dock.set_mosaic_tracking_preview_tiles([])
         store = self._mosaic_store_for_project(project_key, create_if_missing=False)
         rows = store.load_tiles(project_key)
         self.dock.set_mosaic_tracking_rows(rows)
+        if hasattr(self.dock, "set_mosaic_tracking_preview_tiles"):
+            preview_map = getattr(self, "_mosaic_tracking_preview_layer_ids", {})
+            if isinstance(preview_map, dict):
+                self.dock.set_mosaic_tracking_preview_tiles(sorted(preview_map.keys()))
+            else:
+                self.dock.set_mosaic_tracking_preview_tiles([])
         self._refresh_mosaic_tiling_style(project_id=project_key)
         self.dock.set_mosaic_tracking_status(
             f"Mosaic tracking loaded: project={project_key}, tiles={len(rows)}."
@@ -4989,8 +5761,8 @@ class ImageMatePlugin(SimulationExecutionMixin, WorkflowExecutionMixin, SearchSt
             self._load_mosaic_tracking_project(project_id)
         except Exception as exc:
             self._clear_mosaic_tracking_preview_layer()
-            if hasattr(self.dock, "set_mosaic_tracking_preview_tile"):
-                self.dock.set_mosaic_tracking_preview_tile("")
+            if hasattr(self.dock, "set_mosaic_tracking_preview_tiles"):
+                self.dock.set_mosaic_tracking_preview_tiles([])
             self.dock.set_mosaic_tracking_rows([])
             self.dock.set_mosaic_tracking_status(f"Mosaic tracking load failed: {exc}")
             self._log_mosaic(f"tracking_load_failed project={project_id} error={exc}", level=Qgis.Warning)
@@ -5005,9 +5777,13 @@ class ImageMatePlugin(SimulationExecutionMixin, WorkflowExecutionMixin, SearchSt
         row = item if isinstance(item, dict) else {}
         if not row:
             return False
+        assets = row.get("assets") if isinstance(row.get("assets"), dict) else {}
+        for key in ("preview", "thumbnail", "visual", "visual_fullres", "analytic"):
+            if str(assets.get(key) or "").strip():
+                return True
         if self._satellogic_item_cog_source_url(row):
             return True
-        return bool(str((row.get("assets") or {}).get("preview") or "").strip())
+        return False
 
     def _mosaic_preview_geometry_from_tile_row(self, tile_row):
         row = tile_row if isinstance(tile_row, dict) else {}
@@ -5027,7 +5803,102 @@ class ImageMatePlugin(SimulationExecutionMixin, WorkflowExecutionMixin, SearchSt
             payload = {}
         return payload if isinstance(payload, dict) else {}
 
-    def _resolve_mosaic_tracking_preview_item(self, *, tile_row, collection_id):
+    def _mosaic_preview_item_from_deliverable(self, *, deliverable, contract_id):
+        row = deliverable if isinstance(deliverable, dict) else {}
+        assets_src = row.get("assets") if isinstance(row.get("assets"), dict) else {}
+        if not assets_src:
+            return None
+
+        normalized_assets = {}
+        raw_assets = {}
+
+        def _asset_href(asset_value):
+            if isinstance(asset_value, dict):
+                return str(asset_value.get("href") or "").strip()
+            return str(asset_value or "").strip()
+
+        for key in ("visual_fullres", "visual", "analytic", "preview", "thumbnail"):
+            href = _asset_href(assets_src.get(key))
+            if not href:
+                continue
+            normalized_assets[key] = href
+            raw_asset = assets_src.get(key)
+            if isinstance(raw_asset, dict):
+                payload = dict(raw_asset)
+                payload["href"] = href
+                raw_assets[key] = payload
+            else:
+                raw_assets[key] = {"href": href}
+
+        if not normalized_assets:
+            for key, asset in assets_src.items():
+                key_text = str(key or "").strip()
+                href = _asset_href(asset)
+                if not key_text or not href:
+                    continue
+                normalized_assets[key_text] = href
+                if isinstance(asset, dict):
+                    payload = dict(asset)
+                    payload["href"] = href
+                    raw_assets[key_text] = payload
+                else:
+                    raw_assets[key_text] = {"href": href}
+
+        if not normalized_assets:
+            return None
+
+        if "visual_fullres" not in normalized_assets and normalized_assets.get("visual"):
+            normalized_assets["visual_fullres"] = normalized_assets.get("visual") or ""
+            raw_assets["visual_fullres"] = dict(raw_assets.get("visual") or {"href": normalized_assets["visual_fullres"]})
+
+        scene_id = ""
+        for key in ("visual_fullres", "visual", "analytic", "preview", "thumbnail"):
+            href = str(normalized_assets.get(key) or "").strip()
+            if not href:
+                continue
+            scene_id = self._satellogic_scene_id_from_asset_href(href)
+            if scene_id:
+                break
+        if not scene_id:
+            for href in normalized_assets.values():
+                tif_name = self._satellogic_tif_name_from_href(href)
+                scene_id = self._satellogic_scene_id_from_tif_name(tif_name)
+                if scene_id:
+                    break
+
+        deliverable_id = str(row.get("deliverable_id") or row.get("id") or "").strip()
+        item_id = scene_id or deliverable_id
+        if not item_id:
+            return None
+
+        raw_payload = {
+            "id": item_id,
+            "scene_id": scene_id,
+            "assets": raw_assets,
+            "properties": {
+                "scene_id": scene_id,
+                "satl:scene_id": scene_id,
+                "deliverable_id": deliverable_id,
+                "order_id": str(row.get("order") or "").strip(),
+            },
+            "deliverable": row,
+        }
+        if contract_id:
+            raw_payload["properties"]["contract_id"] = contract_id
+
+        result = {
+            "id": item_id,
+            "scene_id": scene_id,
+            "source_id": "satellogic",
+            "collection": "l1d-sr",
+            "assets": normalized_assets,
+            "raw": raw_payload,
+        }
+        if contract_id:
+            result["contract_id"] = contract_id
+        return result
+
+    def _resolve_mosaic_tracking_preview_items(self, *, tile_row, collection_id):
         tile_data = tile_row if isinstance(tile_row, dict) else {}
         collection_key = str(collection_id or "").strip()
         if not collection_key:
@@ -5035,6 +5906,45 @@ class ImageMatePlugin(SimulationExecutionMixin, WorkflowExecutionMixin, SearchSt
 
         contract_id = self._mosaic_resolved_contract_id()
         detail = self.source_service.get_tasking_order(collection_key, contract_id=contract_id or None)
+
+        resolved_items = []
+        resolved_ids = set()
+
+        try:
+            deliverable_detail = self.source_service.list_tasking_order_deliverables(
+                collection_key,
+                contract_id=contract_id or None,
+            )
+        except Exception as exc:
+            self._log_mosaic(
+                f"preview_deliverables_failed collection_id={collection_key} error={exc}",
+                level=Qgis.Warning,
+            )
+            deliverable_detail = {}
+
+        deliverables = deliverable_detail.get("deliverables") if isinstance(deliverable_detail, dict) else []
+        deliverable_rows = [row for row in (deliverables or []) if isinstance(row, dict)]
+        if deliverable_rows:
+            delivered_statuses = {"DELIVERED", "COMPLETED", "SUCCESS", "SUCCEEDED"}
+            preferred_rows = [
+                row for row in deliverable_rows if str(row.get("status") or "").strip().upper() in delivered_statuses
+            ]
+            candidate_rows = preferred_rows or deliverable_rows
+            for deliverable in candidate_rows:
+                item = self._mosaic_preview_item_from_deliverable(
+                    deliverable=deliverable,
+                    contract_id=contract_id,
+                )
+                if not self._mosaic_preview_item_is_usable(item):
+                    continue
+                resolved_id = str(item.get("id") or "").strip()
+                if resolved_id and resolved_id in resolved_ids:
+                    continue
+                if resolved_id:
+                    resolved_ids.add(resolved_id)
+                resolved_items.append(item)
+        if resolved_items:
+            return resolved_items
 
         for item_id in preview_item_id_candidates(detail):
             try:
@@ -5052,7 +5962,14 @@ class ImageMatePlugin(SimulationExecutionMixin, WorkflowExecutionMixin, SearchSt
             resolved.setdefault("source_id", "satellogic")
             if contract_id:
                 resolved["contract_id"] = contract_id
-            return resolved
+            resolved_id = str(resolved.get("id") or item_id).strip()
+            if resolved_id and resolved_id in resolved_ids:
+                continue
+            if resolved_id:
+                resolved_ids.add(resolved_id)
+            resolved_items.append(resolved)
+        if resolved_items:
+            return resolved_items
 
         geometry = extract_order_geometry(detail)
         if not geometry:
@@ -5088,17 +6005,60 @@ class ImageMatePlugin(SimulationExecutionMixin, WorkflowExecutionMixin, SearchSt
                 resolved.setdefault("source_id", "satellogic")
                 if contract_id:
                     resolved["contract_id"] = contract_id
-                return resolved
+                return [resolved]
         raise RuntimeError("No preview imagery found for the completed collection.")
 
-    def _render_mosaic_tracking_preview_item(self, *, item):
-        layer = self._build_stream_layer_for_item(item)
+    def _render_mosaic_tracking_preview_item(self, *, project_id, tile_id, item):
+        image_error = ""
+        stream_error = ""
+        layer = None
+        try:
+            # Match browser behavior when possible: render Telluric tile stream first.
+            layer = self._build_stream_layer_for_item(item, prefer_telluric=True)
+        except Exception as exc:
+            stream_error = str(exc)
+            layer = None
         if layer is None:
-            layer = self._load_item_imagery_layer(item)
-        self._clear_mosaic_tracking_preview_layer()
+            try:
+                layer = self._load_item_imagery_layer(item)
+            except Exception as exc:
+                image_error = str(exc)
+                layer = None
+        if layer is None:
+            try:
+                layer = self._build_stream_layer_for_item(item)
+            except Exception as exc:
+                if not stream_error:
+                    stream_error = str(exc)
+                layer = None
+        if layer is None:
+            raise RuntimeError(stream_error or image_error or "Preview imagery layer could not be loaded.")
+
+        tile_key = str(tile_id or "").strip()
+        project_key = str(project_id or "").strip()
+        if not tile_key:
+            raise RuntimeError("Preview layer render requires a tile id.")
         self._add_layer_to_image_mate_group(layer, insert_on_top=True)
         layer.setCustomProperty("image_mate/mosaic_tracking_preview", "1")
-        self._mosaic_tracking_preview_layer_id = str(layer.id() or "").strip()
+        layer.setCustomProperty("image_mate/mosaic_tracking_tile_id", tile_key)
+        layer.setCustomProperty("image_mate/mosaic_tracking_project_id", project_key)
+        preview_map = getattr(self, "_mosaic_tracking_preview_layer_ids", {})
+        if not isinstance(preview_map, dict):
+            preview_map = {}
+        existing_value = preview_map.get(tile_key)
+        layer_ids = []
+        if isinstance(existing_value, list):
+            layer_ids = [str(row or "").strip() for row in existing_value if str(row or "").strip()]
+        else:
+            existing_id = str(existing_value or "").strip()
+            if existing_id:
+                layer_ids = [existing_id]
+        layer_id = str(layer.id() or "").strip()
+        if layer_id and layer_id not in layer_ids:
+            layer_ids.append(layer_id)
+        preview_map[tile_key] = layer_ids
+        self._mosaic_tracking_preview_layer_ids = preview_map
+        self._mosaic_tracking_preview_project_id = project_key
 
     def handle_mosaic_tracking_preview_toggled(self, payload):
         if self.dock is None:
@@ -5110,17 +6070,26 @@ class ImageMatePlugin(SimulationExecutionMixin, WorkflowExecutionMixin, SearchSt
         if not project_id and hasattr(self.dock, "current_mosaic_project_id"):
             project_id = str(self.dock.current_mosaic_project_id() or "").strip()
         if not project_id or not tile_id:
-            self._clear_mosaic_tracking_preview_layer()
-            if hasattr(self.dock, "set_mosaic_tracking_preview_tile"):
-                self.dock.set_mosaic_tracking_preview_tile("")
             if enabled:
                 self.dock.set_mosaic_tracking_status("Mosaic preview skipped: select a project and tile.")
             return
 
-        if not enabled:
+        shown_preview_project = str(getattr(self, "_mosaic_tracking_preview_project_id", "") or "").strip()
+        if shown_preview_project and shown_preview_project != project_id:
             self._clear_mosaic_tracking_preview_layer()
-            if hasattr(self.dock, "set_mosaic_tracking_preview_tile"):
-                self.dock.set_mosaic_tracking_preview_tile("")
+            if hasattr(self.dock, "set_mosaic_tracking_preview_tiles"):
+                self.dock.set_mosaic_tracking_preview_tiles([])
+
+        if not enabled:
+            self._clear_mosaic_tracking_preview_layer_for_tile(tile_id=tile_id)
+            preview_map = getattr(self, "_mosaic_tracking_preview_layer_ids", {})
+            if not isinstance(preview_map, dict) or not preview_map:
+                self._mosaic_tracking_preview_project_id = ""
+                preview_ids = []
+            else:
+                preview_ids = sorted(preview_map.keys())
+            if hasattr(self.dock, "set_mosaic_tracking_preview_tiles"):
+                self.dock.set_mosaic_tracking_preview_tiles(preview_ids)
             self.dock.set_mosaic_tracking_status(f"Mosaic preview hidden: tile={tile_id}.")
             self._log_mosaic(f"preview_hidden project={project_id} tile={tile_id}")
             return
@@ -5132,9 +6101,11 @@ class ImageMatePlugin(SimulationExecutionMixin, WorkflowExecutionMixin, SearchSt
                 raise RuntimeError(f"Tile not found: {tile_id}")
             api_status = str(tile_row.get("api_status") or "").strip()
             if not is_completed_status(api_status):
-                self._clear_mosaic_tracking_preview_layer()
-                if hasattr(self.dock, "set_mosaic_tracking_preview_tile"):
-                    self.dock.set_mosaic_tracking_preview_tile("")
+                self._clear_mosaic_tracking_preview_layer_for_tile(tile_id=tile_id)
+                preview_map = getattr(self, "_mosaic_tracking_preview_layer_ids", {})
+                preview_ids = sorted(preview_map.keys()) if isinstance(preview_map, dict) else []
+                if hasattr(self.dock, "set_mosaic_tracking_preview_tiles"):
+                    self.dock.set_mosaic_tracking_preview_tiles(preview_ids)
                 self.dock.set_mosaic_tracking_status(
                     f"Mosaic preview unavailable: tile={tile_id} api_status={api_status or '--'} (requires Completed)."
                 )
@@ -5142,24 +6113,39 @@ class ImageMatePlugin(SimulationExecutionMixin, WorkflowExecutionMixin, SearchSt
             collection_id = str(tile_row.get("latest_collection_id") or "").strip()
             if not collection_id:
                 raise RuntimeError(f"No latest collection id found for tile {tile_id}.")
-            item = self._resolve_mosaic_tracking_preview_item(
+            items = self._resolve_mosaic_tracking_preview_items(
                 tile_row=tile_row,
                 collection_id=collection_id,
             )
-            self._render_mosaic_tracking_preview_item(item=item)
-            self._mosaic_tracking_preview_project_id = project_id
-            if hasattr(self.dock, "set_mosaic_tracking_preview_tile"):
-                self.dock.set_mosaic_tracking_preview_tile(tile_id)
+            self._clear_mosaic_tracking_preview_layer_for_tile(tile_id=tile_id)
+            loaded_items = []
+            for item in items:
+                self._render_mosaic_tracking_preview_item(
+                    project_id=project_id,
+                    tile_id=tile_id,
+                    item=item,
+                )
+                loaded_items.append(str(item.get("id") or "--").strip() or "--")
+            if not loaded_items:
+                raise RuntimeError("Preview imagery layer could not be loaded for any resolved item.")
+            preview_map = getattr(self, "_mosaic_tracking_preview_layer_ids", {})
+            preview_ids = sorted(preview_map.keys()) if isinstance(preview_map, dict) else []
+            if hasattr(self.dock, "set_mosaic_tracking_preview_tiles"):
+                self.dock.set_mosaic_tracking_preview_tiles(preview_ids)
+            first_item = loaded_items[0] if loaded_items else "--"
             self.dock.set_mosaic_tracking_status(
-                f"Mosaic preview loaded: tile={tile_id}, item={str(item.get('id') or '--').strip() or '--'}."
+                f"Mosaic preview loaded: tile={tile_id}, items={len(loaded_items)}, first_item={first_item}."
             )
             self._log_mosaic(
-                f"preview_loaded project={project_id} tile={tile_id} collection_id={collection_id} item={item.get('id') or ''}"
+                f"preview_loaded project={project_id} tile={tile_id} collection_id={collection_id} "
+                f"items={len(loaded_items)} first_item={first_item}"
             )
         except Exception as exc:
-            self._clear_mosaic_tracking_preview_layer()
-            if hasattr(self.dock, "set_mosaic_tracking_preview_tile"):
-                self.dock.set_mosaic_tracking_preview_tile("")
+            self._clear_mosaic_tracking_preview_layer_for_tile(tile_id=tile_id)
+            preview_map = getattr(self, "_mosaic_tracking_preview_layer_ids", {})
+            preview_ids = sorted(preview_map.keys()) if isinstance(preview_map, dict) else []
+            if hasattr(self.dock, "set_mosaic_tracking_preview_tiles"):
+                self.dock.set_mosaic_tracking_preview_tiles(preview_ids)
             self.dock.set_mosaic_tracking_status(f"Mosaic preview failed: {exc}")
             self._log_mosaic(
                 f"preview_failed project={project_id} tile={tile_id} error={exc}",
@@ -5171,6 +6157,7 @@ class ImageMatePlugin(SimulationExecutionMixin, WorkflowExecutionMixin, SearchSt
             return
         request = payload if isinstance(payload, dict) else {}
         project_id = str(request.get("project_id") or "").strip()
+        tile_id = str(request.get("tile_id") or "").strip()
         if not project_id and hasattr(self.dock, "current_mosaic_project_id"):
             project_id = str(self.dock.current_mosaic_project_id() or "").strip()
         if not project_id:
@@ -5191,21 +6178,39 @@ class ImageMatePlugin(SimulationExecutionMixin, WorkflowExecutionMixin, SearchSt
                 project_id=project_id,
                 contract_id=contract_id,
                 source_id=source_id,
+                tile_ids=[tile_id] if tile_id else None,
+                skip_failed=True,
             )
             self._load_mosaic_tracking_project(project_id)
             changed = sum(1 for row in updates if bool(row.get("changed")))
             errored = sum(1 for row in updates if str(row.get("error") or "").strip())
+            skipped = sum(1 for row in updates if bool(row.get("skipped")))
+            skipped_failed = sum(
+                1
+                for row in updates
+                if bool(row.get("skipped"))
+                and str(row.get("reason") or "").strip() == "terminal_failed"
+            )
+            skipped_canceled = sum(
+                1
+                for row in updates
+                if bool(row.get("skipped"))
+                and str(row.get("reason") or "").strip() == "terminal_canceled"
+            )
+            scope_text = f"tile={tile_id}" if tile_id else f"project={project_id}"
             self.dock.set_mosaic_tracking_status(
-                f"Mosaic status refresh complete: checked={len(updates)}, changed={changed}, errors={errored}."
+                f"Mosaic status refresh complete ({scope_text}): checked={len(updates)}, changed={changed}, "
+                f"skipped={skipped} (failed={skipped_failed}, canceled={skipped_canceled}), errors={errored}."
             )
             self._log_mosaic(
-                f"refresh_status_complete project={project_id} checked={len(updates)} "
-                f"changed={changed} errors={errored}"
+                f"refresh_status_complete project={project_id} tile={tile_id or '--'} checked={len(updates)} "
+                f"changed={changed} skipped={skipped} skipped_failed={skipped_failed} "
+                f"skipped_canceled={skipped_canceled} errors={errored}"
             )
         except Exception as exc:
             self.dock.set_mosaic_tracking_status(f"Mosaic status refresh failed: {exc}")
             self._log_mosaic(
-                f"refresh_status_failed project={project_id} error={exc}",
+                f"refresh_status_failed project={project_id} tile={tile_id or '--'} error={exc}",
                 level=Qgis.Warning,
             )
 
@@ -5221,11 +6226,40 @@ class ImageMatePlugin(SimulationExecutionMixin, WorkflowExecutionMixin, SearchSt
             return
         try:
             campaign_uid = self._mosaic_campaign_uid()
-            deleted = self.campaign_storage.delete_mosaic_project(campaign_uid, project_id)
+            paths = self._mosaic_project_paths(project_id)
+            # Release any in-project layers before deleting files on disk.
             self._clear_mosaic_tiling_layer()
             self._clear_mosaic_tracking_preview_layer()
-            if hasattr(self.dock, "set_mosaic_tracking_preview_tile"):
-                self.dock.set_mosaic_tracking_preview_tile("")
+            if hasattr(self.dock, "set_mosaic_tracking_preview_tiles"):
+                self.dock.set_mosaic_tracking_preview_tiles([])
+            released_layers = self._release_mosaic_project_layers(
+                project_id=project_id,
+                project_dir=paths["project_dir"],
+                shapefile_path=paths["shapefile_path"],
+            )
+            if released_layers:
+                self._log_mosaic(f"delete_release_layers project={project_id} removed={released_layers}")
+            QCoreApplication.processEvents()
+            gc.collect()
+            def _on_lock_retry(attempt_no, _error):
+                retried_removed = self._release_mosaic_project_layers(
+                    project_id=project_id,
+                    project_dir=paths["project_dir"],
+                    shapefile_path=paths["shapefile_path"],
+                )
+                QCoreApplication.processEvents()
+                gc.collect()
+                self._log_mosaic(
+                    f"delete_lock_retry project={project_id} attempt={attempt_no} released={retried_removed}",
+                    level=Qgis.Warning,
+                )
+
+            deleted = self.campaign_storage.delete_mosaic_project(
+                campaign_uid,
+                project_id,
+                max_attempts=12,
+                on_lock_retry=_on_lock_retry,
+            )
             if not deleted:
                 self.dock.set_mosaic_tracking_status(f"Mosaic delete skipped: project not found ({project_id}).")
                 self._log_mosaic(f"delete_skipped project={project_id} reason=not_found", level=Qgis.Warning)
@@ -5421,6 +6455,58 @@ class ImageMatePlugin(SimulationExecutionMixin, WorkflowExecutionMixin, SearchSt
             self.dock.set_mosaic_tracking_status(f"Mosaic cancel failed: {exc}")
             self._log_mosaic(
                 f"cancel_tasking_failed project={project_id} tile={tile_id} error={exc}",
+                level=Qgis.Warning,
+            )
+
+    def handle_mosaic_more_request(self, payload):
+        if self.dock is None:
+            return
+        request = payload if isinstance(payload, dict) else {}
+        project_id = str(request.get("project_id") or "").strip()
+        tile_id = str(request.get("tile_id") or "").strip()
+        if not project_id or not tile_id:
+            self.dock.set_mosaic_tracking_status("Mosaic detail skipped: select project and tile.")
+            return
+        source_id = self._mosaic_source_id()
+        if source_id != "satellogic":
+            self.dock.set_mosaic_tracking_status(
+                "Mosaic detail skipped: switch source to NewSat Constellation."
+            )
+            return
+        try:
+            store = self._mosaic_store_for_project(project_id, create_if_missing=False)
+            tile_row = store.load_tile(project_id=project_id, tile_id=tile_id)
+            if not tile_row:
+                raise RuntimeError(f"Tile not found: {tile_id}")
+            collection_id = str(tile_row.get("latest_collection_id") or "").strip()
+            if not collection_id:
+                raise RuntimeError(f"No collection id available for tile {tile_id}.")
+            contract_id = self._mosaic_resolved_contract_id()
+            detail = self.source_service.get_tasking_order(collection_id, contract_id=contract_id or None)
+            order = detail.get("order") if isinstance(detail, dict) else None
+            raw = detail.get("raw") if isinstance(detail, dict) else None
+            popup_payload = {
+                "project_id": project_id,
+                "tile_id": tile_id,
+                "collection_id": collection_id,
+                "source_id": source_id,
+                "contract_id": str(contract_id or "").strip(),
+                "fetched_at": utc_now_iso(),
+                "order": order if isinstance(order, dict) else {},
+                "raw": raw if isinstance(raw, dict) else (raw if raw is not None else {}),
+            }
+            if hasattr(self.dock, "show_mosaic_collection_api_detail_popup"):
+                self.dock.show_mosaic_collection_api_detail_popup(popup_payload)
+            self.dock.set_mosaic_tracking_status(
+                f"Mosaic detail loaded: tile={tile_id}, collection_id={collection_id}."
+            )
+            self._log_mosaic(
+                f"detail_loaded project={project_id} tile={tile_id} collection_id={collection_id}"
+            )
+        except Exception as exc:
+            self.dock.set_mosaic_tracking_status(f"Mosaic detail failed: {exc}")
+            self._log_mosaic(
+                f"detail_failed project={project_id} tile={tile_id} error={exc}",
                 level=Qgis.Warning,
             )
 

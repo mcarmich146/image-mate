@@ -251,8 +251,22 @@ class MosaicTaskingService:
         project_id: str,
         contract_id: str,
         source_id: str,
+        tile_ids: list[str] | None = None,
+        skip_failed: bool = True,
     ) -> list[dict[str, Any]]:
         rows = store.non_accepted_tiles(project_id)
+        requested_tile_ids = {
+            str(tile_id or "").strip()
+            for tile_id in (tile_ids or [])
+            if str(tile_id or "").strip()
+        }
+        if requested_tile_ids:
+            rows = [
+                row
+                for row in rows
+                if str((row if isinstance(row, dict) else {}).get("tile_id") or "").strip()
+                in requested_tile_ids
+            ]
         if str(source_id or "").strip().lower() != "satellogic":
             return [
                 {
@@ -267,8 +281,30 @@ class MosaicTaskingService:
         for row in rows:
             tile_id = str(row.get("tile_id") or "").strip()
             collection_id = str(row.get("latest_collection_id") or "").strip()
+            api_status = str(row.get("api_status") or "").strip()
             if not tile_id:
                 continue
+            if bool(skip_failed):
+                if self._is_terminal_failed_status(api_status):
+                    updates.append(
+                        {
+                            "tile_id": tile_id,
+                            "skipped": True,
+                            "reason": "terminal_failed",
+                            "api_status": api_status,
+                        }
+                    )
+                    continue
+                if self._is_terminal_canceled_status(api_status):
+                    updates.append(
+                        {
+                            "tile_id": tile_id,
+                            "skipped": True,
+                            "reason": "terminal_canceled",
+                            "api_status": api_status,
+                        }
+                    )
+                    continue
             if not collection_id:
                 updates.append({"tile_id": tile_id, "skipped": True, "reason": "missing_collection_id"})
                 continue
@@ -303,6 +339,20 @@ class MosaicTaskingService:
                     }
                 )
         return updates
+
+    @staticmethod
+    def _is_terminal_failed_status(status: str | None) -> bool:
+        status_key = re.sub(r"[\s-]+", "_", str(status or "").strip().lower())
+        if not status_key:
+            return False
+        return status_key == "failed" or status_key.endswith("_failed")
+
+    @staticmethod
+    def _is_terminal_canceled_status(status: str | None) -> bool:
+        status_key = re.sub(r"[\s-]+", "_", str(status or "").strip().lower())
+        if not status_key:
+            return False
+        return status_key in {"canceled", "cancelled"}
 
     @staticmethod
     def _build_order_payload(

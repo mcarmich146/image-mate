@@ -4,10 +4,12 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import gc
 from pathlib import Path
 import json
 import re
 import shutil
+import time
 from typing import Any
 
 
@@ -124,7 +126,14 @@ class CampaignStorageService:
         root = self.campaign_mosaic_root(campaign_uid)
         return (root / project_key).exists()
 
-    def delete_mosaic_project(self, campaign_uid: str, project_id: str) -> bool:
+    def delete_mosaic_project(
+        self,
+        campaign_uid: str,
+        project_id: str,
+        *,
+        max_attempts: int = 12,
+        on_lock_retry=None,
+    ) -> bool:
         project_key = str(project_id or "").strip()
         if not project_key:
             return False
@@ -134,8 +143,33 @@ class CampaignStorageService:
             return False
         if not target.is_dir():
             raise RuntimeError(f"Mosaic project path is not a directory: {target}")
-        shutil.rmtree(target)
-        return True
+        attempt_count = int(max_attempts or 0)
+        if attempt_count <= 0:
+            attempt_count = 1
+        last_error: Exception | None = None
+        for attempt in range(attempt_count):
+            try:
+                shutil.rmtree(target)
+                return True
+            except Exception as exc:
+                winerror = getattr(exc, "winerror", None)
+                locked = isinstance(exc, PermissionError) or int(winerror or 0) == 32
+                if not locked:
+                    raise
+                last_error = exc
+                if callable(on_lock_retry):
+                    try:
+                        on_lock_retry(attempt + 1, exc)
+                    except Exception:
+                        pass
+                if attempt + 1 >= attempt_count:
+                    break
+                gc.collect()
+                backoff_seconds = min(0.1 * (attempt + 1), 0.8)
+                time.sleep(backoff_seconds)
+        if last_error is not None:
+            raise last_error
+        return not target.exists()
 
     def campaign_vessel_ml_root(self, campaign_uid: str) -> Path:
         path = self.campaign_root(campaign_uid) / "ml" / "vessel"

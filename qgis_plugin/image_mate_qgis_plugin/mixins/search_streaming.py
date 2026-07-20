@@ -73,7 +73,23 @@ class SearchStreamingMixin:
         source_norm = str(source_id or "").strip().lower()
         self.dock.set_collections(self.source_service.list_collections(source_id))
         self.dock.set_contract_enabled(source_norm == "satellogic")
-        if hasattr(self.dock, "require_full_aoi_overlap"):
+        if hasattr(self.dock, "min_coverage_filter_combo"):
+            combo = self.dock.min_coverage_filter_combo
+            mode = str(combo.currentData() or "").strip().lower()
+            if source_norm == "merlin-s2" and mode == "full":
+                half_index = int(combo.findData("half"))
+                if half_index >= 0:
+                    combo.setCurrentIndex(half_index)
+                self._append_search_log(
+                    "Coverage filter auto-adjusted to Half Coverage for Sentinel-2. "
+                    "Use overlap results for tile-based collections.",
+                    level=Qgis.Info,
+                )
+            combo.setToolTip(
+                "Minimum AOI coverage required per result. "
+                "Touching disables overlap threshold; Half Coverage keeps at least 50% AOI overlap."
+            )
+        elif hasattr(self.dock, "require_full_aoi_overlap"):
             if source_norm == "merlin-s2" and bool(self.dock.require_full_aoi_overlap.isChecked()):
                 self.dock.require_full_aoi_overlap.setChecked(False)
                 self._append_search_log(
@@ -612,6 +628,142 @@ class SearchStreamingMixin:
 
     def _satellogic_item_cog_source_url(self, item):
         return satellogic_item_cog_source_url(item)
+
+    @staticmethod
+    def _satellogic_scene_id_from_item(item):
+        row = item if isinstance(item, dict) else {}
+        raw = row.get("raw") if isinstance(row.get("raw"), dict) else {}
+        raw_props = raw.get("properties") if isinstance(raw.get("properties"), dict) else {}
+        candidates = [
+            row.get("scene_id"),
+            row.get("id"),
+            raw.get("scene_id"),
+            raw.get("id"),
+            raw_props.get("scene_id"),
+            raw_props.get("satl:scene_id"),
+        ]
+        for value in candidates:
+            text = str(value or "").strip()
+            if not text:
+                continue
+            if ":" in text and text.count(":") == 1:
+                text = text.split(":", 1)[1].strip()
+            text = Path(urlparse(text).path).name or text
+            # L1D item ids can include trailing tile indices (e.g. "..._2_0_1")
+            # while Telluric expects canonical scene ids.
+            l1d_suffix = re.match(r"^(?P<base>.+)_\d+_\d+_\d+$", text)
+            if l1d_suffix and "_L1D_" in text:
+                text = str(l1d_suffix.group("base") or "").strip()
+            if text:
+                return text
+        return ""
+
+    @staticmethod
+    def _satellogic_tif_name_from_href(href):
+        raw = str(href or "").strip()
+        if not raw:
+            return ""
+        parsed = urlparse(raw)
+        path_name = Path(parsed.path).name
+        if path_name.lower().endswith((".tif", ".tiff")):
+            return path_name
+
+        params = parse_qs(parsed.query or "", keep_blank_values=False)
+        for key in ("s", "url", "href"):
+            for value in params.get(key) or []:
+                nested = str(value or "").strip()
+                if not nested:
+                    continue
+                nested_parsed = urlparse(nested)
+                nested_name = Path(nested_parsed.path).name
+                if nested_name.lower().endswith((".tif", ".tiff")):
+                    return nested_name
+        return ""
+
+    @staticmethod
+    def _satellogic_scene_id_from_asset_href(href):
+        raw = str(href or "").strip()
+        if not raw:
+            return ""
+        parsed = urlparse(raw)
+        path_parts = [part for part in str(parsed.path or "").split("/") if part]
+        if "deliverables" in path_parts:
+            idx = path_parts.index("deliverables")
+            if idx + 1 < len(path_parts):
+                scene = str(path_parts[idx + 1] or "").strip()
+                if scene:
+                    return scene
+
+        params = parse_qs(parsed.query or "", keep_blank_values=False)
+        for key in ("s", "url", "href"):
+            for value in params.get(key) or []:
+                nested = str(value or "").strip()
+                if not nested:
+                    continue
+                nested_parsed = urlparse(nested)
+                nested_parts = [part for part in str(nested_parsed.path or "").split("/") if part]
+                if len(nested_parts) < 2:
+                    continue
+                leaf = str(nested_parts[-1] or "").strip()
+                parent = str(nested_parts[-2] or "").strip()
+                if leaf.lower().endswith((".tif", ".tiff")) and parent:
+                    return parent
+        return ""
+
+    @staticmethod
+    def _satellogic_scene_id_from_tif_name(tif_name):
+        raw = str(tif_name or "").strip()
+        if not raw:
+            return ""
+        parsed = urlparse(raw)
+        name = Path(parsed.path).name or raw
+        stem = Path(name).stem
+        lowered = stem.lower()
+        for suffix in ("_visual_fullres", "_visual", "_analytic", "_preview", "_thumbnail", "_browse"):
+            if lowered.endswith(suffix):
+                return stem[: -len(suffix)]
+        return ""
+
+    def _satellogic_telluric_scene_raster_from_item(self, item):
+        row = item if isinstance(item, dict) else {}
+        if str(row.get("source_id") or "").strip().lower() != "satellogic":
+            return "", ""
+
+        scene_id = self._satellogic_scene_id_from_item(row)
+        assets = row.get("assets") if isinstance(row.get("assets"), dict) else {}
+        raw = row.get("raw") if isinstance(row.get("raw"), dict) else {}
+        raw_assets = raw.get("assets") if isinstance(raw.get("assets"), dict) else {}
+
+        for key in ("visual_fullres", "visual", "analytic", "preview", "thumbnail"):
+            href = str(assets.get(key) or "").strip()
+            tif_name = self._satellogic_tif_name_from_href(href)
+            if tif_name:
+                scene_from_href = self._satellogic_scene_id_from_asset_href(href)
+                scene_from_tif = self._satellogic_scene_id_from_tif_name(tif_name)
+                return scene_from_href or scene_from_tif or scene_id, tif_name
+
+        for key in ("visual_fullres", "visual", "analytic", "preview", "thumbnail"):
+            raw_asset = raw_assets.get(key)
+            if isinstance(raw_asset, dict):
+                tif_name = self._satellogic_tif_name_from_href(raw_asset.get("href"))
+                if tif_name:
+                    scene_from_href = self._satellogic_scene_id_from_asset_href(raw_asset.get("href"))
+                    scene_from_tif = self._satellogic_scene_id_from_tif_name(tif_name)
+                    return scene_from_href or scene_from_tif or scene_id, tif_name
+                alternate = raw_asset.get("alternate")
+                if isinstance(alternate, dict):
+                    for row_alt in alternate.values():
+                        if not isinstance(row_alt, dict):
+                            continue
+                        tif_name = self._satellogic_tif_name_from_href(row_alt.get("href"))
+                        if tif_name:
+                            scene_from_href = self._satellogic_scene_id_from_asset_href(row_alt.get("href"))
+                            scene_from_tif = self._satellogic_scene_id_from_tif_name(tif_name)
+                            return scene_from_href or scene_from_tif or scene_id, tif_name
+
+        if scene_id and "_L1D_" in scene_id and scene_id.count("_") >= 3:
+            return scene_id, f"{scene_id}_visual.tif"
+        return scene_id, ""
 
     def _satellogic_stream_sources_and_items(self, stream_item, overview_item=None):
         if str(stream_item.get("source_id") or "").strip().lower() != "satellogic":
@@ -1200,12 +1352,7 @@ class SearchStreamingMixin:
                     layer_name = self._asset_layer_name(item, key)
                     cached_layer = QgsRasterLayer(str(cached_path), layer_name)
                     if cached_layer.isValid():
-                        source_norm = str(source_id or "").strip().lower()
-                        if (
-                            source_norm == "merlin-s2"
-                            and key in {"preview", "thumbnail"}
-                            and not self._layer_has_georeference(cached_layer)
-                        ):
+                        if key in {"preview", "thumbnail"} and not self._layer_has_georeference(cached_layer):
                             if self._georeference_image_asset_from_item_bounds(item=item, image_path=cached_path):
                                 refreshed_layer = QgsRasterLayer(str(cached_path), layer_name)
                                 if refreshed_layer.isValid():
@@ -1218,6 +1365,14 @@ class SearchStreamingMixin:
                                             f"source={source_id or 'unknown'} collection={collection_id or ''} item_id={item_id} "
                                             f"asset_key={key} mode=preview_georef success=yes cache=true"
                                         )
+                        if key in {"preview", "thumbnail"} and not self._layer_has_georeference(cached_layer):
+                            self._append_debug_log(
+                                "item_load_attempt "
+                                f"source={source_id or 'unknown'} collection={collection_id or ''} item_id={item_id} "
+                                f"asset_key={key} mode=cache success=no error=preview_not_georeferenced",
+                                level=Qgis.Warning,
+                            )
+                            continue
                         self._append_debug_log(
                             "item_load_attempt "
                             f"source={source_id or 'unknown'} collection={collection_id or ''} item_id={item_id} "
@@ -1250,12 +1405,7 @@ class SearchStreamingMixin:
                 layer = QgsRasterLayer(str(path), layer_name)
                 if not layer.isValid():
                     raise RuntimeError(f"QGIS could not open downloaded asset ({path.name})")
-                source_norm = str(source_id or "").strip().lower()
-                if (
-                    source_norm == "merlin-s2"
-                    and key in {"preview", "thumbnail"}
-                    and not self._layer_has_georeference(layer)
-                ):
+                if key in {"preview", "thumbnail"} and not self._layer_has_georeference(layer):
                     if self._georeference_image_asset_from_item_bounds(item=item, image_path=path):
                         georef_layer = QgsRasterLayer(str(path), layer_name)
                         if georef_layer.isValid():
@@ -1268,6 +1418,8 @@ class SearchStreamingMixin:
                                     f"source={source_id or 'unknown'} collection={collection_id or ''} item_id={item_id} "
                                     f"asset_key={key} mode=preview_georef success=yes"
                                 )
+                if key in {"preview", "thumbnail"} and not self._layer_has_georeference(layer):
+                    raise RuntimeError("preview asset has no georeference")
                 self._append_debug_log(
                     "item_load_attempt "
                     f"source={source_id or 'unknown'} collection={collection_id or ''} item_id={item_id} "
@@ -1602,13 +1754,17 @@ class SearchStreamingMixin:
         right_core = f"{right_parsed.scheme}://{right_parsed.netloc}{right_parsed.path}"
         return bool(left_core and right_core and left_core == right_core)
 
-    def _build_stream_layer_for_item(self, item, source_urls=None, source_items=None):
+    def _build_stream_layer_for_item(self, item, source_urls=None, source_items=None, prefer_telluric=False):
         source_id = str(item.get("source_id") or "").strip().lower()
         if source_id == "merlin-s2":
             layer = self._build_merlin_wmts_stream_layer(item)
             if layer is not None:
                 return layer
         if source_id == "satellogic":
+            if bool(prefer_telluric):
+                layer = self._build_satellogic_telluric_stream_layer(item)
+                if layer is not None:
+                    return layer
             layer = self._build_satellogic_proxy_stream_layer(
                 item,
                 source_urls=source_urls,
@@ -1616,7 +1772,39 @@ class SearchStreamingMixin:
             )
             if layer is not None:
                 return layer
+            if not bool(prefer_telluric):
+                layer = self._build_satellogic_telluric_stream_layer(item)
+                if layer is not None:
+                    return layer
         return None
+
+    def _build_satellogic_telluric_stream_layer(self, item):
+        if not self.local_tile_proxy.is_running():
+            return None
+        scene_id, raster_name = self._satellogic_telluric_scene_raster_from_item(item)
+        if not scene_id or not raster_name:
+            return None
+        raw_contract_id = str(item.get("contract_id") or "").strip() or self.source_service.default_contract_id()
+        contract_id = self.source_service.resolve_contract_id(raw_contract_id)
+        params = [
+            ("scene_id", scene_id),
+            ("raster_name", raster_name),
+        ]
+        if contract_id:
+            params.append(("contract_id", contract_id))
+        query = urlencode(params, doseq=True)
+        query = query.replace("&", "%26")
+        xyz_url = f"{self.local_tile_proxy.base_url}/satellogic/telluric/tiles/{{z}}/{{x}}/{{y}}?{query}"
+        layer_name = self._asset_layer_name(item, "telluric_stream")
+        layer = self._make_xyz_layer(xyz_url, layer_name, zmin=0, zmax=22)
+        if layer is None or not layer.isValid():
+            return None
+        self._apply_stream_layer_extent(layer, [item])
+        self._append_debug_log(
+            "Telluric tile stream setup: "
+            f"scene_id={scene_id} raster={raster_name} contract={'set' if contract_id else 'missing'}"
+        )
+        return layer
 
     def _build_merlin_wmts_stream_layer(self, item):
         day = self._item_day(item)
