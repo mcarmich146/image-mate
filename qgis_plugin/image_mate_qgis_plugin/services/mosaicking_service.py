@@ -114,6 +114,13 @@ class MosaickingService:
         exit_code = runner(argv)
         elapsed_seconds = max(0.0, time.monotonic() - started_at)
         if exit_code not in (None, 0):
+            missing_inputs = [path for path in request.input_paths if not path.exists()]
+            if missing_inputs:
+                missing_text = ", ".join(str(path) for path in missing_inputs)
+                raise RuntimeError(
+                    "Mosaicker_v2 stopped because input file(s) became unavailable during "
+                    f"processing: {missing_text}"
+                )
             raise RuntimeError(f"Mosaicker_v2 exited with code {exit_code}.")
         if not request.output_path.exists() or not request.output_path.is_file():
             raise RuntimeError(

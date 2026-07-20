@@ -60,12 +60,13 @@
 | --- | --- | --- | --- | --- |
 | TC-001 | REQ-F-002;REQ-F-003;REQ-F-004;REQ-F-006;REQ-NF-002 | Automated test | `mosaicking_service_smoke.py` output | QGIS plugin |
 | TC-002 | REQ-F-001;REQ-F-005;REQ-NF-001;REQ-BR-001 | Static contract test | `mosaicking_studio_wiring_smoke.py` output | QGIS plugin |
-| TC-003 | REQ-F-004 | Automated inspection | Vendored parser/help invocation | QGIS plugin |
+| TC-003 | REQ-F-004 | Automated test | `mosaicking_engine_smoke.py` synthetic end-to-end output | QGIS plugin |
 | TC-004 | All | Demonstration | Interactive QGIS acceptance run with two local rasters | Product owner |
+| TC-005 | REQ-F-004;REQ-F-006;REQ-NF-002 | Automated test | Four-source Jakarta `MosaickingService` output and analysis report | QGIS plugin |
 
 ## 6. Coverage Gaps and Risks
 
-- `TC-004` requires a QGIS GUI and representative local imagery and is therefore
-  not terminal-automated.
+- `TC-004` requires a QGIS GUI and is therefore not terminal-automated. `TC-005`
+  validates the full backend with representative imagery.
 - The engine's own synthetic end-to-end test is dependency-heavy; the adapter
   smoke test isolates integration behavior for low-bandwidth verification.

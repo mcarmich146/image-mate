@@ -102,6 +102,25 @@ def main() -> int:
             ),
             "engine_exit_code",
         )
+
+        disappearing = temp_dir / "disappearing.tif"
+        disappearing.write_bytes(b"temporary")
+
+        def remove_input_and_fail(_argv):
+            disappearing.unlink()
+            return 1
+
+        try:
+            MosaickingService(runner=remove_input_and_fail).create_mosaic(
+                input_paths=[input_a, disappearing],
+                output_path=temp_dir / "disappeared-output.tif",
+            )
+        except RuntimeError as exc:
+            if "became unavailable" not in str(exc) or disappearing.name not in str(exc):
+                raise AssertionError(f"missing-input failure was not actionable: {exc}") from exc
+        else:
+            raise AssertionError("expected a missing-input failure after the runner returned")
+
         _expect_error(
             RuntimeError,
             lambda: MosaickingService(runner=lambda _argv: 0).create_mosaic(

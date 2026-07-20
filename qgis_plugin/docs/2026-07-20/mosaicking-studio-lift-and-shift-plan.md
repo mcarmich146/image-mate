@@ -52,7 +52,7 @@ layer.
   temporary output.
 - Run a static wiring smoke test for the Geoprocessing button, signal, handler,
   background task, and output-layer loading.
-- Run the imported engine's parser/help path without importing QGIS.
+- Run `mosaicking_engine_smoke.py` against the exact vendored engine.
 - Run QGIS scope and documentation coverage scripts.
 
 ## Risks and Rollback
@@ -74,3 +74,64 @@ layer.
 - User-controlled feathering and cloud-mask parameters.
 - Per-input priorities and external cloud-mask assignment.
 - Persistent/reopenable studio projects.
+
+## Implementation Summary
+
+- Vendored the package engine and MIT license without algorithm changes; source
+  and destination SHA-256 values both equal
+  `CC1C3885684FEF2C37F6F3269A70C53A35F745D0A9A5C737906E4B1E85BFF8D5`.
+- Added a lazy service adapter, a three-page wizard, a Geoprocessing button, and
+  QGIS background-task/output-layer wiring.
+- Added adapter, static wiring, and full synthetic engine smoke tests.
+- Added canonical operator guidance in `qgis_plugin/docs/mosaicking-studio.md`.
+
+## Verification Evidence
+
+1. Command: `py -3 qgis_plugin/test/mosaicking_service_smoke.py`
+   Expectation: validate inputs/overwrite, preserve engine defaults, invoke an
+   injected runner, and reject failed/missing outputs.
+   Observed: `mosaicking_service_smoke: ok`.
+   Interpretation: Pass.
+2. Command: `py -3 qgis_plugin/test/mosaicking_studio_wiring_smoke.py`
+   Expectation: verify button/signal/wizard/task/layer-loading contracts and the
+   absence of deferred controls.
+   Observed: `mosaicking_studio_wiring_smoke: ok`.
+   Interpretation: Pass.
+3. Command: `py -3 qgis_plugin/test/mosaicking_engine_smoke.py`
+   Expectation: run synthetic radiometric balancing, cloud replacement, gap-mask,
+   sizing, and tile-memory checks against the vendored engine.
+   Observed: `All smoke tests passed.`
+   Interpretation: Pass.
+4. Command: `py -3 -m compileall -q qgis_plugin/image_mate_qgis_plugin ...`
+   Expectation: all plugin, adapter, UI, engine, and smoke-test Python compiles.
+   Observed: exit code 0 with no error output.
+   Interpretation: Pass.
+5. Command: run `MosaickingService.create_mosaic(...)` with the four current
+   VISUAL rasters under
+   `G:\Shared drives\ChannelDrive-Internal\APAC\Market Materials\City Imagery\Jakarta`,
+   including replacement folder `aleph_20260720115524`.
+   Expectation: create a readable three-band GeoTIFF and analysis report from all
+   four inputs.
+   Observed: created
+   `Jakarta_ImageMate_mosaic_test_20260720_115732.tif` (405,059,292 bytes) in
+   366.7 service seconds. The raster is EPSG:32748, 24,005 x 20,007 pixels,
+   three uint8 bands, has overview factors 2/4/8/16/32, and its report status is
+   `complete` with four inputs. No work directory remained.
+   Interpretation: Pass.
+
+## Real-Data Finding and Remediation
+
+The first acceptance attempt failed after preflight because one Aleph input was
+removed while the engine was reading the shared-drive dataset. The user confirmed
+the removal was intentional and supplied `aleph_20260720115524` as its replacement.
+`MosaickingService` now checks for inputs that became unavailable when the engine
+returns a failure and reports the exact missing paths. The adapter smoke test
+reproduces and verifies this failure message.
+
+## Follow-ups
+
+- Not run: interactive QGIS wizard/task-manager/layer-add acceptance. The full
+  backend service was validated with representative imagery, but the final GUI
+  interaction still requires QGIS. Owner: product owner. Target: before release.
+- Add cutline editing, manual seam/feather controls, and cloud-mask workflows in
+  separately requirement-scoped increments. Owner: product owner. Target: TBD.
