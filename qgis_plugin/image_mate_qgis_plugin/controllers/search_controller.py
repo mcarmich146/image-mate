@@ -34,6 +34,9 @@ class SearchController:
         limit = payload.get("limit")
         start_date = str(payload.get("start_date") or "").strip()
         end_date = str(payload.get("end_date") or "").strip()
+        min_coverage_filter = str(payload.get("min_coverage_filter") or "").strip().lower()
+        if min_coverage_filter not in {"touching", "full", "half"}:
+            min_coverage_filter = "full" if bool(payload.get("require_full_aoi_overlap", False)) else "half"
         if len(start_date) == 10:
             start_date = f"{start_date}T00:00:00Z"
         if len(end_date) == 10:
@@ -50,5 +53,7 @@ class SearchController:
             "satellite_name": str(payload.get("satellite_name") or "").strip() or None,
             "min_gsd": payload.get("min_gsd"),
             "max_gsd": payload.get("max_gsd"),
+            "min_coverage_filter": min_coverage_filter,
+            "require_full_aoi_overlap": min_coverage_filter == "full",
             "geometry": extent_geometry,
         }

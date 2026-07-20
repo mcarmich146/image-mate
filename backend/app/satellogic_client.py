@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from urllib.parse import urlparse
 import logging
 import re
 
@@ -10,6 +11,14 @@ import requests
 from .config import settings
 
 logger = logging.getLogger(__name__)
+
+
+def _should_send_auth_headers(url: str) -> bool:
+    try:
+        host = urlparse(url).netloc.lower()
+    except Exception:
+        return False
+    return host.endswith("satellogic.com") or host.endswith("platform.satellogic.com")
 
 
 def _normalize_longitude(value: Any) -> Any:
@@ -208,6 +217,10 @@ class SatellogicClient:
         if include_contract and effective_contract_id:
             headers["X-Satellogic-Contract-Id"] = effective_contract_id
 
+        auth_token = headers.get("authorizationToken", "")
+        if auth_token.startswith("Bearer "):
+            headers["Authorization"] = auth_token
+
         return headers
 
     def refresh_access_token(self) -> tuple[bool, datetime | None]:
@@ -378,7 +391,8 @@ class SatellogicClient:
         return features[0] if features else None
 
     def download_bytes(self, url: str, contract_id: str | None = None) -> bytes:
-        response = requests.get(url, headers=self.auth_headers(contract_id=contract_id), timeout=45)
+        headers = self.auth_headers(contract_id=contract_id) if _should_send_auth_headers(url) else {}
+        response = requests.get(url, headers=headers, timeout=45)
         response.raise_for_status()
         return response.content
 
@@ -395,10 +409,18 @@ class SatellogicClient:
             return []
 
         sat_filter = (satellite_name or "").strip().lower()
+        normalized_requested_collection = (collection_id or "").strip().lower().replace("_", "-") if collection_id else None
         out = []
         for feature in features:
             props = feature.get("properties", {})
             item_id = feature.get("id", "")
+            
+            # Filter by collection ID - ensure exact match to avoid mixing collections
+            if normalized_requested_collection:
+                feature_collection = (feature.get("collection") or "").strip().lower().replace("_", "-")
+                if feature_collection != normalized_requested_collection:
+                    continue
+            
             sat_name = _extract_satellite_name(props, item_id) or ""
             gsd = _extract_gsd(props)
             if sat_filter and sat_filter not in sat_name.lower() and sat_filter not in item_id.lower():

@@ -35,6 +35,7 @@ class Settings:
     satellogic_api_base_url: str = os.getenv("SATELLOGIC_API_BASE_URL", "https://api.satellogic.com")
     satellogic_stac_url: str = os.getenv("SATELLOGIC_STAC_URL", "https://api.satellogic.com/archive/stac")
     satellogic_token_url: str = os.getenv("SATELLOGIC_TOKEN_URL", "https://auth.platform.satellogic.com/oauth/token")
+    satellogic_cog_timeout_seconds: int = int(os.getenv("SATELLOGIC_COG_TIMEOUT_SECONDS", "180"))
 
     merlin_s2_enabled: bool = _as_bool(os.getenv("MERLIN_S2_ENABLED", "false"), default=False)
     cdse_client_id: str = os.getenv("CDSE_CLIENT_ID", "")

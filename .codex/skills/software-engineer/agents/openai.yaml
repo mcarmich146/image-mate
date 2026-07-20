@@ -1,0 +1,4 @@
+interface:
+  display_name: "Software Engineer"
+  short_description: "Implement requirements into robust, maintainable production code"
+  default_prompt: "Use $software-engineer to implement requirement-engineer outputs with architecture-first design, strong tests, and maintainable code."

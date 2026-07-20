@@ -1,0 +1,17 @@
+# Test output directories
+test_results/
+tile_diagnostic_downloads/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Downloaded images
+*.jpg
+*.png
+*.tif
+*.tiff
+
+# Results
+results_*.json

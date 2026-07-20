@@ -1,0 +1,4 @@
+interface:
+  display_name: "Requirement Engineer"
+  short_description: "Break objectives into testable requirements"
+  default_prompt: "Use $requirement-engineer to decompose this objective into implementable requirements and a traceability matrix."

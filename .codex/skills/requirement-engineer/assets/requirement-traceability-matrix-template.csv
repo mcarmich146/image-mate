@@ -1,0 +1,2 @@
+Objective ID,Objective Statement,Requirement ID,Requirement Type,Requirement Statement,Acceptance Criteria IDs,Verification ID,Verification Method,Implementation Owner,Test Owner,Status,Notes
+OBJ-001,Example objective text,REQ-F-001,Functional,The system shall ...,AC-001;AC-002,TC-001,Test,,,Proposed,

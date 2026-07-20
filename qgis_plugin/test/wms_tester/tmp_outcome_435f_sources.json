@@ -1,0 +1,18 @@
+[
+  {
+    "id": "20260215_022207_799_SN33_L1D_SR_MS_49N_564_1816_2_0_1",
+    "href": "https://api.satellogic.com/assets/l1d-sr/20260215_022207_799_SN33_L1D_SR_MS_49N_564_1816_2_0_1/visual?s=s3%3A//satellogic-production-eo-backend-catalog/L1D_SR/435f51fd-8684-414c-be5f-b46d5a7f172d/2_0_1/20260215_022207_799_SN33_L1D_SR_MS_49N_564_1816_visual.tif"
+  },
+  {
+    "id": "20260215_022207_799_SN33_L1D_SR_MS_49N_560_1816_2_0_1",
+    "href": "https://api.satellogic.com/assets/l1d-sr/20260215_022207_799_SN33_L1D_SR_MS_49N_560_1816_2_0_1/visual?s=s3%3A//satellogic-production-eo-backend-catalog/L1D_SR/435f51fd-8684-414c-be5f-b46d5a7f172d/2_0_1/20260215_022207_799_SN33_L1D_SR_MS_49N_560_1816_visual.tif"
+  },
+  {
+    "id": "20260215_022207_164_SN33_L1D_SR_MS_49N_564_1820_2_0_1",
+    "href": "https://api.satellogic.com/assets/l1d-sr/20260215_022207_164_SN33_L1D_SR_MS_49N_564_1820_2_0_1/visual?s=s3%3A//satellogic-production-eo-backend-catalog/L1D_SR/435f51fd-8684-414c-be5f-b46d5a7f172d/2_0_1/20260215_022207_164_SN33_L1D_SR_MS_49N_564_1820_visual.tif"
+  },
+  {
+    "id": "20260215_022207_164_SN33_L1D_SR_MS_49N_560_1820_2_0_1",
+    "href": "https://api.satellogic.com/assets/l1d-sr/20260215_022207_164_SN33_L1D_SR_MS_49N_560_1820_2_0_1/visual?s=s3%3A//satellogic-production-eo-backend-catalog/L1D_SR/435f51fd-8684-414c-be5f-b46d5a7f172d/2_0_1/20260215_022207_164_SN33_L1D_SR_MS_49N_560_1820_visual.tif"
+  }
+]

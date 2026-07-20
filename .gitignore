@@ -15,6 +15,9 @@ dist/
 htmlcov/
 
 # Local secrets
+*.cmd
+.tmp*.py
+*.db
 .env
 .env copy
 .env.local

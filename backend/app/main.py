@@ -1614,11 +1614,12 @@ def _cog_upstream_request(
         raise HTTPException(status_code=503, detail="OAuth client-credentials token is unavailable")
 
     def _request_with_retry(headers: dict[str, str]) -> requests.Response:
+        timeout = max(30, int(settings.satellogic_cog_timeout_seconds))
         response = requests.get(
             upstream_url,
             headers=headers,
             params=params,
-            timeout=90,
+            timeout=timeout,
         )
         if response.status_code == 400 and buffer > 0:
             retry_params = [entry for entry in params if entry[0] != "buffer"]
@@ -1626,7 +1627,7 @@ def _cog_upstream_request(
                 upstream_url,
                 headers=headers,
                 params=retry_params,
-                timeout=90,
+                timeout=timeout,
             )
         return response
 

@@ -4578,9 +4578,9 @@ function latestVisibleStripMosaic(items) {
   const pixelBounds = map.getPixelBounds();
   const tileSize = 256;
   const minTileX = Math.floor(pixelBounds.min.x / tileSize);
-  const maxTileX = Math.floor((pixelBounds.max.x - 1) / tileSize);
+  const maxTileX = Math.floor(pixelBounds.max.x / tileSize);
   const minTileY = Math.floor(pixelBounds.min.y / tileSize);
-  const maxTileY = Math.floor((pixelBounds.max.y - 1) / tileSize);
+  const maxTileY = Math.floor(pixelBounds.max.y / tileSize);
   const tileCount = Math.max(0, (maxTileX - minTileX + 1) * (maxTileY - minTileY + 1));
   if (!tileCount || tileCount > DETAIL_VISIBLE_MOSAIC_MAX_TILE_CELLS) {
     return latestStripPerArea(prepared.map((entry) => entry.item));
