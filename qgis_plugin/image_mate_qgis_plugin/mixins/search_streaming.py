@@ -71,7 +71,10 @@ class SearchStreamingMixin:
             return
         source_id = self.dock.current_source_id() or "satellogic"
         source_norm = str(source_id or "").strip().lower()
-        self.dock.set_collections(self.source_service.list_collections(source_id))
+        # Source selection is local UI state. Remote collection, tasking, and
+        # monitoring refreshes must remain explicit actions so opening the dock
+        # never depends on API availability.
+        self.dock.set_collections(self.source_service.default_collections(source_id))
         self.dock.set_contract_enabled(source_norm == "satellogic")
         if hasattr(self.dock, "min_coverage_filter_combo"):
             combo = self.dock.min_coverage_filter_combo
@@ -113,21 +116,6 @@ class SearchStreamingMixin:
                     "(values below 10 m/px can exclude all Sentinel-2 scenes).",
                     level=Qgis.Info,
                 )
-        if hasattr(self, "handle_tasking_refresh_request"):
-            try:
-                self.handle_tasking_refresh_request()
-            except Exception:
-                pass
-        if hasattr(self, "handle_mosaic_refresh_projects_request"):
-            try:
-                self.handle_mosaic_refresh_projects_request()
-            except Exception:
-                pass
-        if hasattr(self, "handle_monitoring_refresh_request"):
-            try:
-                self.handle_monitoring_refresh_request({"source_id": source_id})
-            except Exception:
-                pass
 
     def _runtime_summary_text(self, extra_line=None):
         runtime = self.source_service.runtime_summary()

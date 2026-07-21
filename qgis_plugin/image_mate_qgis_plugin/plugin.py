@@ -1519,6 +1519,11 @@ class ImageMatePlugin(SimulationExecutionMixin, WorkflowExecutionMixin, SearchSt
 
         def _finish_studio(*, success, message):
             _drain_studio_log()
+            timer = getattr(studio, "_mosaicking_log_timer", None) if studio is not None else None
+            if timer is not None:
+                timer.stop()
+                timer.deleteLater()
+                studio._mosaicking_log_timer = None
             if studio is not None and hasattr(studio, "finish_processing"):
                 studio.finish_processing(success=success, message=message)
 

@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 
 
@@ -25,6 +26,21 @@ def main() -> int:
         'dialog.run_requested.connect(self.mosaicking_studio_requested.emit)',
         "persistent request emission",
     )
+    _require(dock_text, "dialog.show()", "modeless studio opening")
+    _require(dock_text, "dialog.destroyed.connect(", "modeless studio cleanup")
+    dock_tree = ast.parse(dock_text)
+    studio_open = next(
+        node
+        for node in ast.walk(dock_tree)
+        if isinstance(node, ast.FunctionDef) and node.name == "_open_mosaicking_studio"
+    )
+    studio_open_calls = {
+        node.func.attr
+        for node in ast.walk(studio_open)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+    }
+    if "exec_" in studio_open_calls:
+        raise AssertionError("Mosaicking Studio must not disable the main dock with a modal event loop")
     _require(dialog_text, 'class MosaickingStudioDialog(QDialog):', "persistent studio")
     _require(dialog_text, 'self.tabs = QTabWidget(self)', "tab container")
     for tab_label in (
@@ -61,6 +77,8 @@ def main() -> int:
     _require(plugin_text, "debug_callback=_emit_studio_debug", "debug lifecycle bridge")
     _require(plugin_text, "studio_log_buffer = MosaickingLogBuffer()", "thread-safe log bridge")
     _require(plugin_text, "studio_log_buffer.drain(studio_log_signal.emit)", "GUI-thread log drain")
+    _require(plugin_text, "timer.stop()", "terminal log timer stop")
+    _require(plugin_text, "timer.deleteLater()", "terminal log timer disposal")
     _require(plugin_text, "task.progressChanged.connect(studio.processing_progress_received.emit)", "UI progress bridge")
     _require(plugin_text, "task.statusChanged.connect(", "task status diagnostics")
     _require(plugin_text, "task.taskTerminated.connect(", "termination fallback")

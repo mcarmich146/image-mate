@@ -5969,6 +5969,13 @@ class ImageMateMainDock(WorkflowDockMixin, QDockWidget):
         return tab
 
     def _open_mosaicking_studio(self):
+        existing = getattr(self, "_mosaicking_studio_dialog", None)
+        if existing is not None:
+            existing.show()
+            existing.raise_()
+            existing.activateWindow()
+            return
+
         options = self._project_raster_layer_options()
         if len(options) < 2:
             QMessageBox.warning(
@@ -5987,11 +5994,15 @@ class ImageMateMainDock(WorkflowDockMixin, QDockWidget):
             parent=self,
         )
         dialog.run_requested.connect(self.mosaicking_studio_requested.emit)
+        dialog.setAttribute(Qt.WA_DeleteOnClose, True)
+        dialog.destroyed.connect(self._on_mosaicking_studio_destroyed)
         self._mosaicking_studio_dialog = dialog
-        try:
-            dialog.exec_()
-        finally:
-            self._mosaicking_studio_dialog = None
+        dialog.show()
+        dialog.raise_()
+        dialog.activateWindow()
+
+    def _on_mosaicking_studio_destroyed(self, _obj=None):
+        self._mosaicking_studio_dialog = None
 
     def _open_create_vrt_dialog(self):
         options = self._project_raster_layer_options()

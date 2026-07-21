@@ -239,6 +239,25 @@ class SourceService:
                     logger.warning("plugin_collection_list source=merlin-s2 empty_manager_result=true")
             except Exception as exc:
                 logger.warning("plugin_collection_list source=%s fallback reason=%s", sid or "unknown", exc)
+        fallback = self.default_collections(sid)
+        if sid == "merlin-s2":
+            logger.info(
+                "plugin_collection_list source=merlin-s2 count=%s first=%s fallback=sentinel_default_only",
+                len(fallback),
+                fallback[0]["id"],
+            )
+            return fallback
+        logger.info(
+            "plugin_collection_list source=%s count=%s first=%s fallback=satellogic_default",
+            sid or "unknown",
+            len(fallback),
+            fallback[0]["id"],
+        )
+        return fallback
+
+    def default_collections(self, source_id):
+        """Return local collection choices without authentication or network access."""
+        sid = str(source_id or "").strip().lower()
         if sid == "merlin-s2":
             default_collection = "sentinel-2-l2a"
             if self._manager is not None:
@@ -248,27 +267,12 @@ class SourceService:
                     candidate = str(defaults[0] or "").strip()
                     if candidate:
                         default_collection = candidate
-            fallback = [
-                {"id": default_collection, "title": default_collection},
-            ]
-            logger.info(
-                "plugin_collection_list source=merlin-s2 count=%s first=%s fallback=sentinel_default_only",
-                len(fallback),
-                default_collection,
-            )
-            return fallback
-        fallback = [
+            return [{"id": default_collection, "title": default_collection}]
+        return [
             {"id": "l1d-sr", "title": "L1D Surface Reflectance"},
             {"id": "quickview-visual", "title": "Quickview Visual"},
             {"id": "quickview-visual-thumb", "title": "Quickview Visual Thumb"},
         ]
-        logger.info(
-            "plugin_collection_list source=%s count=%s first=%s fallback=satellogic_default",
-            sid or "unknown",
-            len(fallback),
-            fallback[0]["id"],
-        )
-        return fallback
 
     def list_contracts(self, source_id: str) -> list[dict[str, Any]]:
         if not self._manager:

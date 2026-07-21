@@ -38,9 +38,11 @@ started.
 6. Keep the studio open on **Processing Results**. Its progress bar and live,
    timestamped log show planning, source analysis, seam generation, tile writing,
    overview creation, and the final result. The studio prevents accidental closing
-   while the task is running.
+   while the task is running. The studio is modeless, so the main Image Mate dock
+   and QGIS remain available while processing continues.
 7. When processing succeeds, Image Mate adds the output to the Image Mate layer
-   group and enables **Close**. Failures remain visible in the same results tab.
+   group, stops the studio's progress-log timer, and enables **Close**. Failures
+   remain visible in the same results tab.
 
 If progress appears stalled, rerun with **Include debug information** enabled and
 use the last `DEBUG:` message to distinguish task submission, worker startup,
