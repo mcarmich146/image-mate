@@ -309,6 +309,27 @@ class SatellogicClient:
             return payload
         return {"result": payload}
 
+    def list_order_deliverables(self, order_id: str, contract_id: str | None = None) -> dict[str, Any]:
+        """
+        List deliverables for a v2 tasking order.
+        """
+        order_key = quote(str(order_id or "").strip(), safe="")
+        if not order_key:
+            raise RuntimeError("order_id is required")
+        url = f"{self.api_base_url}/v2/orders/{order_key}/deliverables"
+        response = requests.get(
+            url,
+            headers=self.auth_headers(contract_id=contract_id),
+            timeout=60,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if isinstance(payload, dict):
+            return payload
+        if isinstance(payload, list):
+            return {"results": payload}
+        return {"results": []}
+
     def cancel_order(self, order_id: str, contract_id: str | None = None) -> dict[str, Any]:
         """
         Cancel a v2 tasking order by id.
@@ -329,6 +350,32 @@ class SatellogicClient:
         if isinstance(payload, dict):
             return payload
         return {"id": str(order_id or "").strip(), "status": "cancelled", "result": payload}
+
+    def cancel_task(self, task_id: str | int, contract_id: str | None = None) -> dict[str, Any]:
+        """
+        Cancel a tasking task by numeric task id.
+        Mirrors Aleph browser flow:
+        PATCH /tasking/tasks/{task_id}/cancel/?api_url={api_base_url}
+        """
+        task_key = quote(str(task_id or "").strip(), safe="")
+        if not task_key:
+            raise RuntimeError("task_id is required")
+        url = f"{self.api_base_url}/tasking/tasks/{task_key}/cancel/"
+        params = {"api_url": self.api_base_url}
+        response = requests.patch(
+            url,
+            headers=self.auth_headers(contract_id=contract_id),
+            params=params,
+            json={},
+            timeout=60,
+        )
+        response.raise_for_status()
+        if not response.content:
+            return {"task_id": str(task_id or "").strip(), "status": "canceled"}
+        payload = response.json()
+        if isinstance(payload, dict):
+            return payload
+        return {"task_id": str(task_id or "").strip(), "status": "canceled", "result": payload}
 
     def search(
         self,

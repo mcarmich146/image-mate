@@ -11,7 +11,7 @@ import os
 import sys
 import time
 import types
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 from ..clients.merlin_sentinel2_client import MerlinSentinel2Client
 from ..clients.satellogic_client import SatellogicClient
@@ -239,6 +239,25 @@ class SourceService:
                     logger.warning("plugin_collection_list source=merlin-s2 empty_manager_result=true")
             except Exception as exc:
                 logger.warning("plugin_collection_list source=%s fallback reason=%s", sid or "unknown", exc)
+        fallback = self.default_collections(sid)
+        if sid == "merlin-s2":
+            logger.info(
+                "plugin_collection_list source=merlin-s2 count=%s first=%s fallback=sentinel_default_only",
+                len(fallback),
+                fallback[0]["id"],
+            )
+            return fallback
+        logger.info(
+            "plugin_collection_list source=%s count=%s first=%s fallback=satellogic_default",
+            sid or "unknown",
+            len(fallback),
+            fallback[0]["id"],
+        )
+        return fallback
+
+    def default_collections(self, source_id):
+        """Return local collection choices without authentication or network access."""
+        sid = str(source_id or "").strip().lower()
         if sid == "merlin-s2":
             default_collection = "sentinel-2-l2a"
             if self._manager is not None:
@@ -248,27 +267,12 @@ class SourceService:
                     candidate = str(defaults[0] or "").strip()
                     if candidate:
                         default_collection = candidate
-            fallback = [
-                {"id": default_collection, "title": default_collection},
-            ]
-            logger.info(
-                "plugin_collection_list source=merlin-s2 count=%s first=%s fallback=sentinel_default_only",
-                len(fallback),
-                default_collection,
-            )
-            return fallback
-        fallback = [
+            return [{"id": default_collection, "title": default_collection}]
+        return [
             {"id": "l1d-sr", "title": "L1D Surface Reflectance"},
             {"id": "quickview-visual", "title": "Quickview Visual"},
             {"id": "quickview-visual-thumb", "title": "Quickview Visual Thumb"},
         ]
-        logger.info(
-            "plugin_collection_list source=%s count=%s first=%s fallback=satellogic_default",
-            sid or "unknown",
-            len(fallback),
-            fallback[0]["id"],
-        )
-        return fallback
 
     def list_contracts(self, source_id: str) -> list[dict[str, Any]]:
         if not self._manager:
@@ -451,9 +455,11 @@ class SourceService:
             or raw.get("sku")
             or (feature.get("sku") if isinstance(feature, dict) else None)
         )
+        status_raw = str(properties.get("status") or raw.get("status") or "unknown").strip() or "unknown"
         return {
             "id": order_id,
-            "status": properties.get("status") or raw.get("status") or "unknown",
+            "status": status_raw,
+            "lifecycle_status": status_raw,
             "order_name": properties.get("order_name") or properties.get("name") or "",
             "project_name": properties.get("project_name") or "",
             "sku": sku,
@@ -475,8 +481,42 @@ class SourceService:
             "geometry_type": geometry_obj.get("type"),
             "geometry": geometry_obj,
             "parameters": parameters,
+            "status_report": properties.get("status_report") or raw.get("status_report"),
+            "latest_event": properties.get("latest_event") if isinstance(properties.get("latest_event"), dict) else {},
             "raw": raw,
         }
+
+    @staticmethod
+    def _status_from_report_value(value: Any) -> str:
+        text = str(value or "").strip()
+        if not text:
+            return ""
+        normalized = text.lower()
+        if normalized in {"completed", "complete", "delivered", "success", "succeeded"}:
+            return "Completed"
+        if normalized in {"failed", "failure", "rejected", "expired", "cancelled", "canceled"}:
+            return "Failed"
+        return text
+
+    @classmethod
+    def _status_from_status_report(cls, status_report: Any) -> str:
+        if isinstance(status_report, str):
+            return cls._status_from_report_value(status_report)
+        if isinstance(status_report, dict):
+            for key in (
+                "status",
+                "outcome",
+                "result",
+                "task_status",
+                "order_status",
+                "final_status",
+                "delivery_status",
+                "acquisition_status",
+            ):
+                resolved = cls._status_from_report_value(status_report.get(key))
+                if resolved:
+                    return resolved
+        return ""
 
     @staticmethod
     def _is_tasking_sku(value: Any) -> bool:
@@ -560,6 +600,48 @@ class SourceService:
         })
         return projects
 
+    def resolve_tasking_order_status(
+        self,
+        *,
+        order: dict[str, Any] | None,
+        order_id: str,
+        contract_id: str | None = None,
+    ) -> str:
+        row = order if isinstance(order, dict) else {}
+        lifecycle_status = (
+            str(row.get("lifecycle_status") or row.get("status") or "").strip()
+            or "unknown"
+        )
+        report_status = self._status_from_status_report(row.get("status_report"))
+        if report_status:
+            return report_status
+        if lifecycle_status.lower() != "closed":
+            return lifecycle_status
+
+        order_key = str(order_id or row.get("id") or "").strip()
+        if not order_key:
+            return lifecycle_status
+        try:
+            sat_client = self._tasking_client()
+            list_deliverables = getattr(sat_client, "list_order_deliverables", None)
+            if not callable(list_deliverables):
+                return lifecycle_status
+            effective_contract = self._normalize_contract_candidate(contract_id) or self.default_contract_id() or None
+            payload = list_deliverables(order_key, contract_id=effective_contract)
+            results = payload.get("results") if isinstance(payload, dict) else []
+            rows = [entry for entry in (results or []) if isinstance(entry, dict)]
+            statuses = [str(entry.get("status") or "").strip().upper() for entry in rows]
+        except Exception:
+            return lifecycle_status
+
+        if any(value in {"DELIVERED", "COMPLETED", "SUCCESS", "SUCCEEDED"} for value in statuses):
+            return "Completed"
+        if not statuses:
+            return "Failed"
+        if all(value in {"FAILED", "FAILURE", "REJECTED", "EXPIRED", "CANCELLED", "CANCELED"} for value in statuses):
+            return "Failed"
+        return "Failed"
+
     def get_tasking_order(self, order_id: str, *, contract_id: str | None = None) -> dict[str, Any]:
         order_key = str(order_id or "").strip()
         if not order_key:
@@ -567,7 +649,28 @@ class SourceService:
         sat_client = self._tasking_client()
         effective_contract = self._normalize_contract_candidate(contract_id) or self.default_contract_id() or None
         row = sat_client.get_order(order_key, contract_id=effective_contract)
-        return {"order": self._normalize_tasking_order(row), "raw": row}
+        normalized = self._normalize_tasking_order(row)
+        normalized["status"] = self.resolve_tasking_order_status(
+            order=normalized,
+            order_id=order_key,
+            contract_id=effective_contract,
+        )
+        return {"order": normalized, "raw": row}
+
+    def list_tasking_order_deliverables(self, order_id: str, *, contract_id: str | None = None) -> dict[str, Any]:
+        order_key = str(order_id or "").strip()
+        if not order_key:
+            raise RuntimeError("Tasking order id is required")
+        sat_client = self._tasking_client()
+        effective_contract = self._normalize_contract_candidate(contract_id) or self.default_contract_id() or None
+        payload = sat_client.list_order_deliverables(order_key, contract_id=effective_contract)
+        results = payload.get("results") if isinstance(payload, dict) else []
+        deliverables = [row for row in (results or []) if isinstance(row, dict)]
+        return {
+            "order_id": order_key,
+            "deliverables": deliverables,
+            "raw": payload,
+        }
 
     def cancel_tasking_order(self, order_id: str, *, contract_id: str | None = None) -> dict[str, Any]:
         order_key = str(order_id or "").strip()
@@ -575,6 +678,47 @@ class SourceService:
             raise RuntimeError("Tasking order id is required")
         sat_client = self._tasking_client()
         effective_contract = self._normalize_contract_candidate(contract_id) or self.default_contract_id() or None
+        get_order = getattr(sat_client, "get_order", None)
+        cancel_task = getattr(sat_client, "cancel_task", None)
+
+        order_payload: dict[str, Any] = {}
+        if callable(get_order):
+            try:
+                row = get_order(order_key, contract_id=effective_contract)
+                if isinstance(row, dict):
+                    order_payload = row
+            except Exception:
+                order_payload = {}
+
+        task_id = ""
+        if order_payload:
+            props = order_payload.get("properties") if isinstance(order_payload.get("properties"), dict) else {}
+            params = props.get("parameters") if isinstance(props.get("parameters"), dict) else {}
+            task_candidate = params.get("task_id") or props.get("task_id")
+            task_id = str(task_candidate or "").strip()
+
+        if task_id and callable(cancel_task):
+            cancel_payload = cancel_task(task_id, contract_id=effective_contract)
+            order_normalized = self._normalize_tasking_order(order_payload) if order_payload else {}
+            if not order_normalized:
+                order_normalized = {
+                    "id": order_key,
+                    "status": str(cancel_payload.get("status") or "canceled").strip() or "canceled",
+                    "task_id": task_id,
+                }
+            else:
+                order_normalized["status"] = (
+                    str(cancel_payload.get("status") or order_normalized.get("status") or "canceled").strip() or "canceled"
+                )
+                order_normalized["task_id"] = task_id
+            return {
+                "order": order_normalized,
+                "raw": {
+                    "order": order_payload,
+                    "cancel": cancel_payload,
+                },
+            }
+
         row = sat_client.cancel_order(order_key, contract_id=effective_contract)
         return {"order": self._normalize_tasking_order(row), "raw": row}
 
@@ -814,6 +958,111 @@ class SourceService:
         if last_error is not None:
             raise RuntimeError(f"Upstream tile request failed after {attempts} attempt(s): {last_error}") from last_error
         raise RuntimeError("Upstream tile request failed")
+
+    def fetch_satellogic_telluric_tile(
+        self,
+        *,
+        z: int,
+        x: int,
+        y: int,
+        scene_id: str,
+        raster_name: str,
+        contract_id: str | None = None,
+        max_attempts: int = 3,
+        request_timeout: int = 75,
+    ) -> tuple[int, bytes, str]:
+        if not self._manager:
+            raise RuntimeError(self._init_error or "Source manager unavailable")
+        sat_client = getattr(self._manager, "satellogic_client", None)
+        if sat_client is None:
+            raise RuntimeError("Satellogic client unavailable")
+
+        scene_key = str(scene_id or "").strip()
+        raster_key = str(raster_name or "").strip()
+        if not scene_key:
+            raise RuntimeError("Telluric scene_id is required")
+        if not raster_key:
+            raise RuntimeError("Telluric raster_name is required")
+
+        requested_contract_id = self._normalize_contract_candidate(contract_id) or None
+        effective_contract_id = (
+            requested_contract_id
+            or self._normalize_contract_candidate(str(getattr(sat_client, "contract_id", "") or "").strip())
+            or str(self.default_contract_id() or "").strip()
+            or None
+        )
+        if effective_contract_id:
+            try:
+                sat_client.contract_id = effective_contract_id
+            except Exception:
+                pass
+
+        headers = sat_client.auth_headers(
+            contract_id=effective_contract_id,
+            prefer_oauth=True,
+            ignore_static_bearer=True,
+        )
+        auth_header = str(headers.get("authorizationToken") or "")
+        if not auth_header.startswith("Bearer ") and "Key,Secret" not in auth_header:
+            raise RuntimeError("Satellogic auth headers are unavailable for Telluric tile proxy")
+
+        upstream_url = (
+            "https://api.satellogic.com/telluric/scenes/"
+            f"{quote(scene_key, safe='')}/rasters/{quote(raster_key, safe='')}/get_tile/"
+        )
+        params = {
+            "x": int(x),
+            "y": int(y),
+            "z": int(z),
+        }
+
+        try:
+            import requests
+        except Exception as exc:
+            raise RuntimeError(f"'requests' is required for tile proxying: {exc}") from exc
+
+        attempts = max(1, int(max_attempts or 1))
+        timeout = max(10, int(request_timeout or 75))
+        retryable_codes = {429, 500, 502, 503, 504}
+        last_error: Exception | None = None
+
+        for attempt in range(attempts):
+            try:
+                response = requests.get(upstream_url, headers=headers, params=params, timeout=timeout)
+                status = int(response.status_code)
+                if status == 401 and (attempt + 1) < attempts:
+                    detail = str(getattr(response, "text", "") or "").lower()
+                    if "contract" in detail:
+                        fallback_contract = self._normalize_contract_candidate(self.default_contract_id()) or None
+                        if fallback_contract and fallback_contract != effective_contract_id:
+                            effective_contract_id = fallback_contract
+                            try:
+                                sat_client.contract_id = fallback_contract
+                            except Exception:
+                                pass
+                            headers = sat_client.auth_headers(
+                                contract_id=effective_contract_id,
+                                prefer_oauth=True,
+                                ignore_static_bearer=True,
+                            )
+                            time.sleep(0.2)
+                            continue
+                if status in retryable_codes and attempt + 1 < attempts:
+                    time.sleep(0.35 * (attempt + 1))
+                    continue
+                media_type = (
+                    str(response.headers.get("Content-Type") or "image/png").split(";")[0].strip() or "image/png"
+                )
+                return status, response.content or b"", media_type
+            except Exception as exc:
+                last_error = exc
+                if attempt + 1 < attempts:
+                    time.sleep(0.35 * (attempt + 1))
+                    continue
+
+        if last_error is not None:
+            raise RuntimeError(f"Telluric tile request failed after {attempts} attempt(s): {last_error}") from last_error
+        raise RuntimeError("Telluric tile request failed")
 
     def _search_satellogic_with_oauth_fallback(
         self,

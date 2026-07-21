@@ -68,6 +68,7 @@ from ..services.mosaic_preview_resolution import should_enable_preview
 from ..services.simulation_day_navigation import navigation_button_state
 from ..workflow_plugins.manager import WorkflowPluginManager
 from .main_dock_workflow import WorkflowDockMixin
+from .mosaicking_studio_dialog import MosaickingStudioDialog
 
 
 class ImageMateMainDock(WorkflowDockMixin, QDockWidget):
@@ -80,17 +81,25 @@ class ImageMateMainDock(WorkflowDockMixin, QDockWidget):
     location_jump_requested = pyqtSignal(str)
     location_suggestions_requested = pyqtSignal(str)
     execute_workflow_requested = pyqtSignal(dict)
+    workflow_side_by_side_refresh_requested = pyqtSignal()
+    workflow_side_by_side_start_requested = pyqtSignal(dict)
+    workflow_side_by_side_review_requested = pyqtSignal(dict)
+    workflow_side_by_side_stop_requested = pyqtSignal()
     create_vrt_requested = pyqtSignal(dict)
+    mosaicking_studio_requested = pyqtSignal(dict)
     sharpen_image_requested = pyqtSignal(dict)
     resample_image_10m_requested = pyqtSignal(dict)
     resample_image_10p8_to_3m_requested = pyqtSignal(dict)
     resample_image_2m_to_1m_requested = pyqtSignal(dict)
     resample_image_3p76m_to_1m_requested = pyqtSignal(dict)
+    generate_time_lapse_requested = pyqtSignal(dict)
     vessel_detect_requested = pyqtSignal(dict)
     vessel_detect_extent_requested = pyqtSignal(dict)
     vessel_qa_layer_create_requested = pyqtSignal(dict)
     vessel_qa_status_set_requested = pyqtSignal(dict)
     vessel_qa_finalize_requested = pyqtSignal(dict)
+    vessel_qa_open_batch_folder_requested = pyqtSignal(dict)
+    vessel_qa_model_update_requested = pyqtSignal(dict)
     tasking_refresh_requested = pyqtSignal()
     tasking_submit_requested = pyqtSignal(dict)
     tasking_order_selected = pyqtSignal(str)
@@ -105,6 +114,7 @@ class ImageMateMainDock(WorkflowDockMixin, QDockWidget):
     mosaic_mark_accepted_requested = pyqtSignal(dict)
     mosaic_retask_requested = pyqtSignal(dict)
     mosaic_cancel_requested = pyqtSignal(dict)
+    mosaic_more_requested = pyqtSignal(dict)
     mosaic_refresh_projects_requested = pyqtSignal()
     monitoring_refresh_requested = pyqtSignal(dict)
     monitoring_create_subscription_requested = pyqtSignal(dict)
@@ -159,7 +169,7 @@ class ImageMateMainDock(WorkflowDockMixin, QDockWidget):
         self._mosaic_tracking_rows = []
         self._mosaic_tracking_selection_guard = False
         self._mosaic_tracking_preview_guard = False
-        self._mosaic_tracking_preview_tile_id = ""
+        self._mosaic_tracking_preview_tile_ids = set()
         self._campaign_root_path = ""
         self._monitoring_subscriptions = []
         self._monitoring_events = []
@@ -2229,6 +2239,13 @@ class ImageMateMainDock(WorkflowDockMixin, QDockWidget):
         return bool(self.create_new_layer_on_selection.isChecked())
 
     def current_search_payload(self):
+        coverage_mode = "half"
+        if hasattr(self, "min_coverage_filter_combo"):
+            coverage_mode = str(self.min_coverage_filter_combo.currentData() or "").strip().lower()
+        elif hasattr(self, "require_full_aoi_overlap"):
+            coverage_mode = "full" if bool(self.require_full_aoi_overlap.isChecked()) else "half"
+        if coverage_mode not in {"touching", "full", "half"}:
+            coverage_mode = "half"
         return {
             "source_id": self.current_source_id(),
             "collection_id": str(self.collection_combo.currentData() or "").strip(),
@@ -2240,7 +2257,8 @@ class ImageMateMainDock(WorkflowDockMixin, QDockWidget):
             "satellite_name": self.satellite_name.text().strip(),
             "min_gsd": float(self.min_gsd.value()) if self.min_gsd.value() > 0 else None,
             "max_gsd": float(self.max_gsd.value()) if self.max_gsd.value() > 0 else None,
-            "require_full_aoi_overlap": bool(self.require_full_aoi_overlap.isChecked()),
+            "min_coverage_filter": coverage_mode,
+            "require_full_aoi_overlap": coverage_mode == "full",
             "remove_existing_layers": bool(self.remove_existing_layers.isChecked()),
         }
 
@@ -2335,6 +2353,30 @@ class ImageMateMainDock(WorkflowDockMixin, QDockWidget):
             self._checked_result_ids.add(item_id)
         else:
             self._checked_result_ids.discard(item_id)
+        self._refresh_workflow_source_options()
+        self._refresh_download_selected_button_state()
+
+    def _select_all_search_results(self):
+        if not hasattr(self, "results_list"):
+            return
+        result_count = int(self.results_list.count() or 0)
+        if result_count <= 0:
+            return
+
+        self.results_list.blockSignals(True)
+        self._checked_result_ids.clear()
+        try:
+            for idx in range(result_count):
+                item = self.results_list.item(idx)
+                if item is None:
+                    continue
+                item_id = str(item.data(Qt.UserRole) or "").strip()
+                item.setCheckState(Qt.Checked)
+                if item_id:
+                    self._checked_result_ids.add(item_id)
+        finally:
+            self.results_list.blockSignals(False)
+
         self._refresh_workflow_source_options()
         self._refresh_download_selected_button_state()
 
@@ -2837,8 +2879,8 @@ class ImageMateMainDock(WorkflowDockMixin, QDockWidget):
                 preview_checkbox.setToolTip("Preview becomes available when API status is Completed.")
             should_check = (
                 preview_allowed
-                and bool(self._mosaic_tracking_preview_tile_id)
-                and self._mosaic_tracking_preview_tile_id == tile_id
+                and bool(self._mosaic_tracking_preview_tile_ids)
+                and tile_id in self._mosaic_tracking_preview_tile_ids
             )
             preview_checkbox.setChecked(should_check)
             preview_checkbox.toggled.connect(
@@ -2846,13 +2888,22 @@ class ImageMateMainDock(WorkflowDockMixin, QDockWidget):
             )
             table.setCellWidget(idx, 6, preview_checkbox)
 
+            refresh_btn = QPushButton("Refresh")
+            refresh_btn.clicked.connect(
+                lambda _checked=False, tile_key=tile_id: self._emit_mosaic_refresh_status_for_tile(tile_key)
+            )
+            normalized_api_status = api_status.strip().lower().replace("-", "_").replace(" ", "_")
+            if qa_status.strip().lower() == "accepted" or normalized_api_status in {"failed", "canceled", "cancelled"}:
+                refresh_btn.setEnabled(False)
+            table.setCellWidget(idx, 7, refresh_btn)
+
             accept_btn = QPushButton("Accept")
             accept_btn.clicked.connect(
                 lambda _checked=False, tile_key=tile_id: self._emit_mosaic_mark_accepted_for_tile(tile_key)
             )
             if qa_status.strip().lower() == "accepted":
                 accept_btn.setEnabled(False)
-            table.setCellWidget(idx, 7, accept_btn)
+            table.setCellWidget(idx, 8, accept_btn)
 
             retask_btn = QPushButton("Re-Task")
             retask_btn.clicked.connect(
@@ -2860,7 +2911,7 @@ class ImageMateMainDock(WorkflowDockMixin, QDockWidget):
             )
             if qa_status.strip().lower() == "accepted":
                 retask_btn.setEnabled(False)
-            table.setCellWidget(idx, 8, retask_btn)
+            table.setCellWidget(idx, 9, retask_btn)
 
             cancel_btn = QPushButton("Cancel")
             cancel_btn.clicked.connect(
@@ -2868,11 +2919,23 @@ class ImageMateMainDock(WorkflowDockMixin, QDockWidget):
             )
             if qa_status.strip().lower() == "accepted" or latest_collection_id == "--":
                 cancel_btn.setEnabled(False)
-            table.setCellWidget(idx, 9, cancel_btn)
+            table.setCellWidget(idx, 10, cancel_btn)
 
-    def set_mosaic_tracking_preview_tile(self, tile_id):
-        tile_key = str(tile_id or "").strip()
-        self._mosaic_tracking_preview_tile_id = tile_key
+            more_btn = QPushButton("More")
+            more_btn.clicked.connect(
+                lambda _checked=False, tile_key=tile_id: self._emit_mosaic_more_for_tile(tile_key)
+            )
+            if latest_collection_id == "--":
+                more_btn.setEnabled(False)
+            table.setCellWidget(idx, 11, more_btn)
+
+    def set_mosaic_tracking_preview_tiles(self, tile_ids):
+        values = tile_ids if isinstance(tile_ids, (list, tuple, set)) else [tile_ids]
+        self._mosaic_tracking_preview_tile_ids = {
+            str(value or "").strip()
+            for value in values
+            if str(value or "").strip()
+        }
         if not hasattr(self, "mosaic_tracking_table"):
             return
         table = self.mosaic_tracking_table
@@ -2884,22 +2947,33 @@ class ImageMateMainDock(WorkflowDockMixin, QDockWidget):
                 preview_widget = table.cellWidget(row_idx, 6)
                 if not isinstance(preview_widget, QCheckBox):
                     continue
-                should_check = bool(tile_key and row_tile_id == tile_key and preview_widget.isEnabled())
+                should_check = bool(
+                    row_tile_id
+                    and row_tile_id in self._mosaic_tracking_preview_tile_ids
+                    and preview_widget.isEnabled()
+                )
                 preview_widget.blockSignals(True)
                 preview_widget.setChecked(should_check)
                 preview_widget.blockSignals(False)
         finally:
             self._mosaic_tracking_preview_guard = False
 
+    def set_mosaic_tracking_preview_tile(self, tile_id):
+        tile_key = str(tile_id or "").strip()
+        if tile_key:
+            self.set_mosaic_tracking_preview_tiles([tile_key])
+        else:
+            self.set_mosaic_tracking_preview_tiles([])
+
     def _on_mosaic_tracking_preview_toggled(self, tile_id, checked):
         if bool(getattr(self, "_mosaic_tracking_preview_guard", False)):
             return
         tile_key = str(tile_id or "").strip()
         enabled = bool(checked)
-        if enabled:
-            self.set_mosaic_tracking_preview_tile(tile_key)
-        elif self._mosaic_tracking_preview_tile_id == tile_key:
-            self.set_mosaic_tracking_preview_tile("")
+        if enabled and tile_key:
+            self._mosaic_tracking_preview_tile_ids.add(tile_key)
+        else:
+            self._mosaic_tracking_preview_tile_ids.discard(tile_key)
         self.mosaic_tracking_preview_toggled.emit(
             {
                 "project_id": self.current_mosaic_project_id(),
@@ -2911,6 +2985,35 @@ class ImageMateMainDock(WorkflowDockMixin, QDockWidget):
     def set_mosaic_tracking_status(self, text):
         if hasattr(self, "mosaic_tracking_status_label"):
             self.mosaic_tracking_status_label.setText(str(text or "").strip() or "Mosaic tracking: idle.")
+
+    def show_mosaic_collection_api_detail_popup(self, payload):
+        detail = payload if isinstance(payload, dict) else {}
+        collection_id = str(detail.get("collection_id") or "").strip() or "--"
+        project_id = str(detail.get("project_id") or "").strip() or "--"
+        tile_id = str(detail.get("tile_id") or "").strip() or "--"
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"Mosaic Collection Detail ({collection_id})")
+        dialog.resize(920, 680)
+
+        layout = QVBoxLayout(dialog)
+        summary = QLabel(
+            f"Project: {project_id}\nTile: {tile_id}\nCollection ID: {collection_id}"
+        )
+        summary.setWordWrap(True)
+        summary.setTextInteractionFlags(Qt.TextSelectableByMouse)
+
+        text_area = QTextEdit(dialog)
+        text_area.setReadOnly(True)
+        text_area.setPlainText(json.dumps(detail, indent=2, sort_keys=True))
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Close, parent=dialog)
+        buttons.rejected.connect(dialog.reject)
+        buttons.accepted.connect(dialog.accept)
+
+        layout.addWidget(summary)
+        layout.addWidget(text_area, 1)
+        layout.addWidget(buttons)
+        dialog.exec_()
 
     def _on_mosaic_aoi_source_changed(self):
         if not hasattr(self, "mosaic_aoi_source_combo"):
@@ -2979,6 +3082,14 @@ class ImageMateMainDock(WorkflowDockMixin, QDockWidget):
             "project_id": self.current_mosaic_project_id(),
         }
         self.mosaic_refresh_status_requested.emit(payload)
+
+    def _emit_mosaic_refresh_status_for_tile(self, tile_id):
+        project_id = self.current_mosaic_project_id()
+        tile_key = str(tile_id or "").strip()
+        if not project_id or not tile_key:
+            QMessageBox.warning(self, "Mosaic", "Select a project and tile first.")
+            return
+        self.mosaic_refresh_status_requested.emit({"project_id": project_id, "tile_id": tile_key})
 
     def _emit_mosaic_delete_request(self):
         project_id = self.current_mosaic_project_id()
@@ -3062,6 +3173,19 @@ class ImageMateMainDock(WorkflowDockMixin, QDockWidget):
             QMessageBox.warning(self, "Mosaic", "Select a project and tile first.")
             return
         self.mosaic_cancel_requested.emit(
+            {
+                "project_id": project_id,
+                "tile_id": tile_key,
+            }
+        )
+
+    def _emit_mosaic_more_for_tile(self, tile_id):
+        project_id = self.current_mosaic_project_id()
+        tile_key = str(tile_id or "").strip()
+        if not project_id or not tile_key:
+            QMessageBox.warning(self, "Mosaic", "Select a project and tile first.")
+            return
+        self.mosaic_more_requested.emit(
             {
                 "project_id": project_id,
                 "tile_id": tile_key,
@@ -4262,13 +4386,17 @@ class ImageMateMainDock(WorkflowDockMixin, QDockWidget):
         self.satellite_name = QLineEdit()
         self.satellite_name.setPlaceholderText("optional")
         self.satellite_name.setMinimumWidth(0)
-        self.require_full_aoi_overlap = QCheckBox("Only captures fully covering AOI")
-        self.require_full_aoi_overlap.setChecked(False)
-        self.require_full_aoi_overlap.setToolTip(
-            "When enabled, search results must fully contain the current AOI. "
-            "Sentinel-2 typically works better with this disabled."
+        self.min_coverage_filter_combo = QComboBox()
+        self.min_coverage_filter_combo.addItem("Touching (No Filter)", "touching")
+        self.min_coverage_filter_combo.addItem("Half Coverage", "half")
+        self.min_coverage_filter_combo.addItem("Full Coverage", "full")
+        half_index = int(self.min_coverage_filter_combo.findData("half"))
+        self.min_coverage_filter_combo.setCurrentIndex(half_index if half_index >= 0 else 0)
+        self.min_coverage_filter_combo.setToolTip(
+            "Minimum AOI coverage required per result. "
+            "Touching disables overlap threshold; Half Coverage keeps at least 50% AOI overlap."
         )
-        self.require_full_aoi_overlap.setMinimumWidth(0)
+        self.min_coverage_filter_combo.setMinimumWidth(0)
         self.location_query_input = QLineEdit()
         self.location_query_input.setPlaceholderText(
             "Place name or lat, lon (example: 34.6037, -58.3816)"
@@ -4306,7 +4434,7 @@ class ImageMateMainDock(WorkflowDockMixin, QDockWidget):
         form.addRow("Max Resolution (m/px)", self.max_gsd)
         form.addRow("Max Results", self.limit)
         form.addRow("Platform", self.satellite_name)
-        form.addRow("Coverage Filter", self.require_full_aoi_overlap)
+        form.addRow("Min. Converage Filter", self.min_coverage_filter_combo)
         jump_box = QGroupBox("Go To AOI")
         jump_box_layout = QVBoxLayout(jump_box)
         jump_box_layout.setContentsMargins(8, 8, 8, 8)
@@ -4325,6 +4453,10 @@ class ImageMateMainDock(WorkflowDockMixin, QDockWidget):
         self.download_selected_btn.setEnabled(False)
         self.download_selected_btn.clicked.connect(self._emit_download_selected_request)
         btn_row.addWidget(self.download_selected_btn)
+        self.select_all_results_btn = QPushButton("Select All")
+        self.select_all_results_btn.setToolTip("Check all search results for Download Selected.")
+        self.select_all_results_btn.clicked.connect(self._select_all_search_results)
+        btn_row.addWidget(self.select_all_results_btn)
         btn_row.addStretch(1)
 
         # Create sub-tabs for search log and results
@@ -5063,7 +5195,7 @@ class ImageMateMainDock(WorkflowDockMixin, QDockWidget):
         project_row_layout.setSpacing(6)
         project_row_layout.addWidget(self.mosaic_project_id_input, 1)
         self.mosaic_add_tasking_checkbox = QCheckBox("Add Tasking")
-        self.mosaic_add_tasking_checkbox.setChecked(True)
+        self.mosaic_add_tasking_checkbox.setChecked(False)
         self.mosaic_add_tasking_checkbox.setToolTip(
             "When checked, all tiles are submitted immediately. "
             "When unchecked, tiles are stored only and can be tasked one-by-one in Tracking."
@@ -5135,7 +5267,7 @@ class ImageMateMainDock(WorkflowDockMixin, QDockWidget):
         self.mosaic_show_tiling_checkbox.toggled.connect(self._emit_mosaic_show_tiling_request)
         tracking_controls.addWidget(self.mosaic_show_tiling_checkbox)
 
-        self.mosaic_tracking_table = QTableWidget(0, 10)
+        self.mosaic_tracking_table = QTableWidget(0, 12)
         self.mosaic_tracking_table.setHorizontalHeaderLabels(
             [
                 "Tile ID",
@@ -5145,9 +5277,11 @@ class ImageMateMainDock(WorkflowDockMixin, QDockWidget):
                 "Latest Collection ID",
                 "Attempts",
                 "Preview",
+                "Refresh",
                 "Accept",
                 "Re-Task",
                 "Cancel",
+                "More",
             ]
         )
         self.mosaic_tracking_table.setSelectionBehavior(QTableWidget.SelectRows)
@@ -5165,6 +5299,8 @@ class ImageMateMainDock(WorkflowDockMixin, QDockWidget):
         self.mosaic_tracking_table.horizontalHeader().setSectionResizeMode(7, QHeaderView.ResizeToContents)
         self.mosaic_tracking_table.horizontalHeader().setSectionResizeMode(8, QHeaderView.ResizeToContents)
         self.mosaic_tracking_table.horizontalHeader().setSectionResizeMode(9, QHeaderView.ResizeToContents)
+        self.mosaic_tracking_table.horizontalHeader().setSectionResizeMode(10, QHeaderView.ResizeToContents)
+        self.mosaic_tracking_table.horizontalHeader().setSectionResizeMode(11, QHeaderView.ResizeToContents)
 
         tracking_layout.addWidget(self.mosaic_tracking_status_label)
         tracking_layout.addLayout(tracking_controls)
@@ -5695,6 +5831,22 @@ class ImageMateMainDock(WorkflowDockMixin, QDockWidget):
         create_vrt_layout.addWidget(create_vrt_desc)
         create_vrt_layout.addWidget(self.create_vrt_btn)
 
+        mosaicking_group = QGroupBox("Mosaicking")
+        mosaicking_layout = QVBoxLayout(mosaicking_group)
+        mosaicking_layout.setContentsMargins(8, 8, 8, 8)
+        mosaicking_layout.setSpacing(6)
+        mosaicking_desc = QLabel(
+            "Create a seamless GeoTIFF mosaic from local raster layers in this project."
+        )
+        mosaicking_desc.setWordWrap(True)
+        self.mosaicking_studio_btn = QPushButton("Mosaicking Studio")
+        self.mosaicking_studio_btn.setToolTip(
+            "Select project rasters, choose an output GeoTIFF, and run the Mosaicker_v2 engine."
+        )
+        self.mosaicking_studio_btn.clicked.connect(self._open_mosaicking_studio)
+        mosaicking_layout.addWidget(mosaicking_desc)
+        mosaicking_layout.addWidget(self.mosaicking_studio_btn)
+
         sharpen_group = QGroupBox("Image Processing")
         sharpen_layout = QVBoxLayout(sharpen_group)
         sharpen_layout.setContentsMargins(8, 8, 8, 8)
@@ -5725,12 +5877,18 @@ class ImageMateMainDock(WorkflowDockMixin, QDockWidget):
             "Resample a local raster layer in two steps: 3.76 m, then 1 m."
         )
         self.resample_3p76m_to_1m_btn.clicked.connect(self._open_resample_3p76m_to_1m_dialog)
+        self.generate_time_lapse_btn = QPushButton("Generate Time Lapse")
+        self.generate_time_lapse_btn.setToolTip(
+            "Create a time-lapse MP4 from selected project raster layers."
+        )
+        self.generate_time_lapse_btn.clicked.connect(self._open_generate_time_lapse_dialog)
         sharpen_layout.addWidget(sharpen_desc)
         sharpen_layout.addWidget(self.sharpen_image_btn)
         sharpen_layout.addWidget(self.resample_10m_btn)
         sharpen_layout.addWidget(self.resample_10p8_to_3m_btn)
         sharpen_layout.addWidget(self.resample_2m_to_1m_btn)
         sharpen_layout.addWidget(self.resample_3p76m_to_1m_btn)
+        sharpen_layout.addWidget(self.generate_time_lapse_btn)
 
         vessel_group = QGroupBox("Vessel Detection")
         vessel_layout = QVBoxLayout(vessel_group)
@@ -5782,18 +5940,69 @@ class ImageMateMainDock(WorkflowDockMixin, QDockWidget):
         status_row.addWidget(self.vessel_qa_mark_pending_btn)
         self.vessel_qa_finalize_btn = QPushButton("Finalize QA Batch")
         self.vessel_qa_finalize_btn.clicked.connect(self._open_vessel_qa_finalize_dialog)
+        batch_action_row = QHBoxLayout()
+        self.vessel_qa_open_batch_folder_btn = QPushButton("Open QA Batch Folder")
+        self.vessel_qa_open_batch_folder_btn.setToolTip(
+            "Open the latest finalized vessel QA batch folder."
+        )
+        self.vessel_qa_open_batch_folder_btn.clicked.connect(self._emit_vessel_qa_open_batch_folder_request)
+        self.vessel_qa_model_update_btn = QPushButton("Update Model from QA Batch")
+        self.vessel_qa_model_update_btn.setToolTip(
+            "Initialize a model update scaffold from finalized QA batch exports."
+        )
+        self.vessel_qa_model_update_btn.clicked.connect(self._open_vessel_qa_model_update_dialog)
+        batch_action_row.addWidget(self.vessel_qa_open_batch_folder_btn)
+        batch_action_row.addWidget(self.vessel_qa_model_update_btn)
         vessel_qa_layout.addWidget(vessel_qa_desc)
         vessel_qa_layout.addWidget(self.vessel_qa_create_btn)
         vessel_qa_layout.addLayout(status_row)
         vessel_qa_layout.addWidget(self.vessel_qa_finalize_btn)
+        vessel_qa_layout.addLayout(batch_action_row)
 
         layout.addWidget(info)
         layout.addWidget(create_vrt_group)
+        layout.addWidget(mosaicking_group)
         layout.addWidget(sharpen_group)
         layout.addWidget(vessel_group)
         layout.addWidget(vessel_qa_group)
         layout.addStretch(1)
         return tab
+
+    def _open_mosaicking_studio(self):
+        existing = getattr(self, "_mosaicking_studio_dialog", None)
+        if existing is not None:
+            existing.show()
+            existing.raise_()
+            existing.activateWindow()
+            return
+
+        options = self._project_raster_layer_options()
+        if len(options) < 2:
+            QMessageBox.warning(
+                self,
+                "Mosaicking Studio",
+                "Add at least two raster layers to the project before creating a mosaic.",
+            )
+            return
+
+        project = QgsProject.instance()
+        default_dir = str(project.homePath() or project.absolutePath() or "").strip()
+        default_output = str(Path(default_dir) / "image_mate_mosaic.tif") if default_dir else ""
+        dialog = MosaickingStudioDialog(
+            layer_options=options,
+            default_output_path=default_output,
+            parent=self,
+        )
+        dialog.run_requested.connect(self.mosaicking_studio_requested.emit)
+        dialog.setAttribute(Qt.WA_DeleteOnClose, True)
+        dialog.destroyed.connect(self._on_mosaicking_studio_destroyed)
+        self._mosaicking_studio_dialog = dialog
+        dialog.show()
+        dialog.raise_()
+        dialog.activateWindow()
+
+    def _on_mosaicking_studio_destroyed(self, _obj=None):
+        self._mosaicking_studio_dialog = None
 
     def _open_create_vrt_dialog(self):
         options = self._project_raster_layer_options()
@@ -6014,6 +6223,322 @@ class ImageMateMainDock(WorkflowDockMixin, QDockWidget):
             "layer_id": layer_id,
             "output_name_hint": output_name_hint.text().strip(),
         }
+
+    def _open_generate_time_lapse_dialog(self):
+        options = self._project_raster_layer_options()
+        if not options:
+            QMessageBox.warning(
+                self,
+                "No Raster Layers",
+                "Add one or more raster layers to the project before generating a time lapse.",
+            )
+            return
+
+        options_by_id = {str(row.get("id") or "").strip(): row for row in options}
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Generate Time Lapse")
+        dialog.resize(940, 720)
+        layout = QVBoxLayout(dialog)
+
+        intro = QLabel(
+            "Build a frame timeline from selected raster layers. "
+            "Use Add As A Frame to render selected layers together, "
+            "or Add As A Stack to add one frame per selected layer."
+        )
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+
+        layer_list = QListWidget(dialog)
+        layer_list.setMinimumHeight(200)
+        for row in options:
+            layer_id = str(row.get("id") or "").strip()
+            if not layer_id:
+                continue
+            item = QListWidgetItem(f"{row['name']} [{row['provider']}]", layer_list)
+            item.setData(Qt.UserRole, layer_id)
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            item.setCheckState(Qt.Unchecked)
+        layout.addWidget(layer_list)
+
+        controls_row = QHBoxLayout()
+        select_all_btn = QPushButton("Select All")
+        clear_layer_checks_btn = QPushButton("Clear Layer Selection")
+        add_as_frame_btn = QPushButton("Add As A Frame")
+        add_as_stack_btn = QPushButton("Add As A Stack")
+        controls_row.addWidget(select_all_btn)
+        controls_row.addWidget(clear_layer_checks_btn)
+        controls_row.addSpacing(12)
+        controls_row.addWidget(add_as_frame_btn)
+        controls_row.addWidget(add_as_stack_btn)
+        controls_row.addStretch(1)
+        layout.addLayout(controls_row)
+
+        frames_label = QLabel("Frames Added")
+        frames_label.setStyleSheet("font-weight: 600;")
+        layout.addWidget(frames_label)
+
+        frame_table = QTableWidget(0, 5, dialog)
+        frame_table.setHorizontalHeaderLabels(
+            ["Frame Name", "Mode", "Layers", "Hold Frames", "Overlay Text"]
+        )
+        frame_table.verticalHeader().setVisible(False)
+        frame_table.setSelectionBehavior(QTableWidget.SelectRows)
+        frame_table.setSelectionMode(QTableWidget.ExtendedSelection)
+        frame_table.setAlternatingRowColors(True)
+        frame_table.setMinimumHeight(240)
+        frame_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        frame_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        frame_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+        frame_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        frame_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.Stretch)
+        layout.addWidget(frame_table, 1)
+
+        frame_edit_row = QHBoxLayout()
+        remove_selected_frame_btn = QPushButton("Remove Selected Frame(s)")
+        clear_frames_btn = QPushButton("Clear Frames")
+        frame_edit_row.addWidget(remove_selected_frame_btn)
+        frame_edit_row.addWidget(clear_frames_btn)
+        frame_edit_row.addStretch(1)
+        layout.addLayout(frame_edit_row)
+
+        settings_form = QFormLayout()
+
+        fps_spin = QSpinBox(dialog)
+        fps_spin.setRange(1, 60)
+        fps_spin.setValue(2)
+
+        output_name_hint = QLineEdit(dialog)
+        output_name_hint.setPlaceholderText("Optional output label (auto if blank)")
+
+        output_path_edit = QLineEdit(dialog)
+        output_path_edit.setPlaceholderText("Optional custom output path (.mp4). Leave blank for campaign default.")
+        browse_output_btn = QPushButton("Browse...")
+        output_path_row = QWidget(dialog)
+        output_path_layout = QHBoxLayout(output_path_row)
+        output_path_layout.setContentsMargins(0, 0, 0, 0)
+        output_path_layout.setSpacing(6)
+        output_path_layout.addWidget(output_path_edit, 1)
+        output_path_layout.addWidget(browse_output_btn)
+
+        settings_form.addRow("Frames Per Second", fps_spin)
+        settings_form.addRow("Output Label", output_name_hint)
+        settings_form.addRow("Output Video", output_path_row)
+        layout.addLayout(settings_form)
+
+        note = QLabel(
+            "Overlay text defaults to frame names. Edit the Overlay Text column to customize each frame."
+        )
+        note.setWordWrap(True)
+        layout.addWidget(note)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, parent=dialog)
+        generate_button = buttons.button(QDialogButtonBox.Ok)
+        if generate_button is not None:
+            generate_button.setText("Generate Video")
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        def _checked_layer_rows():
+            checked = []
+            for idx in range(layer_list.count()):
+                item = layer_list.item(idx)
+                if item is None or item.checkState() != Qt.Checked:
+                    continue
+                layer_id = str(item.data(Qt.UserRole) or "").strip()
+                row = options_by_id.get(layer_id) if layer_id else None
+                if row is not None:
+                    checked.append(row)
+            return checked
+
+        def _set_layer_checks(check_state):
+            for idx in range(layer_list.count()):
+                item = layer_list.item(idx)
+                if item is not None:
+                    item.setCheckState(check_state)
+
+        def _frame_name_from_layers(layer_names, *, mode):
+            names = [str(name or "").strip() for name in layer_names if str(name or "").strip()]
+            if not names:
+                return "Frame"
+            if mode == "stack":
+                return names[0]
+            if len(names) == 1:
+                return names[0]
+            preview = ", ".join(names[:3])
+            if len(names) > 3:
+                preview = f"{preview} +{len(names) - 3} more"
+            return f"Set: {preview}"
+
+        def _layers_display_text(layer_names):
+            names = [str(name or "").strip() for name in layer_names if str(name or "").strip()]
+            if not names:
+                return ""
+            preview = ", ".join(names[:4])
+            if len(names) > 4:
+                preview = f"{preview} +{len(names) - 4} more"
+            return preview
+
+        def _set_item_read_only(item):
+            if item is None:
+                return
+            item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+
+        def _append_frame(layer_rows, *, mode):
+            layer_ids = []
+            layer_names = []
+            for row in layer_rows:
+                layer_id = str(row.get("id") or "").strip()
+                if not layer_id or layer_id in layer_ids:
+                    continue
+                layer_ids.append(layer_id)
+                layer_names.append(str(row.get("name") or layer_id).strip())
+            if not layer_ids:
+                return
+
+            frame_name = _frame_name_from_layers(layer_names, mode=mode)
+            overlay_text = frame_name
+
+            row_idx = frame_table.rowCount()
+            frame_table.insertRow(row_idx)
+
+            frame_name_item = QTableWidgetItem(frame_name)
+            frame_name_item.setData(
+                Qt.UserRole,
+                {
+                    "mode": str(mode),
+                    "layer_ids": list(layer_ids),
+                },
+            )
+            mode_label = "Add As A Frame" if mode == "frame" else "Add As A Stack"
+            mode_item = QTableWidgetItem(mode_label)
+            layers_item = QTableWidgetItem(_layers_display_text(layer_names))
+            hold_item = QTableWidgetItem("1")
+            overlay_item = QTableWidgetItem(overlay_text)
+
+            _set_item_read_only(mode_item)
+            _set_item_read_only(layers_item)
+
+            frame_table.setItem(row_idx, 0, frame_name_item)
+            frame_table.setItem(row_idx, 1, mode_item)
+            frame_table.setItem(row_idx, 2, layers_item)
+            frame_table.setItem(row_idx, 3, hold_item)
+            frame_table.setItem(row_idx, 4, overlay_item)
+
+        def _on_add_as_frame():
+            selected_rows = _checked_layer_rows()
+            if not selected_rows:
+                QMessageBox.warning(dialog, "Generate Time Lapse", "Select one or more raster layers first.")
+                return
+            _append_frame(selected_rows, mode="frame")
+
+        def _on_add_as_stack():
+            selected_rows = _checked_layer_rows()
+            if not selected_rows:
+                QMessageBox.warning(dialog, "Generate Time Lapse", "Select one or more raster layers first.")
+                return
+            for row in selected_rows:
+                _append_frame([row], mode="stack")
+
+        def _remove_selected_frames():
+            selected_rows = sorted({idx.row() for idx in frame_table.selectedIndexes()}, reverse=True)
+            if not selected_rows:
+                return
+            for row_idx in selected_rows:
+                frame_table.removeRow(row_idx)
+
+        def _clear_frames():
+            frame_table.setRowCount(0)
+
+        def _browse_output_path():
+            current_value = str(output_path_edit.text() or "").strip()
+            if current_value:
+                start_dir = str(Path(current_value).parent)
+            elif self._campaign_root_path:
+                start_dir = str(self._campaign_root_path)
+            else:
+                start_dir = ""
+            selected, _unused = QFileDialog.getSaveFileName(
+                dialog,
+                "Save Time Lapse Video",
+                start_dir,
+                "MP4 Video (*.mp4);;All Files (*)",
+            )
+            selected = str(selected or "").strip()
+            if selected:
+                output_path_edit.setText(selected)
+
+        select_all_btn.clicked.connect(lambda: _set_layer_checks(Qt.Checked))
+        clear_layer_checks_btn.clicked.connect(lambda: _set_layer_checks(Qt.Unchecked))
+        add_as_frame_btn.clicked.connect(_on_add_as_frame)
+        add_as_stack_btn.clicked.connect(_on_add_as_stack)
+        remove_selected_frame_btn.clicked.connect(_remove_selected_frames)
+        clear_frames_btn.clicked.connect(_clear_frames)
+        browse_output_btn.clicked.connect(_browse_output_path)
+
+        if dialog.exec_() != QDialog.Accepted:
+            return
+
+        if frame_table.rowCount() <= 0:
+            QMessageBox.warning(self, "Generate Time Lapse", "Add at least one frame before generating.")
+            return
+
+        frames = []
+        for row_idx in range(frame_table.rowCount()):
+            frame_name_item = frame_table.item(row_idx, 0)
+            hold_item = frame_table.item(row_idx, 3)
+            overlay_item = frame_table.item(row_idx, 4)
+            metadata = frame_name_item.data(Qt.UserRole) if frame_name_item is not None else {}
+
+            layer_ids = []
+            raw_layer_ids = metadata.get("layer_ids") if isinstance(metadata, dict) else []
+            for value in raw_layer_ids if isinstance(raw_layer_ids, list) else []:
+                layer_id = str(value or "").strip()
+                if layer_id and layer_id not in layer_ids:
+                    layer_ids.append(layer_id)
+            if not layer_ids:
+                QMessageBox.warning(
+                    self,
+                    "Generate Time Lapse",
+                    f"Frame {row_idx + 1} is missing raster layer IDs.",
+                )
+                return
+
+            frame_name = str(frame_name_item.text() if frame_name_item is not None else "").strip()
+            if not frame_name:
+                frame_name = f"Frame {row_idx + 1}"
+
+            try:
+                hold_frames = int(str(hold_item.text() if hold_item is not None else "1").strip() or "1")
+            except Exception:
+                hold_frames = 1
+            if hold_frames <= 0:
+                QMessageBox.warning(
+                    self,
+                    "Generate Time Lapse",
+                    f"Frame {row_idx + 1} has invalid hold frames. Use values >= 1.",
+                )
+                return
+
+            overlay_text = str(overlay_item.text() if overlay_item is not None else "").strip() or frame_name
+            frames.append(
+                {
+                    "frame_name": frame_name,
+                    "layer_ids": layer_ids,
+                    "hold_frames": int(hold_frames),
+                    "overlay_text": overlay_text,
+                }
+            )
+
+        self.generate_time_lapse_requested.emit(
+            {
+                "frames": frames,
+                "frames_per_second": int(fps_spin.value()),
+                "output_name_hint": output_name_hint.text().strip(),
+                "output_path": output_path_edit.text().strip(),
+            }
+        )
 
     def _open_vessel_detect_dialog(self):
         options = self._project_raster_layer_options()
@@ -6251,6 +6776,9 @@ class ImageMateMainDock(WorkflowDockMixin, QDockWidget):
             return
         self.vessel_qa_status_set_requested.emit({"qa_status": status_key})
 
+    def _emit_vessel_qa_open_batch_folder_request(self):
+        self.vessel_qa_open_batch_folder_requested.emit({})
+
     def _open_vessel_qa_finalize_dialog(self):
         options = self._project_vessel_qa_layer_options()
         if not options:
@@ -6322,6 +6850,94 @@ class ImageMateMainDock(WorkflowDockMixin, QDockWidget):
                 "chip_size": int(chip_size_spin.value()),
                 "padding": int(padding_spin.value()),
                 "split": {"train": 70, "val": 15, "test": 15},
+            }
+        )
+
+    def _open_vessel_qa_model_update_dialog(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Update Vessel Model from QA Batch")
+        dialog.resize(640, 280)
+        layout = QVBoxLayout(dialog)
+
+        intro = QLabel(
+            "Initialize dataset/training manifests from a finalized QA batch. "
+            "Leave Batch ID blank to use the latest finalized batch."
+        )
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+
+        form = QFormLayout()
+
+        batch_id = QLineEdit(dialog)
+        batch_id.setPlaceholderText("Optional batch id (blank uses latest)")
+
+        dataset_id = QLineEdit(dialog)
+        dataset_id.setPlaceholderText("Optional dataset id (auto from batch if blank)")
+
+        base_weights_widget = QWidget(dialog)
+        base_weights_layout = QHBoxLayout(base_weights_widget)
+        base_weights_layout.setContentsMargins(0, 0, 0, 0)
+        base_weights_layout.setSpacing(6)
+        base_weights = QLineEdit(dialog)
+        base_weights.setPlaceholderText("Optional base weights/model path")
+        browse_base_weights_btn = QPushButton("Browse...", dialog)
+
+        def _browse_base_weights():
+            current = str(base_weights.text() or "").strip()
+            selected, _unused = QFileDialog.getOpenFileName(
+                dialog,
+                "Select Base Weights/Model",
+                current,
+                "Model Files (*.pt *.onnx *.engine *.bin);;All Files (*)",
+            )
+            selected = str(selected or "").strip()
+            if selected:
+                base_weights.setText(selected)
+
+        browse_base_weights_btn.clicked.connect(_browse_base_weights)
+        base_weights_layout.addWidget(base_weights, 1)
+        base_weights_layout.addWidget(browse_base_weights_btn)
+
+        epochs_spin = QSpinBox(dialog)
+        epochs_spin.setRange(1, 10000)
+        epochs_spin.setSingleStep(10)
+        epochs_spin.setValue(100)
+
+        image_size_spin = QSpinBox(dialog)
+        image_size_spin.setRange(128, 4096)
+        image_size_spin.setSingleStep(32)
+        image_size_spin.setValue(1024)
+
+        open_batch_folder_checkbox = QCheckBox("Open batch folder when done")
+        open_batch_folder_checkbox.setChecked(True)
+
+        form.addRow("Batch ID", batch_id)
+        form.addRow("Dataset ID", dataset_id)
+        form.addRow("Base Weights", base_weights_widget)
+        form.addRow("Epochs", epochs_spin)
+        form.addRow("Image Size", image_size_spin)
+        form.addRow(open_batch_folder_checkbox)
+        layout.addLayout(form)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        ok_button = buttons.button(QDialogButtonBox.Ok)
+        if ok_button is not None:
+            ok_button.setText("Initialize Model Update")
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        if dialog.exec_() != QDialog.Accepted:
+            return
+
+        self.vessel_qa_model_update_requested.emit(
+            {
+                "batch_id": batch_id.text().strip(),
+                "dataset_id": dataset_id.text().strip(),
+                "base_weights": base_weights.text().strip(),
+                "epochs": int(epochs_spin.value()),
+                "image_size": int(image_size_spin.value()),
+                "open_batch_folder": bool(open_batch_folder_checkbox.isChecked()),
             }
         )
 
