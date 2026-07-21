@@ -48,8 +48,6 @@ from rasterio.windows import Window, bounds as window_bounds
 from scipy import ndimage
 from scipy.sparse import coo_matrix
 from scipy.sparse.linalg import lsqr
-from shapely.geometry import box
-from shapely.strtree import STRtree
 
 LOGGER = logging.getLogger("seamless_mosaic")
 PROGRAM_VERSION = "1.0.0"
@@ -1653,6 +1651,23 @@ def iter_windows(width: int, height: int, tile_size: int) -> Iterable[Window]:
             yield Window(col, row, w, h)
 
 
+def intersecting_bounds_indices(
+    source_bounds: Sequence[tuple[float, float, float, float]],
+    query_bounds: tuple[float, float, float, float],
+) -> list[int]:
+    """Return sources whose axis-aligned bounds overlap the query bounds."""
+
+    query_left, query_bottom, query_right, query_top = query_bounds
+    return [
+        index
+        for index, (left, bottom, right, top) in enumerate(source_bounds)
+        if right >= query_left
+        and left <= query_right
+        and top >= query_bottom
+        and bottom <= query_top
+    ]
+
+
 def labels_for_window(labels: np.ndarray, window: Window, plan_scale: int) -> np.ndarray:
     row0 = int(window.row_off)
     col0 = int(window.col_off)
@@ -1811,6 +1826,7 @@ def blend_and_write(
     args: argparse.Namespace,
     report_path: Path,
 ) -> dict[str, Any]:
+    LOGGER.info("Preparing full-resolution output")
     output_path.parent.mkdir(parents=True, exist_ok=True)
     partial_path = output_path.with_name(output_path.name + ".partial.tif")
     if partial_path.exists():
@@ -1828,8 +1844,8 @@ def blend_and_write(
             raise MosaicError(message)
         LOGGER.warning(message)
 
-    source_boxes = [box(*info.target_bounds) for info in plan.source_infos]
-    spatial_index = STRtree(source_boxes)
+    LOGGER.info("Preparing full-resolution source bounds filter")
+    source_bounds = [info.target_bounds for info in plan.source_infos]
     priority_values = np.asarray([info.spec.priority for info in plan.source_infos], dtype=np.float32)
     if priority_values.size and float(priority_values.max() - priority_values.min()) > 1e-9:
         priority_norm = (priority_values - priority_values.min()) / (
@@ -1838,6 +1854,7 @@ def blend_and_write(
     else:
         priority_norm = np.zeros(priority_values.shape, dtype=np.float32)
 
+    LOGGER.info("Preparing tiled GeoTIFF output profile")
     profile = output_profile(plan, args)
     total_tiles = math.ceil(plan.grid.width / args.tile_size) * math.ceil(
         plan.grid.height / args.tile_size
@@ -1852,9 +1869,11 @@ def blend_and_write(
         "GDAL_TIFF_INTERNAL_MASK": True,
         "BIGTIFF_OVERVIEW": "IF_SAFER",
     }
+    LOGGER.info("Opening full-resolution sources and partial GeoTIFF")
     with rasterio.Env(**env_options), RuntimeSourceCache(plan, args) as source_cache, rasterio.open(
         partial_path, "w", **profile
     ) as dst:
+        LOGGER.info("Partial GeoTIFF created: %s", partial_path)
         dst.update_tags(
             software=f"seamless_mosaic.py {PROGRAM_VERSION}",
             generated_utc=_utc_now(),
@@ -1886,10 +1905,7 @@ def blend_and_write(
             work_w = int(work_window.width)
             label_window = labels_for_window(labels, work_window, plan.plan_scale)
             bounds = window_bounds(work_window, plan.grid.transform)
-            candidate_indices = spatial_index.query(box(*bounds))
-            candidate_indices = sorted(
-                int(v) for v in np.atleast_1d(np.asarray(candidate_indices)).tolist()
-            )
+            candidate_indices = intersecting_bounds_indices(source_bounds, bounds)
 
             sum_dtype = (
                 np.float64

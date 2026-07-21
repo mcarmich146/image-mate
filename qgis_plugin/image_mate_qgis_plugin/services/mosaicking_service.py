@@ -19,7 +19,6 @@ MOSAICKER_DEPENDENCIES = (
     "rasterio",
     "scipy",
     "cv2",
-    "shapely",
     "affine",
 )
 
@@ -100,7 +99,7 @@ class _MosaickingCallbackHandler(logging.Handler):
 
     def emit(self, record):
         try:
-            message = record.getMessage()
+            message = self.format(record)
             if self._log_callback is not None:
                 self._log_callback(message)
             progress = mosaicking_progress_from_log(message)
@@ -201,7 +200,7 @@ class MosaickingService:
 
         def _emit_debug(message):
             if debug_callback is not None:
-                debug_callback(f"DEBUG: {str(message or '').strip()}")
+                debug_callback(str(message or "").strip())
 
         _emit_debug(
             f"Service entered on thread={threading.current_thread().name}; "

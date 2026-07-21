@@ -13,7 +13,6 @@ Python environment used by QGIS:
 - Rasterio 1.3.9 or newer
 - SciPy 1.10 or newer
 - OpenCV (`opencv-python-headless`) 4.8 or newer
-- Shapely 2.0 or newer
 - Affine 2.4 or newer
 
 Install packages into the QGIS Python environment, not a separate system Python

@@ -152,8 +152,6 @@ def main() -> int:
                 raise AssertionError(
                     f"missing debug lifecycle message {fragment!r}: {debug_messages}"
                 )
-        if any(not message.startswith("DEBUG: ") for message in debug_messages):
-            raise AssertionError(f"debug messages were not labeled: {debug_messages}")
         if len(engine_logger.handlers) != handler_count_before:
             raise AssertionError("mosaicker callback logging handler leaked after completion")
         if engine_logger.level != logging.WARNING:

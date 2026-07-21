@@ -15,6 +15,20 @@ import rasterio
 from rasterio.transform import from_origin
 
 
+def assert_bounds_filter(script: Path) -> None:
+    sys.path.insert(0, str(script.parent))
+    from seamless_mosaic import intersecting_bounds_indices  # noqa: PLC0415
+
+    source_bounds = [
+        (0.0, 0.0, 10.0, 10.0),
+        (20.0, 20.0, 30.0, 30.0),
+        (8.0, -5.0, 12.0, 2.0),
+    ]
+    actual = intersecting_bounds_indices(source_bounds, (5.0, 1.0, 9.0, 6.0))
+    if actual != [0, 2]:
+        raise AssertionError(f"unexpected bounds-filter candidates: {actual}")
+
+
 def write_raster(path: Path, data: np.ndarray, left: float, *, nodata: float | None = None) -> None:
     count, height, width = data.shape
     profile = {
@@ -249,6 +263,7 @@ def main() -> int:
         / "mosaicker"
         / "seamless_mosaic.py"
     )
+    assert_bounds_filter(script)
 
     if args.keep:
         root = args.keep.expanduser().resolve()
