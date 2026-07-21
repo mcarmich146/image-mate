@@ -15,6 +15,10 @@ Python environment used by QGIS:
 - OpenCV (`opencv-python-headless`) 4.8 or newer
 - Affine 2.4 or newer
 
+The engine uses a built-in numeric bounds filter and does not require Shapely.
+If the QGIS OpenCV build cannot create graph-cut seam objects, the engine reports
+the compatibility warning and continues with its weighted-Voronoi fallback.
+
 Install packages into the QGIS Python environment, not a separate system Python
 environment. The exact interpreter/installation command varies by QGIS package
 and operating system. Missing dependencies affect Mosaicking Studio execution

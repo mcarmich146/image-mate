@@ -80,6 +80,7 @@
 | AC-018 | REQ-NF-004 | Given a real `QgsTask`, when worker logs are published, then a thread-safe buffer delivers them and the task completes without a GUI-thread exception. |
 | AC-019 | REQ-F-013 | Given QGIS emits `taskTerminated` without a reported completion outcome, when the event loop advances, then Processing Results displays the captured exception and enables Close. |
 | AC-020 | REQ-NF-005 | Given all plugin text artifacts including ignored diagnostics, when scanned case-insensitively, then the developer-specific username has zero matches. |
+| AC-021 | REQ-F-004 | Given the four Jakarta sources, when full-resolution source candidates are prepared, then numeric bounds filtering completes without the Shapely/NumPy native stack overflow. |
 
 ## 5. Verification Plan
 
@@ -95,6 +96,7 @@
 | TC-008 | REQ-F-012;REQ-NF-003 | Automated and static test | Debug callback lifecycle assertions in `mosaicking_service_smoke.py` and checkbox/task-boundary assertions in `mosaicking_studio_wiring_smoke.py` | QGIS plugin |
 | TC-009 | REQ-NF-004;REQ-F-013 | Automated and static test | Real OSGeo4W `QgsTask` bridge test in `mosaicking_qgstask_bridge_smoke.py` and termination fallback assertions in `mosaicking_studio_wiring_smoke.py` | QGIS plugin |
 | TC-010 | REQ-NF-005 | Automated test | Full plugin text scan in `user_path_portability_smoke.py` | QGIS plugin |
+| TC-011 | REQ-F-004 | Automated and representative-data test | Bounds-filter regression in `mosaicking_engine_smoke.py` and four-source OSGeo4W reduced-resolution completion run | QGIS plugin |
 
 ## 6. Coverage Gaps and Risks
 

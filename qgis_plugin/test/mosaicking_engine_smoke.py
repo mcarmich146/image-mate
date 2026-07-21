@@ -16,6 +16,9 @@ from rasterio.transform import from_origin
 
 
 def assert_bounds_filter(script: Path) -> None:
+    engine_text = script.read_text(encoding="utf-8")
+    if "shapely" in engine_text.casefold():
+        raise AssertionError("full-resolution bounds filtering still imports Shapely")
     sys.path.insert(0, str(script.parent))
     from seamless_mosaic import intersecting_bounds_indices  # noqa: PLC0415
 

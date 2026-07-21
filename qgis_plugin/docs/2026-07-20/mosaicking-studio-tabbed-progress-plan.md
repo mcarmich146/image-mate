@@ -152,6 +152,34 @@ wizard pages rather than a persistent studio workspace.
   `Expectation:` tracked and ignored plugin text contains no workstation username.
   `Observed:` `user_path_portability_smoke: ok`.
   `Interpretation:` the portability cleanup is complete and regression guarded.
+- `Command:` inspect Windows Application Error event `1000` after the 20:54
+  four-source failure and rerun with `PYTHONFAULTHANDLER=1`.
+  `Expectation:` identify the native frame that terminates Python after seam
+  ownership.
+  `Observed:` exception `0xc00000fd` (stack overflow) occurred in NumPy while
+  Shapely `box()` constructed the full-resolution source bounds rectangles.
+  `Interpretation:` the crash was native and could not be caught by the QGIS task
+  or Python exception handlers.
+- `Command:` rerun the four Jakarta sources with the numeric bounds filter and
+  `--resolution 20` under `C:\OSGeo4W\bin\python-qgis.bat`.
+  `Expectation:` pass the former bounds-index crash, create the partial GeoTIFF,
+  write tiles/overviews, and finalize the mosaic.
+  `Observed:` one tile completed, overviews were built, and the mosaic finalized
+  successfully in 32.2 seconds after full-resolution output setup.
+  `Interpretation:` the native crash path is removed in the target QGIS runtime.
+
+## Native Stack Overflow Fix
+
+- Replaced the Shapely `STRtree` used only for axis-aligned source rectangles with
+  a pure numeric bounds-overlap function. This avoids the failing Shapely/NumPy
+  native binding and preserves deterministic source ordering.
+- Removed Shapely from the plugin's mosaicker dependency contract because the
+  vendored engine no longer imports it.
+- The existing OpenCV seam binding remains incompatible with NumPy in this
+  OSGeo4W environment, but the engine's weighted-Voronoi fallback completes and
+  is not the cause of the crash.
+- Logging callbacks now format exception records so Python tracebacks appear in
+  Processing Results when failures are catchable.
 
 ## Follow-up
 
