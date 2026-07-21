@@ -26,12 +26,26 @@ started.
 
 1. Add at least two local raster files to the QGIS project.
 2. Open **Geoprocessing** and click **Mosaicking Studio**.
-3. Select the raster layers to include and click **Next**.
-4. Choose a `.tif` or `.tiff` output. Enable replacement only when an existing
-   file should be overwritten.
-5. Review the request and click **Finish**.
-6. Monitor the job in the QGIS task manager. When it completes, Image Mate adds
-   the output to the Image Mate layer group.
+3. On the **Inputs** tab, select the raster layers to include and click **Next**.
+4. On the **Output** tab, choose a `.tif` or `.tiff` output. Enable replacement
+   only when an existing file should be overwritten. Enable **Include debug
+   information** when troubleshooting to include detailed request, task,
+   dependency-loading, engine, and output-verification messages. Click **Next**.
+5. On the **Review** tab, confirm the request and click **Finish**.
+6. Keep the studio open on **Processing Results**. Its progress bar and live,
+   timestamped log show planning, source analysis, seam generation, tile writing,
+   overview creation, and the final result. The studio prevents accidental closing
+   while the task is running.
+7. When processing succeeds, Image Mate adds the output to the Image Mate layer
+   group and enables **Close**. Failures remain visible in the same results tab.
+
+If progress appears stalled, rerun with **Include debug information** enabled and
+use the last `DEBUG:` message to distinguish task submission, worker startup,
+dependency loading, engine execution, and output verification.
+
+Task states are logged by name and number. A task that terminates before its
+normal completion callback now reports QGIS's stored exception in Processing
+Results and enables **Close** instead of remaining stuck.
 
 The engine also writes `<output>.analysis.json` beside the mosaic. It contains
 the grid plan, radiometric transforms, cloud statistics, seam statistics, and

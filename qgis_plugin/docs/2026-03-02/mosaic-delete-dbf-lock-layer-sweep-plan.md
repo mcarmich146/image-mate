@@ -11,7 +11,7 @@
 - Runtime delete fails on Windows with:
   - `[WinError 32] ... tiles.dbf`
 - Verified in log:
-  - `C:\Users\jo.man_satellogic\ImageMateCampaigns\campaigns\azerbaijan_mosaic\logs\image_mate_qgis_20260302T155614Z.log`
+  - `%USERPROFILE%\ImageMateCampaigns\campaigns\azerbaijan_mosaic\logs\image_mate_qgis_20260302T155614Z.log`
   - `delete_failed project=vancouver_mosaic ... \thai_caas\collections\mosaic\vancouver_mosaic\tiles.dbf`
 - Existing fix already covered sqlite handles (`mosaic_tracking.sqlite3`) but not shapefile sidecar locks (`tiles.dbf`).
 - Runtime lock probe identified lock owner process as `qgis-bin.exe` (same app process), indicating delayed in-process handle release.

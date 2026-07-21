@@ -61,7 +61,7 @@
 ## 2026-02-28 Log Triage Update (Thai_CaaS)
 - Campaign: `Thai_CaaS`
 - Project: `vancouver_mosaic`
-- Latest log inspected: `C:\Users\jo.man_satellogic\ImageMateCampaigns\campaigns\thai_caas\logs\image_mate_qgis_20260228T061505Z.log`
+- Latest log inspected: `%USERPROFILE%\ImageMateCampaigns\campaigns\thai_caas\logs\image_mate_qgis_20260228T061505Z.log`
 
 ### Observed Failure Signature
 - Telluric preview loaded, but all requested tiles were empty.
@@ -86,7 +86,7 @@
 
 ## 2026-02-28 Iteration: End-to-End Replay and Resolution
 ### Problem Confirmation from Latest Log
-- Log used: `C:\Users\jo.man_satellogic\ImageMateCampaigns\campaigns\thai_caas\logs\image_mate_qgis_20260228T071521Z.log`
+- Log used: `%USERPROFILE%\ImageMateCampaigns\campaigns\thai_caas\logs\image_mate_qgis_20260228T071521Z.log`
 - Representative failure from log:
   - `scene_id=20260227_193958_340_SN50_L1D_SR_MS_10N_486_5450`
   - `raster=20260227_193958_340_SN50_L1D_SR_MS_10N_486_5450_visual.tif`

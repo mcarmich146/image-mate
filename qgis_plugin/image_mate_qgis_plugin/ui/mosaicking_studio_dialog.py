@@ -1,13 +1,14 @@
 # -*- coding: utf-8 -*-
-"""Guided MVP dialog for selecting project rasters and a mosaic output."""
+"""Persistent tabbed studio for configuring and monitoring a raster mosaic."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from qgis.PyQt.QtCore import Qt
+from qgis.PyQt.QtCore import QDateTime, Qt, pyqtSignal
 from qgis.PyQt.QtWidgets import (
     QCheckBox,
+    QDialog,
     QFileDialog,
     QHBoxLayout,
     QLabel,
@@ -15,19 +16,25 @@ from qgis.PyQt.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMessageBox,
+    QPlainTextEdit,
+    QProgressBar,
     QPushButton,
+    QTabWidget,
     QVBoxLayout,
-    QWizard,
-    QWizardPage,
+    QWidget,
 )
 
 
-class _InputLayersPage(QWizardPage):
+class _InputLayersTab(QWidget):
     def __init__(self, layer_options, parent=None):
         super().__init__(parent)
-        self.setTitle("Choose project layers")
-        self.setSubTitle("Select at least two local raster layers to mosaic.")
         layout = QVBoxLayout(self)
+        heading = QLabel("Choose project layers")
+        heading.setStyleSheet("font-weight: 600; font-size: 14px;")
+        layout.addWidget(heading)
+        description = QLabel("Select at least two local raster layers to mosaic.")
+        description.setWordWrap(True)
+        layout.addWidget(description)
 
         self.layer_list = QListWidget(self)
         self.layer_list.setMinimumSize(680, 300)
@@ -41,7 +48,6 @@ class _InputLayersPage(QWizardPage):
             item.setData(Qt.UserRole, layer_id)
             item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
             item.setCheckState(Qt.Unchecked)
-        self.layer_list.itemChanged.connect(lambda _item: self.completeChanged.emit())
         layout.addWidget(self.layer_list, 1)
 
         button_row = QHBoxLayout()
@@ -69,41 +75,46 @@ class _InputLayersPage(QWizardPage):
                 selected.append(layer_id)
         return selected
 
-    def isComplete(self):
-        return len(self.selected_layer_ids()) >= 2
-
-    def validatePage(self):
-        if self.isComplete():
+    def validate(self):
+        if len(self.selected_layer_ids()) >= 2:
             return True
         QMessageBox.warning(self, "Mosaicking Studio", "Select at least two raster layers.")
         return False
 
 
-class _OutputPage(QWizardPage):
+class _OutputTab(QWidget):
     def __init__(self, default_output_path="", parent=None):
         super().__init__(parent)
-        self.setTitle("Choose mosaic output")
-        self.setSubTitle("Save the generated mosaic as a local GeoTIFF.")
         layout = QVBoxLayout(self)
+        heading = QLabel("Choose mosaic output")
+        heading.setStyleSheet("font-weight: 600; font-size: 14px;")
+        layout.addWidget(heading)
+        description = QLabel("Save the generated mosaic as a local GeoTIFF.")
+        description.setWordWrap(True)
+        layout.addWidget(description)
 
         path_row = QHBoxLayout()
         self.output_path = QLineEdit(self)
         self.output_path.setText(str(default_output_path or "").strip())
         self.output_path.setPlaceholderText("Choose a .tif or .tiff output file")
-        self.output_path.textChanged.connect(lambda _text: self.completeChanged.emit())
-        browse = QPushButton("Browse…", self)
+        browse = QPushButton("Browse...", self)
         browse.clicked.connect(self._browse)
         path_row.addWidget(self.output_path, 1)
         path_row.addWidget(browse)
         layout.addLayout(path_row)
 
         self.overwrite = QCheckBox("Replace the output if it already exists", self)
-        self.overwrite.stateChanged.connect(lambda _state: self.completeChanged.emit())
         layout.addWidget(self.overwrite)
 
+        self.include_debug_information = QCheckBox("Include debug information", self)
+        self.include_debug_information.setToolTip(
+            "Show detailed task, dependency-loading, engine, and output-verification messages."
+        )
+        layout.addWidget(self.include_debug_information)
+
         note = QLabel(
-            "This first integration uses the current Mosaicker_v2 defaults for "
-            "radiometric balancing, automatic cloud scoring, seam planning, and feathering."
+            "This integration uses the current Mosaicker_v2 defaults for radiometric "
+            "balancing, automatic cloud scoring, seam planning, and feathering."
         )
         note.setWordWrap(True)
         layout.addWidget(note)
@@ -122,13 +133,7 @@ class _OutputPage(QWizardPage):
                 path = path.with_suffix(".tif")
             self.output_path.setText(str(path))
 
-    def isComplete(self):
-        text = self.output_path.text().strip()
-        if not text or Path(text).suffix.lower() not in {".tif", ".tiff"}:
-            return False
-        return not Path(text).exists() or self.overwrite.isChecked()
-
-    def validatePage(self):
+    def validate(self):
         text = self.output_path.text().strip()
         if not text:
             QMessageBox.warning(self, "Mosaicking Studio", "Choose an output GeoTIFF path.")
@@ -146,21 +151,23 @@ class _OutputPage(QWizardPage):
         return True
 
 
-class _ReviewPage(QWizardPage):
-    def __init__(self, studio, parent=None):
+class _ReviewTab(QWidget):
+    def __init__(self, parent=None):
         super().__init__(parent)
-        self._studio = studio
-        self.setTitle("Review and create")
-        self.setSubTitle("Finish to start mosaic generation in the QGIS task manager.")
         layout = QVBoxLayout(self)
+        heading = QLabel("Review and create")
+        heading.setStyleSheet("font-weight: 600; font-size: 14px;")
+        layout.addWidget(heading)
+        description = QLabel("Click Finish to start mosaic generation.")
+        description.setWordWrap(True)
+        layout.addWidget(description)
         self.summary = QLabel(self)
         self.summary.setWordWrap(True)
         self.summary.setTextInteractionFlags(Qt.TextSelectableByMouse)
         layout.addWidget(self.summary)
         layout.addStretch(1)
 
-    def initializePage(self):
-        payload = self._studio.request_payload()
+    def update_summary(self, payload):
         layer_count = len(payload.get("layer_ids") or [])
         output_path = str(payload.get("output_path") or "")
         overwrite = "yes" if payload.get("overwrite") else "no"
@@ -168,30 +175,189 @@ class _ReviewPage(QWizardPage):
             f"Input layers: {layer_count}\n"
             f"Output: {output_path}\n"
             f"Replace existing output: {overwrite}\n\n"
-            "Advanced cutline, feather, and cloud controls will be added in a later iteration."
+            "Advanced cutline, feather, and cloud controls will be added later."
         )
 
 
-class MosaickingStudioDialog(QWizard):
-    """Collect the minimal input/output request for the lifted Mosaicker_v2 engine."""
+class _ProcessingResultsTab(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        heading = QLabel("Processing Results")
+        heading.setStyleSheet("font-weight: 600; font-size: 14px;")
+        layout.addWidget(heading)
+        self.status_label = QLabel("Waiting to start.")
+        self.status_label.setWordWrap(True)
+        layout.addWidget(self.status_label)
+        self.progress_bar = QProgressBar(self)
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setFormat("%p%")
+        layout.addWidget(self.progress_bar)
+        self.log = QPlainTextEdit(self)
+        self.log.setReadOnly(True)
+        self.log.setPlaceholderText("Mosaicker progress and status messages will appear here.")
+        layout.addWidget(self.log, 1)
+
+
+class MosaickingStudioDialog(QDialog):
+    """One-window, tabbed workflow that remains visible through processing."""
+
+    run_requested = pyqtSignal(dict)
+    processing_log_received = pyqtSignal(str)
+    processing_progress_received = pyqtSignal(float)
+
+    INPUTS_TAB = 0
+    OUTPUT_TAB = 1
+    REVIEW_TAB = 2
+    RESULTS_TAB = 3
 
     def __init__(self, *, layer_options, default_output_path="", parent=None):
         super().__init__(parent)
         self.setWindowTitle("Mosaicking Studio")
-        self.setWizardStyle(QWizard.ModernStyle)
-        self.setOption(QWizard.NoBackButtonOnStartPage, True)
-        self.resize(780, 520)
+        self.resize(820, 600)
+        self._processing = False
+        self._terminal = False
 
-        self.input_page = _InputLayersPage(layer_options, self)
-        self.output_page = _OutputPage(default_output_path, self)
-        self.review_page = _ReviewPage(self, self)
-        self.addPage(self.input_page)
-        self.addPage(self.output_page)
-        self.addPage(self.review_page)
+        layout = QVBoxLayout(self)
+        self.tabs = QTabWidget(self)
+        self.input_tab = _InputLayersTab(layer_options, self)
+        self.output_tab = _OutputTab(default_output_path, self)
+        self.review_tab = _ReviewTab(self)
+        self.results_tab = _ProcessingResultsTab(self)
+        self.tabs.addTab(self.input_tab, "1. Inputs")
+        self.tabs.addTab(self.output_tab, "2. Output")
+        self.tabs.addTab(self.review_tab, "3. Review")
+        self.tabs.addTab(self.results_tab, "4. Processing Results")
+        self.tabs.setTabEnabled(self.OUTPUT_TAB, False)
+        self.tabs.setTabEnabled(self.REVIEW_TAB, False)
+        self.tabs.setTabEnabled(self.RESULTS_TAB, False)
+        self.tabs.currentChanged.connect(self._sync_navigation)
+        layout.addWidget(self.tabs, 1)
+
+        button_row = QHBoxLayout()
+        button_row.addStretch(1)
+        self.back_button = QPushButton("Back", self)
+        self.next_button = QPushButton("Next", self)
+        self.finish_button = QPushButton("Finish", self)
+        self.close_button = QPushButton("Close", self)
+        self.back_button.clicked.connect(self._go_back)
+        self.next_button.clicked.connect(self._go_next)
+        self.finish_button.clicked.connect(self._start_processing)
+        self.close_button.clicked.connect(self.reject)
+        button_row.addWidget(self.back_button)
+        button_row.addWidget(self.next_button)
+        button_row.addWidget(self.finish_button)
+        button_row.addWidget(self.close_button)
+        layout.addLayout(button_row)
+
+        self.processing_log_received.connect(self.append_processing_log)
+        self.processing_progress_received.connect(self.set_processing_progress)
+        self._sync_navigation()
 
     def request_payload(self):
         return {
-            "layer_ids": self.input_page.selected_layer_ids(),
-            "output_path": self.output_page.output_path.text().strip(),
-            "overwrite": self.output_page.overwrite.isChecked(),
+            "layer_ids": self.input_tab.selected_layer_ids(),
+            "output_path": self.output_tab.output_path.text().strip(),
+            "overwrite": self.output_tab.overwrite.isChecked(),
+            "include_debug_information": self.output_tab.include_debug_information.isChecked(),
         }
+
+    def _go_next(self):
+        current = self.tabs.currentIndex()
+        if current == self.INPUTS_TAB:
+            if not self.input_tab.validate():
+                return
+            self.tabs.setTabEnabled(self.OUTPUT_TAB, True)
+            self.tabs.setCurrentIndex(self.OUTPUT_TAB)
+        elif current == self.OUTPUT_TAB:
+            if not self.output_tab.validate():
+                return
+            self.review_tab.update_summary(self.request_payload())
+            self.tabs.setTabEnabled(self.REVIEW_TAB, True)
+            self.tabs.setCurrentIndex(self.REVIEW_TAB)
+
+    def _go_back(self):
+        current = self.tabs.currentIndex()
+        if current == self.OUTPUT_TAB:
+            self.tabs.setCurrentIndex(self.INPUTS_TAB)
+        elif current == self.REVIEW_TAB:
+            self.tabs.setCurrentIndex(self.OUTPUT_TAB)
+
+    def _start_processing(self):
+        if self._processing:
+            return
+        if not self.input_tab.validate() or not self.output_tab.validate():
+            return
+        payload = self.request_payload()
+        self.review_tab.update_summary(payload)
+        self._processing = True
+        self._terminal = False
+        self.tabs.setTabEnabled(self.INPUTS_TAB, False)
+        self.tabs.setTabEnabled(self.OUTPUT_TAB, False)
+        self.tabs.setTabEnabled(self.REVIEW_TAB, False)
+        self.tabs.setTabEnabled(self.RESULTS_TAB, True)
+        self.tabs.setCurrentIndex(self.RESULTS_TAB)
+        self.results_tab.log.clear()
+        self.results_tab.status_label.setText("Starting mosaic generation...")
+        self.results_tab.progress_bar.setValue(0)
+        self.append_processing_log("Request prepared for QGIS task submission.")
+        if payload["include_debug_information"]:
+            self.append_processing_log("DEBUG: Detailed lifecycle logging is enabled.")
+        self._sync_navigation()
+        payload["_studio"] = self
+        self.run_requested.emit(payload)
+
+    def _sync_navigation(self, _index=None):
+        current = self.tabs.currentIndex()
+        editable = not self._processing and not self._terminal
+        self.back_button.setEnabled(editable and current in {self.OUTPUT_TAB, self.REVIEW_TAB})
+        self.next_button.setEnabled(editable and current in {self.INPUTS_TAB, self.OUTPUT_TAB})
+        self.finish_button.setEnabled(editable and current == self.REVIEW_TAB)
+        self.close_button.setEnabled(not self._processing)
+
+    def set_processing_progress(self, value):
+        progress = min(100, max(0, int(round(float(value)))))
+        if progress < self.results_tab.progress_bar.value():
+            return
+        self.results_tab.progress_bar.setValue(progress)
+        if self._processing:
+            self.results_tab.status_label.setText(f"Mosaic generation in progress: {progress}%")
+
+    def append_processing_log(self, message):
+        text = str(message or "").strip()
+        if not text:
+            return
+        timestamp = QDateTime.currentDateTime().toString("HH:mm:ss")
+        self.results_tab.log.appendPlainText(f"[{timestamp}] {text}")
+        scrollbar = self.results_tab.log.verticalScrollBar()
+        scrollbar.setValue(scrollbar.maximum())
+
+    def finish_processing(self, *, success, message):
+        self._processing = False
+        self._terminal = True
+        if success:
+            self.results_tab.progress_bar.setValue(100)
+            self.results_tab.status_label.setText("Mosaic completed successfully.")
+        else:
+            self.results_tab.status_label.setText("Mosaic generation failed.")
+        self.append_processing_log(message)
+        self.tabs.setTabEnabled(self.RESULTS_TAB, True)
+        self.tabs.setCurrentIndex(self.RESULTS_TAB)
+        self._sync_navigation()
+
+    def reject(self):
+        if self._processing:
+            self.results_tab.status_label.setText(
+                "Mosaic generation is still running. Keep this window open until it finishes."
+            )
+            self.append_processing_log("Close request ignored while processing is active.")
+            return
+        super().reject()
+
+    def closeEvent(self, event):
+        if self._processing:
+            event.ignore()
+            self.reject()
+            return
+        super().closeEvent(event)

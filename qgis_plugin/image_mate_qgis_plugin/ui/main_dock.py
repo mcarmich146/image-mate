@@ -5986,9 +5986,12 @@ class ImageMateMainDock(WorkflowDockMixin, QDockWidget):
             default_output_path=default_output,
             parent=self,
         )
-        if dialog.exec_() != QDialog.Accepted:
-            return
-        self.mosaicking_studio_requested.emit(dialog.request_payload())
+        dialog.run_requested.connect(self.mosaicking_studio_requested.emit)
+        self._mosaicking_studio_dialog = dialog
+        try:
+            dialog.exec_()
+        finally:
+            self._mosaicking_studio_dialog = None
 
     def _open_create_vrt_dialog(self):
         options = self._project_raster_layer_options()

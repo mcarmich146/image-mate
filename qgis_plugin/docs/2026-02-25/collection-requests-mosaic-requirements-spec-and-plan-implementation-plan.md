@@ -16,14 +16,14 @@ Implement Mosaic as a new workflow under Collection Requests while preserving ex
 ## Architecture and File-Level Plan
 | File | Change |
 | --- | --- |
-| [main_dock.py](C:/Users/jo.man_satellogic/Documents/Personal/dev/image-mate/qgis_plugin/image_mate_qgis_plugin/ui/main_dock.py) | Refactor `_build_tasking_tab()` to host `Ad-hocs` + `Mosaic` tabs; keep existing Ad-hocs controls/behavior unchanged; add Mosaic Create/Tracking UI and thin signal emitters only. |
-| [plugin.py](C:/Users/jo.man_satellogic/Documents/Personal/dev/image-mate/qgis_plugin/image_mate_qgis_plugin/plugin.py) | Connect new Mosaic signals; add `handle_mosaic_*` orchestration; keep UI logic minimal; use services for validation, tiling, persistence, submission, refresh, retask, acceptance. |
-| [campaign_storage_service.py](C:/Users/jo.man_satellogic/Documents/Personal/dev/image-mate/qgis_plugin/image_mate_qgis_plugin/services/campaign_storage_service.py) | Add deterministic Mosaic directory helpers under campaign root. |
+| [main_dock.py](../../image_mate_qgis_plugin/ui/main_dock.py) | Refactor `_build_tasking_tab()` to host `Ad-hocs` + `Mosaic` tabs; keep existing Ad-hocs controls/behavior unchanged; add Mosaic Create/Tracking UI and thin signal emitters only. |
+| [plugin.py](../../image_mate_qgis_plugin/plugin.py) | Connect new Mosaic signals; add `handle_mosaic_*` orchestration; keep UI logic minimal; use services for validation, tiling, persistence, submission, refresh, retask, acceptance. |
+| [campaign_storage_service.py](../../image_mate_qgis_plugin/services/campaign_storage_service.py) | Add deterministic Mosaic directory helpers under campaign root. |
 | `services/mosaic_grid_service.py` | New: AOI -> 10km world-grid clipped tiles, deterministic `tile_id`, clipped area km2, pricing helper. |
 | `services/mosaic_tracking_store.py` | New: SQLite schema, transactional CRUD for project/tile/attempt/status_history. |
 | `services/mosaic_tasking_service.py` | New: tasking payload builder, per-tile submit, status refresh, retask, manual acceptance transitions. |
 | `services/mosaic_contracts.py` | New: constants and typed keys for statuses, table names, defaults, field names. |
-| [source_service.py](C:/Users/jo.man_satellogic/Documents/Personal/dev/image-mate/qgis_plugin/image_mate_qgis_plugin/services/source_service.py) | No breaking changes; reuse existing `create_tasking_order`/`get_tasking_order`/`default_contract_id` seams. |
+| [source_service.py](../../image_mate_qgis_plugin/services/source_service.py) | No breaking changes; reuse existing `create_tasking_order`/`get_tasking_order`/`default_contract_id` seams. |
 
 ## Data Contracts and Persistence (Decision Complete)
 ### Project folder layout

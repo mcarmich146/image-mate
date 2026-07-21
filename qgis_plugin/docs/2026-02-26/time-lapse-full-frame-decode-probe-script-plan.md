@@ -13,7 +13,7 @@ Need a deterministic, terminal-only way to verify whether a generated time-lapse
 
 Target reproduction input from operator:
 
-- `C:\Users\jo.man_satellogic\Desktop\test.mp4`
+- `%USERPROFILE%\Desktop\test.mp4`
 
 ## Existing Reusable Components
 
@@ -44,7 +44,7 @@ Target reproduction input from operator:
 ## Terminal-Only Test Plan
 
 - Command:
-  - `py -3 qgis_plugin/test/time_lapse_video_decode_probe.py "C:\Users\jo.man_satellogic\Desktop\test.mp4" --passes 5 --expected-frames 25`
+  - `py -3 qgis_plugin/test/time_lapse_video_decode_probe.py "%USERPROFILE%\Desktop\test.mp4" --passes 5 --expected-frames 25`
 - Pass criteria:
   - Exit code `0`.
   - Each pass decodes all expected frames.

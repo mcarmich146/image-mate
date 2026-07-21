@@ -17,7 +17,7 @@ Debug evidence from campaign log (`.../campaigns/tma_bluetech_mission/logs/image
 - Render step produced 5 logical frames with `hold=5`.
 - Completion log reported `sequence_frames=25`.
 
-Direct stream probe of the produced output (`C:\\Users\\jo.man_satellogic\\Desktop\\test.mp4`) confirms:
+Direct stream probe of the produced output (`%USERPROFILE%\\Desktop\\test.mp4`) confirms:
 
 - `duration=12.500000`
 - `nb_read_frames=25`

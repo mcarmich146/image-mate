@@ -20,10 +20,31 @@ def main() -> int:
 
     _require(dock_text, 'mosaicking_studio_requested = pyqtSignal(dict)', "dock signal")
     _require(dock_text, 'QPushButton("Mosaicking Studio")', "geoprocessing action")
-    _require(dock_text, 'self.mosaicking_studio_requested.emit(', "request emission")
-    _require(dialog_text, 'class MosaickingStudioDialog(QWizard):', "guided studio")
-    _require(dialog_text, '"layer_ids": self.input_page.selected_layer_ids()', "layer selection")
-    _require(dialog_text, '"output_path": self.output_page.output_path.text().strip()', "output selection")
+    _require(
+        dock_text,
+        'dialog.run_requested.connect(self.mosaicking_studio_requested.emit)',
+        "persistent request emission",
+    )
+    _require(dialog_text, 'class MosaickingStudioDialog(QDialog):', "persistent studio")
+    _require(dialog_text, 'self.tabs = QTabWidget(self)', "tab container")
+    for tab_label in (
+        '"1. Inputs"',
+        '"2. Output"',
+        '"3. Review"',
+        '"4. Processing Results"',
+    ):
+        _require(dialog_text, tab_label, "studio step tab")
+    _require(dialog_text, '"layer_ids": self.input_tab.selected_layer_ids()', "layer selection")
+    _require(dialog_text, '"output_path": self.output_tab.output_path.text().strip()', "output selection")
+    _require(dialog_text, 'run_requested = pyqtSignal(dict)', "non-closing finish signal")
+    _require(dialog_text, 'self.tabs.setCurrentIndex(self.RESULTS_TAB)', "results transition")
+    _require(dialog_text, 'self.progress_bar = QProgressBar(self)', "progress bar")
+    _require(dialog_text, 'self.log = QPlainTextEdit(self)', "processing log")
+    _require(dialog_text, 'processing_log_received = pyqtSignal(str)', "queued log bridge")
+    _require(dialog_text, 'processing_progress_received = pyqtSignal(float)', "queued progress bridge")
+    _require(dialog_text, 'QCheckBox("Include debug information"', "debug information option")
+    _require(dialog_text, '"include_debug_information":', "debug request payload")
+    _require(dialog_text, 'if self._processing:', "close guard")
 
     for deferred_token in ("cloud_threshold", "cloud_mask", "cutline_editor", "feather_spin"):
         if deferred_token in dialog_text:
@@ -36,6 +57,16 @@ def main() -> int:
     )
     _require(plugin_text, "QgsTask.fromFunction(", "background task")
     _require(plugin_text, "QgsApplication.taskManager().addTask(task)", "task submission")
+    _require(plugin_text, "progress_callback=task.setProgress", "engine progress bridge")
+    _require(plugin_text, "debug_callback=_emit_studio_debug", "debug lifecycle bridge")
+    _require(plugin_text, "studio_log_buffer = MosaickingLogBuffer()", "thread-safe log bridge")
+    _require(plugin_text, "studio_log_buffer.drain(studio_log_signal.emit)", "GUI-thread log drain")
+    _require(plugin_text, "task.progressChanged.connect(studio.processing_progress_received.emit)", "UI progress bridge")
+    _require(plugin_text, "task.statusChanged.connect(", "task status diagnostics")
+    _require(plugin_text, "task.taskTerminated.connect(", "termination fallback")
+    _require(plugin_text, "_report_unhandled_termination", "termination exception report")
+    _require(plugin_text, "Could not submit the mosaic task", "submission failure handling")
+    _require(plugin_text, "studio.finish_processing(", "terminal status")
     _require(plugin_text, "self._resolve_local_raster_source_path(layer)", "local path resolution")
     _require(plugin_text, "self._add_layer_to_image_mate_group(mosaic_layer)", "project layer load")
 

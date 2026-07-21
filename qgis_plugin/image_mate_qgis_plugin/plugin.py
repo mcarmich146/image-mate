@@ -65,7 +65,11 @@ from .services.mosaic_contracts import (
     validate_project_id,
 )
 from .services.mosaic_grid_service import MosaicGridService
-from .services.mosaicking_service import MosaickingService, normalize_mosaicking_request
+from .services.mosaicking_service import (
+    MosaickingLogBuffer,
+    MosaickingService,
+    normalize_mosaicking_request,
+)
 from .services.mosaic_tasking_service import MosaicTaskingService
 from .services.mosaic_tracking_store import MosaicTrackingStore
 from .services.mosaic_preview_resolution import (
@@ -1485,6 +1489,40 @@ class ImageMatePlugin(SimulationExecutionMixin, WorkflowExecutionMixin, SearchSt
 
     def handle_mosaicking_studio_request(self, payload):
         request = payload if isinstance(payload, dict) else {}
+        studio = request.get("_studio")
+        include_debug_information = bool(request.get("include_debug_information", False))
+        studio_log_signal = (
+            studio.processing_log_received
+            if studio is not None and hasattr(studio, "processing_log_received")
+            else None
+        )
+        studio_log_buffer = MosaickingLogBuffer()
+
+        def _drain_studio_log():
+            if studio_log_signal is not None:
+                studio_log_buffer.drain(studio_log_signal.emit)
+
+        studio_log_timer = None
+        if studio is not None and studio_log_signal is not None:
+            studio_log_timer = QTimer(studio)
+            studio_log_timer.setInterval(75)
+            studio_log_timer.timeout.connect(_drain_studio_log)
+            studio_log_timer.start()
+            studio._mosaicking_log_timer = studio_log_timer
+
+        def _emit_studio_log(message):
+            studio_log_buffer.publish(message)
+
+        def _emit_studio_debug(message):
+            if include_debug_information:
+                _emit_studio_log(f"DEBUG: {str(message or '').strip()}")
+
+        def _finish_studio(*, success, message):
+            _drain_studio_log()
+            if studio is not None and hasattr(studio, "finish_processing"):
+                studio.finish_processing(success=success, message=message)
+
+        _emit_studio_debug("Plugin request handler entered.")
         raw_layer_ids = request.get("layer_ids") if isinstance(request.get("layer_ids"), list) else []
         layer_ids = []
         for value in raw_layer_ids:
@@ -1525,6 +1563,10 @@ class ImageMatePlugin(SimulationExecutionMixin, WorkflowExecutionMixin, SearchSt
                 duration=12,
             )
             self._append_debug_log(f"Mosaicking Studio validation failed: {exc}", level=Qgis.Warning)
+            _finish_studio(
+                success=False,
+                message=f"Request validation failed: {exc}",
+            )
             return
 
         output_path = str(normalized.output_path)
@@ -1534,6 +1576,8 @@ class ImageMatePlugin(SimulationExecutionMixin, WorkflowExecutionMixin, SearchSt
             "Mosaicking Studio request: "
             f"inputs={len(input_path_values)} output={output_path} overwrite={overwrite}"
         )
+        _emit_studio_log(f"Validated {len(input_path_values)} local raster inputs.")
+        _emit_studio_debug(f"Resolved output path: {output_path}")
         self.iface.messageBar().pushMessage(
             "Image Mate",
             f"Mosaic generation started in the task manager: {Path(output_path).name}",
@@ -1542,17 +1586,33 @@ class ImageMatePlugin(SimulationExecutionMixin, WorkflowExecutionMixin, SearchSt
         )
 
         def _run_mosaicker(task):
-            if task.isCanceled():
-                raise RuntimeError("Mosaic task was canceled before processing started.")
-            result = self.mosaicking_service.create_mosaic(
-                input_paths=input_path_values,
-                output_path=output_path,
-                overwrite=overwrite,
-            )
-            task.setProgress(100.0)
-            return result
+            try:
+                _emit_studio_debug("QGIS background worker entered.")
+                if task.isCanceled():
+                    raise RuntimeError("Mosaic task was canceled before processing started.")
+                _emit_studio_debug("Background task is active and not canceled.")
+                return self.mosaicking_service.create_mosaic(
+                    input_paths=input_path_values,
+                    output_path=output_path,
+                    overwrite=overwrite,
+                    progress_callback=task.setProgress,
+                    log_callback=_emit_studio_log,
+                    debug_callback=_emit_studio_debug,
+                )
+            except Exception as exc:
+                _emit_studio_debug(
+                    f"Background worker raised {type(exc).__name__}: {exc}"
+                )
+                raise
+
+        task_outcome = {"reported": False}
 
         def _mosaicker_finished(exception, result=None):
+            task_outcome["reported"] = True
+            _emit_studio_debug(
+                "QGIS completion callback entered with "
+                f"exception={exception!r}; result_type={type(result).__name__}."
+            )
             if exception is not None:
                 self.iface.messageBar().pushMessage(
                     "Image Mate",
@@ -1561,6 +1621,10 @@ class ImageMatePlugin(SimulationExecutionMixin, WorkflowExecutionMixin, SearchSt
                     duration=15,
                 )
                 self._append_debug_log(f"Mosaic generation failed: {exception}", level=Qgis.Warning)
+                _finish_studio(
+                    success=False,
+                    message=f"Mosaic generation failed: {exception}",
+                )
                 return
 
             result_row = result if isinstance(result, dict) else {}
@@ -1576,6 +1640,10 @@ class ImageMatePlugin(SimulationExecutionMixin, WorkflowExecutionMixin, SearchSt
                 self._append_debug_log(
                     f"Mosaic output is invalid in QGIS: {result_path}",
                     level=Qgis.Warning,
+                )
+                _finish_studio(
+                    success=False,
+                    message=f"Mosaic was created but QGIS could not load it: {result_path}",
                 )
                 return
 
@@ -1593,13 +1661,78 @@ class ImageMatePlugin(SimulationExecutionMixin, WorkflowExecutionMixin, SearchSt
                 f"elapsed_seconds={elapsed:.1f} output={result_path} "
                 f"analysis={result_row.get('analysis_path') or '(none)'}"
             )
+            _finish_studio(
+                success=True,
+                message=f"Mosaic created and added to the project: {result_path}",
+            )
 
-        task = QgsTask.fromFunction(
-            f"Image Mate Mosaicking Studio: {Path(output_path).name}",
-            _run_mosaicker,
-            on_finished=_mosaicker_finished,
-        )
-        QgsApplication.taskManager().addTask(task)
+        def _report_unhandled_termination(exception):
+            if task_outcome["reported"]:
+                return
+            task_outcome["reported"] = True
+            detail = str(exception or "QGIS terminated the task without an exception detail.")
+            _emit_studio_debug(f"Termination fallback captured: {detail}")
+            self._append_debug_log(
+                f"Mosaic task terminated before its completion callback: {detail}",
+                level=Qgis.Warning,
+            )
+            _finish_studio(
+                success=False,
+                message=f"Mosaic task terminated: {detail}",
+            )
+
+        def _task_terminated():
+            exception = getattr(task, "exception", None)
+            QTimer.singleShot(
+                0,
+                lambda captured_exception=exception: (
+                    _report_unhandled_termination(captured_exception)
+                ),
+            )
+
+        try:
+            _emit_studio_debug("Constructing QgsTask.fromFunction task.")
+            task = QgsTask.fromFunction(
+                f"Image Mate Mosaicking Studio: {Path(output_path).name}",
+                _run_mosaicker,
+                on_finished=_mosaicker_finished,
+            )
+            if studio is not None and hasattr(studio, "processing_progress_received"):
+                task.progressChanged.connect(studio.processing_progress_received.emit)
+                _emit_studio_debug("Connected QGIS task progress to the studio progress bar.")
+            if include_debug_information:
+                task_status_names = {
+                    int(QgsTask.Queued): "Queued",
+                    int(QgsTask.OnHold): "On hold",
+                    int(QgsTask.Running): "Running",
+                    int(QgsTask.Complete): "Complete",
+                    int(QgsTask.Terminated): "Terminated",
+                }
+                task.statusChanged.connect(
+                    lambda status: _emit_studio_debug(
+                        "QGIS task status changed: "
+                        f"{task_status_names.get(int(status), 'Unknown')} ({int(status)})."
+                    )
+                )
+            task.taskTerminated.connect(_task_terminated)
+            task_id = QgsApplication.taskManager().addTask(task)
+            _emit_studio_log(f"Background task submitted to QGIS (task id {task_id}).")
+            _emit_studio_debug("Waiting for the QGIS task manager to start the worker.")
+        except Exception as exc:
+            self.iface.messageBar().pushMessage(
+                "Image Mate",
+                f"Could not submit the mosaic task: {exc}",
+                level=Qgis.Warning,
+                duration=15,
+            )
+            self._append_debug_log(
+                f"Mosaic task submission failed: {exc}",
+                level=Qgis.Warning,
+            )
+            _finish_studio(
+                success=False,
+                message=f"Could not submit the mosaic task: {exc}",
+            )
 
     def handle_sharpen_image_request(self, payload):
         request = payload if isinstance(payload, dict) else {}

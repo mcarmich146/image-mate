@@ -8,7 +8,7 @@
   - `[WinError 32] The process cannot access the file because it is being used by another process`
   - Path: `...\\mosaic_tracking.sqlite3`
 - Observed in log:
-  - `C:\Users\jo.man_satellogic\ImageMateCampaigns\campaigns\thai_caas\logs\image_mate_qgis_20260302T152108Z.log`
+  - `%USERPROFILE%\ImageMateCampaigns\campaigns\thai_caas\logs\image_mate_qgis_20260302T152108Z.log`
   - `delete_failed project=vancouver_mosaic ... mosaic_tracking.sqlite3`
 
 ## Root Cause

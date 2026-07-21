@@ -2,8 +2,10 @@ import math
 import requests
 from urllib.parse import urlparse, parse_qs
 import sys
+from pathlib import Path
 
-sys.path.insert(0, r"C:/Users/jo.man_satellogic/Documents/Personal/dev/image-mate/backend")
+REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(REPOSITORY_ROOT / "backend"))
 
 from app.satellogic_client import SatellogicClient
 
