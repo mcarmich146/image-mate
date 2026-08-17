@@ -21,8 +21,12 @@
       <nav class="workbench-tabs" id="workbenchTabs">
         <button type="button" class="tab-btn active" data-tab="explore">Explore</button>
         <button type="button" class="tab-btn" data-tab="tasking">Tasking</button>
+        <button type="button" class="tab-btn" data-tab="grid">Grid Tasking</button>
+        <button type="button" class="tab-btn" data-tab="analytics">Analytics</button>
+        <button type="button" class="tab-btn" data-tab="lab">Model Lab</button>
         <button type="button" class="tab-btn" data-tab="workflows">Workflows</button>
         <button type="button" class="tab-btn" data-tab="schedules">Schedules</button>
+        <button type="button" class="tab-btn" data-tab="monitoring">Monitoring</button>
         <button type="button" class="tab-btn" data-tab="runs">Runs</button>
       </nav>
 
@@ -127,6 +131,118 @@
           </div>
           <p id="taskingOrdersMeta" class="meta">No tasking orders loaded.</p>
           <div id="taskingOrdersList" class="tasking-orders-list"></div>
+        </section>
+      </div>
+
+      <div id="leftGridView" class="left-view">
+        <section class="panel-block">
+          <p class="kicker">Read-only planning first</p>
+          <h2>Grid Tasking Planner</h2>
+          <p class="meta">Plan a TSKARE-M grid over the current viewport. Planning never writes to Satellogic.</p>
+          <label>Campaign Name<input id="gridCampaignName" type="text" placeholder="e.g. port-grid-2026" /></label>
+          <label>Project Name<input id="gridProjectName" type="text" placeholder="e.g. port-monitoring" /></label>
+          <div class="grid two">
+            <label>Cell Size (km)<input id="gridCellSize" type="number" min="1" step="1" value="20" /></label>
+            <label>Minimum Cell Area (km²)<input id="gridMinArea" type="number" min="0" step="1" value="25" /></label>
+          </div>
+          <div class="grid two">
+            <label>Start<input id="gridStart" type="datetime-local" /></label>
+            <label>End<input id="gridEnd" type="datetime-local" /></label>
+          </div>
+          <div class="actions">
+            <button id="gridPlanBtn" type="button">Plan Grid</button>
+            <button id="gridClearBtn" type="button" class="ghost">Clear</button>
+          </div>
+          <p id="gridMeta" class="meta">No grid plan loaded.</p>
+        </section>
+        <section class="panel-block">
+          <h2>Plan Review</h2>
+          <div id="gridSummary" class="monitoring-status-cards"></div>
+          <div id="gridCellsList" class="tasking-orders-list"></div>
+          <label>Type campaign name to submit<input id="gridConfirmation" type="text" disabled /></label>
+          <button id="gridSubmitBtn" type="button" disabled>Submit Verified Grid Orders</button>
+          <pre id="gridResult" class="report compact">Planning is read-only until you explicitly submit.</pre>
+        </section>
+      </div>
+
+      <div id="leftAnalyticsView" class="left-view">
+        <section class="panel-block">
+          <p class="kicker">Delivered intelligence</p>
+          <h2>Satellogic Analytics</h2>
+          <p class="meta">Inspect analytics assets attached to a delivered Satellogic deliverable. Model detections remain evidence, not ground truth.</p>
+          <label>Deliverable ID<input id="analyticsDeliverableId" type="text" placeholder="e.g. deliverable-id" /></label>
+          <label>Analytics Asset<select id="analyticsAssetKey"><option value="analytics_vessels">Vessels</option><option value="analytics_aircraft">Aircraft</option><option value="analytics_land_equipment">Land equipment</option></select></label>
+          <div class="actions">
+            <button id="analyticsInspectBtn" type="button">Inspect Assets</button>
+            <button id="analyticsSummaryBtn" type="button" class="ghost">Summarize Detections</button>
+          </div>
+          <pre id="analyticsResult" class="report compact">Enter a deliverable ID.</pre>
+        </section>
+        <section class="panel-block">
+          <p class="kicker">Local model inference</p>
+          <h2>Aircraft Detector</h2>
+          <p class="meta">Runs the configured local high-resolution detector on one active Satellogic L1D-SR visual tile. Results are model evidence, not provider analytics or analyst confirmation.</p>
+          <p id="aircraftDetectorRuntime" class="meta">Checking local detector runtime...</p>
+          <p id="aircraftDetectorSelection" class="meta">Select an L1D-SR detail frame and zoom the map to choose a tile.</p>
+          <div class="actions">
+            <button id="aircraftDetectorRunBtn" type="button" disabled>Run on Active L1D Tile</button>
+            <button id="aircraftDetectorClearBtn" type="button" class="ghost">Clear Results</button>
+          </div>
+          <pre id="aircraftDetectorResult" class="report compact">No local detection run yet.</pre>
+        </section>
+      </div>
+
+      <div id="leftLabView" class="left-view">
+        <section class="panel-block lab-hero">
+          <p class="kicker">Human-in-the-loop aircraft workbench</p>
+          <h2>Aircraft Model Lab</h2>
+          <p class="meta">Browse the active archive capture, review detector chips, and keep confirmed labels separate from Luna's independent suggestions.</p>
+          <div id="labRuntimeCards" class="monitoring-status-cards"></div>
+          <div class="grid two">
+            <label>Detector Model<select id="labModelSelect"><option value="configured">Configured local model</option></select></label>
+            <label>Training Data<select id="labDatasetSelect"><option value="">No prepared bundle</option></select></label>
+          </div>
+          <div class="actions">
+            <button id="labCatalogRefreshBtn" type="button">Refresh Catalog</button>
+            <button id="labHostTrainingBtn" type="button" class="ghost">Show Host Command</button>
+          </div>
+          <p id="labCatalogMeta" class="meta">Loading local models and prepared datasets...</p>
+          <pre id="labTrainingCommand" class="report compact" hidden>Host-side training is intentionally explicit. The Hermes Docker runtime does not claim access to the Mac GPU.</pre>
+        </section>
+
+        <section class="panel-block">
+          <div class="workflow-builder-head">
+            <div>
+              <p class="kicker">Selected carousel image</p>
+              <h2>Detection Review</h2>
+            </div>
+            <span id="labDetectionCount" class="chip">0</span>
+          </div>
+          <p id="labActiveImage" class="meta">Select an L1D-SR image from the carousel on the right.</p>
+          <div class="actions">
+            <button id="labRunDetectorBtn" type="button" disabled>Run Detector</button>
+            <button id="labDrawPolygonBtn" type="button" class="ghost" disabled>Draw New Detection</button>
+          </div>
+          <div class="grid two">
+            <label>Manual label<select id="labAnnotationLabel"><option value="plane">Plane</option><option value="helicopter">Helicopter</option><option value="background">None / background</option></select></label>
+            <label>Review note<input id="labAnnotationNote" type="text" placeholder="optional" /></label>
+          </div>
+          <p id="labReviewMeta" class="meta">Run the detector to review proposals. Every label is stored with tile geometry and scene provenance.</p>
+          <div id="labDetectionList" class="aircraft-detection-list"><p class="meta">No detections to review.</p></div>
+        </section>
+
+        <section class="panel-block">
+          <p class="kicker">Luna few-shot lane</p>
+          <h2>Calibrate the reviewer</h2>
+          <p class="meta">Use the CLI or Telegram flow to prime Luna from confirmed examples, then evaluate pending chips. Luna's suggestions remain review evidence until you confirm them.</p>
+          <pre class="report compact">aircraft_review.py luna-prime \
+  --manifest /path/to/scene-a/review_manifest.json \
+  --manifest /path/to/scene-b/review_manifest.json \
+  --outdir /path/to/luna-prime
+
+aircraft_review.py luna-evaluate \
+  --manifest /path/to/target/review_manifest.json \
+  --prime-manifest /path/to/luna-prime/luna_examples.json</pre>
         </section>
       </div>
 
@@ -251,6 +367,38 @@
           <div class="actions">
             <button id="subscriptionCreateBtn">Create Subscription</button>
           </div>
+        </section>
+      </div>
+
+      <div id="leftMonitoringView" class="left-view">
+        <section class="panel-block monitoring-hero">
+          <p class="kicker">Capture assurance</p>
+          <h2>AOI Recollection Monitoring</h2>
+          <p class="meta">Track archive-observed captures around the world. Monitoring is read-only: it never creates tasking orders.</p>
+          <div class="grid two">
+            <label>Monitor Name<input id="monitoringName" type="text" placeholder="e.g. Vancouver port watch" /></label>
+            <label>Expected Revisit (days)<input id="monitoringExpectedDays" type="number" min="1" max="3650" value="30" /></label>
+          </div>
+          <label>Thumbnail Collection<select id="monitoringCollection"><option value="quickview-visual-thumb">QuickView Visual Thumbnail</option><option value="quickview-visual">QuickView Visual</option></select></label>
+          <div class="grid two">
+            <label>Cloud Cover ≤<input id="monitoringMaxCloud" type="number" min="0" max="100" value="60" /></label>
+            <label>Linked Order ID (optional)<input id="monitoringOrderId" type="text" placeholder="Only for verified tasking linkage" /></label>
+          </div>
+          <div class="actions">
+            <button id="monitoringCreateBtn" type="button">Monitor Current Viewport</button>
+            <button id="monitoringRefreshAllBtn" type="button" class="ghost">Refresh All</button>
+          </div>
+          <p id="monitoringMeta" class="meta">Draw or pan the map to the AOI you want to monitor, then create a target.</p>
+        </section>
+        <section class="panel-block">
+          <div class="monitoring-section-head"><h2>Monitored AOIs</h2><span id="monitoringCount" class="chip">0</span></div>
+          <div id="monitoringList" class="monitoring-list"><p class="meta">No recollection monitors yet.</p></div>
+        </section>
+        <section class="panel-block">
+          <div class="monitoring-section-head"><h2>Selected monitor</h2><button id="monitoringRefreshBtn" type="button" class="ghost tiny">Refresh</button></div>
+          <div id="monitoringStatusCards" class="monitoring-status-cards"></div>
+          <pre id="monitoringDetail" class="report compact">Select a monitored AOI.</pre>
+          <p class="meta">Archive status means a thumbnail footprint was observed. Tasking and deliverable status remain unverified until linked order/capture evidence is checked.</p>
         </section>
       </div>
 
@@ -407,7 +555,10 @@
             <label>End<input id="taskingEnd" type="datetime-local" required /></label>
           </div>
           <label id="taskingCadenceLabel">Revisit / Remapping Period (optional)<input id="taskingCadence" type="text" placeholder="P15D" /></label>
+          <label>Type order name to confirm<input id="taskingConfirmation" type="text" required placeholder="Exact order name" /></label>
+          <pre id="taskingOpportunityResult" class="report compact">Run feasibility analysis before submitting when capture windows or cloud risk matter.</pre>
           <div class="actions">
+            <button id="taskingOpportunityBtn" type="button" class="ghost">Check Feasibility</button>
             <button id="taskingConfirmBtn" type="submit">Confirm</button>
             <button id="taskingCancelBtn" type="button" class="ghost">Cancel</button>
           </div>

@@ -300,6 +300,49 @@ class SatellogicClient:
             return payload
         return {"results": []}
 
+    def _list_order_related(self, order_id: str, resource: str, contract_id: str | None = None) -> dict[str, Any]:
+        target = str(order_id or "").strip()
+        if not target:
+            raise ValueError("order_id is required")
+        url = f"{self.api_base_url}/v2/orders/{target}/{resource.lstrip('/')}"
+        response = self._request_with_auth_retry(
+            "GET",
+            url,
+            contract_id=contract_id,
+            timeout=60,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if isinstance(payload, dict):
+            return payload
+        if isinstance(payload, list):
+            return {"results": payload}
+        return {"results": []}
+
+    def list_order_events(self, order_id: str, contract_id: str | None = None) -> dict[str, Any]:
+        return self._list_order_related(order_id, "events", contract_id=contract_id)
+
+    def list_order_captures(self, order_id: str, contract_id: str | None = None) -> dict[str, Any]:
+        return self._list_order_related(order_id, "captures", contract_id=contract_id)
+
+    def list_order_deliverables(self, order_id: str, contract_id: str | None = None) -> dict[str, Any]:
+        return self._list_order_related(order_id, "deliverables", contract_id=contract_id)
+
+    def get_deliverable(self, deliverable_id: str, contract_id: str | None = None) -> dict[str, Any]:
+        target = str(deliverable_id or "").strip()
+        if not target:
+            raise ValueError("deliverable_id is required")
+        url = f"{self.api_base_url}/v2/deliverables/{target}"
+        response = self._request_with_auth_retry(
+            "GET",
+            url,
+            contract_id=contract_id,
+            timeout=60,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        return payload if isinstance(payload, dict) else {"result": payload}
+
     def create_order(self, feature: dict[str, Any], contract_id: str | None = None) -> dict[str, Any]:
         """
         Create a new v2 tasking order.
@@ -338,6 +381,62 @@ class SatellogicClient:
             return payload
         return {"result": payload}
 
+    def create_opportunity_analysis(
+        self,
+        feature: dict[str, Any],
+        contract_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Start a read-only Satellogic capture-opportunity analysis."""
+        url = f"{self.api_base_url}/v2/analysis/opportunities"
+        response = self._request_with_auth_retry(
+            "POST",
+            url,
+            contract_id=contract_id,
+            json_body=feature,
+            timeout=60,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        return payload if isinstance(payload, dict) else {"result": payload}
+
+    def get_opportunity_analysis(
+        self,
+        analysis_id: str,
+        contract_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Return a previously-started capture-opportunity analysis."""
+        target = (analysis_id or "").strip()
+        if not target:
+            raise ValueError("analysis_id is required")
+        url = f"{self.api_base_url}/v2/analysis/opportunities/{target}"
+        response = self._request_with_auth_retry(
+            "GET",
+            url,
+            contract_id=contract_id,
+            timeout=60,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        return payload if isinstance(payload, dict) else {"result": payload}
+
+    def cancel_order(self, order_id: str, contract_id: str | None = None) -> dict[str, Any]:
+        """Request cancellation of a remote order."""
+        target = (order_id or "").strip()
+        if not target:
+            raise ValueError("order_id is required")
+        url = f"{self.api_base_url}/v2/orders/{target}"
+        response = self._request_with_auth_retry(
+            "DELETE",
+            url,
+            contract_id=contract_id,
+            timeout=60,
+        )
+        response.raise_for_status()
+        if not response.content:
+            return {"id": target, "status": "cancellation_requested"}
+        payload = response.json()
+        return payload if isinstance(payload, dict) else {"result": payload}
+
     def search(
         self,
         geometry: dict[str, Any],
@@ -364,12 +463,34 @@ class SatellogicClient:
         # This STAC endpoint does not support the Query extension and returns 403
         # when `query` is provided. We apply cloud/satellite/gsd filters client-side.
 
-        response = requests.post(url, headers=self.auth_headers(contract_id=contract_id), json=body, timeout=60)
-        response.raise_for_status()
-        payload = response.json()
-        features = payload.get("features", [])
+        features: list[dict[str, Any]] = []
+        next_url: str | None = url
+        next_body: dict[str, Any] | None = body
+        pages = 0
+        while next_url and pages < 20 and len(features) < max(1, limit):
+            response = requests.post(
+                next_url,
+                headers=self.auth_headers(contract_id=contract_id),
+                json=next_body,
+                timeout=60,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            page_features = payload.get("features", []) if isinstance(payload, dict) else []
+            if isinstance(page_features, list):
+                features.extend(row for row in page_features if isinstance(row, dict))
+            links = payload.get("links", []) if isinstance(payload, dict) else []
+            next_href = next(
+                (str(link.get("href")) for link in links if isinstance(link, dict) and link.get("rel") == "next" and link.get("href")),
+                None,
+            )
+            next_url = next_href
+            next_body = None
+            pages += 1
+            if not page_features:
+                break
         return self._filter_features(
-            features,
+            features[: max(1, limit)],
             collection_id=collection_id,
             max_cloud_cover=max_cloud_cover,
             satellite_name=satellite_name,
@@ -377,11 +498,16 @@ class SatellogicClient:
             max_gsd=max_gsd,
         )
 
-    def item_by_id(self, item_id: str, contract_id: str | None = None) -> dict[str, Any] | None:
+    def item_by_id(
+        self,
+        item_id: str,
+        contract_id: str | None = None,
+        collection_id: str | None = None,
+    ) -> dict[str, Any] | None:
         # STAC core supports searching by explicit IDs.
         url = f"{self.stac_url}/search"
         body = {
-            "collections": [settings.satellogic_collection_id],
+            "collections": [collection_id or settings.satellogic_collection_id],
             "ids": [item_id],
             "limit": 1,
         }
@@ -536,7 +662,7 @@ def _extract_satellite_name(props: dict[str, Any], item_id: str) -> str | None:
             return value.strip()
 
     if item_id:
-        match = re.search(r"_SN\\d+_", item_id)
+        match = re.search(r"_SN\d+_", item_id)
         if match:
             return match.group(0).strip("_")
     return None
@@ -549,7 +675,7 @@ def _capture_group_key(feature: dict[str, Any]) -> str:
         return f"outcome:{outcome}"
 
     item_id = feature.get("id", "") or ""
-    match = re.search(r"(\\d{8}_\\d{6}_\\d+_SN\\d+)", item_id)
+    match = re.search(r"(\d{8}_\d{6}_\d+_SN\d+)", item_id)
     if match:
         return f"capture:{match.group(1)}"
 

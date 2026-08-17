@@ -1,0 +1,3 @@
+# Host-only training environment. Do not add these packages to the Image Mate backend runtime.
+# Apple Silicon uses PyTorch MPS for training; export remains CPU-compatible ONNX.
+ultralytics>=8.3,<9

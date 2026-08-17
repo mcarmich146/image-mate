@@ -147,6 +147,83 @@ Persistent logs are written per run to:
 
 - http://localhost:8000/
 
+For a stable browser session, use `IMAGE_MATE_DEV_RELOAD=false` when starting `backend/run.sh`. The user-local Hermes skill `image-mate-backend` can start or reuse the service, verify `/api/health`, `/`, `/api/runtime`, and `/api/sources`, run a browser smoke check, and return the verified URL without printing credentials.
+
+## Local L1D-SR aircraft detection
+
+Image Mate has a separate local-inference path for one high-resolution Satellogic `l1d-sr` visual tile. It does **not** call or summarize provider-delivered `analytics_aircraft`. The initial model is the tracked `yolo11n-obb.onnx` Ultralytics YOLO11n oriented detector trained on DOTAv1; its classes include `plane` and `helicopter`. The model metadata identifies an AGPL-3.0 license, so review that license before external distribution or hosted deployment.
+
+The API resolves the selected `item_id` server-side, obtains its provider `visual` asset, requests one buffer-free WebMercator tile, and returns pixel detections plus WGS84 GeoJSON when tile provenance is available:
+
+```text
+GET  /api/detectors/aircraft
+POST /api/detectors/aircraft
+```
+
+The Web App exposes this as **Analytics → Aircraft Detector**. The control is separate from provider analytics, requires an active Satellogic L1D-SR visual frame, and reports the exact tile `z/x/y`, scale, and `buffer=0` used for inference.
+
+### Runtime setup
+
+The base backend requirements include CPU `onnxruntime` for local verification. For NVIDIA CUDA inference, install the mutually exclusive GPU package in the project environment:
+
+```bash
+./.venv/bin/python -m pip uninstall -y onnxruntime
+./.venv/bin/python -m pip install -r backend/requirements-aircraft-gpu.txt
+```
+
+On an Apple Silicon host, use a macOS ONNX Runtime build that exposes `CoreMLExecutionProvider`; the Linux Docker execution environment used by Hermes cannot access the laptop's Metal/CoreML device. Verify the actual host provider list:
+
+```bash
+./.venv/bin/python -c 'import onnxruntime as ort; print(ort.get_available_providers())'
+```
+
+Set `IMAGE_MATE_AIRCRAFT_PROVIDER=coreml` to require Apple CoreML, `cuda` to require NVIDIA CUDA, or leave it as `auto` to prefer CoreML, then CUDA, and otherwise CPU. The backend `/api/detectors/aircraft` capability endpoint reports the installed providers; the presence of an ONNX file alone is not GPU verification.
+
+For a passed local tile, the Hermes skill/CLI uses:
+
+```bash
+./.venv/bin/python backend/scripts/detect_aircraft.py \\
+  --image /path/to/l1d_tile.png \\
+  --bounds=-122.5,37.6,-122.4,37.7 \\
+  --provider auto \\
+  --output /path/to/detections.json
+```
+
+Results are model evidence and still require validation against labeled L1D-SR aircraft imagery before operational or identity claims.
+
+### Luna-assisted active learning
+
+For a series of downloaded L1D-SR tiles, keep a same-stem JSON sidecar beside each image with `item_id`, `collection_id: l1d-sr`, and `bounds_wgs84`, then run the batch lane before preparing review chips:
+
+```bash
+./.venv/bin/python backend/scripts/detect_aircraft_batch.py \
+  --input-dir /path/to/l1d-tiles \
+  --outdir /path/to/detections \
+  --provider coreml
+
+./.venv/bin/python backend/scripts/aircraft_review.py batch-prepare \
+  --image-dir /path/to/l1d-tiles \
+  --detections-dir /path/to/detections \
+  --outdir /path/to/review-batch
+```
+
+Both commands preserve one manifest per scene and a batch manifest, so the review queue can be resumed or split across Telegram sessions.
+
+The repeatable review lane can build a few-shot calibration packet from human-confirmed chips and send pending chips to the Hermes-managed `gpt-5.6-luna` vision route:
+
+```bash
+./.venv/bin/python backend/scripts/aircraft_review.py luna-prime \
+  --manifest /path/to/scene-a/review_manifest.json \
+  --manifest /path/to/scene-b/review_manifest.json \
+  --outdir /path/to/luna-prime
+
+./.venv/bin/python backend/scripts/aircraft_review.py luna-evaluate \
+  --manifest /path/to/target/review_manifest.json \
+  --prime-manifest /path/to/luna-prime/luna_examples.json
+```
+
+Luna evaluations are append-only review evidence in `luna_evaluations.jsonl`; they never overwrite the human label or silently become training data. The Model Lab tab exposes the same active archive carousel, local detector, review actions, polygon annotation, model catalog, and prepared-bundle status. The `--validation-manifest` option on `train_aircraft.py` creates a scene-held-out validation split; run that command from the macOS host with `--device mps`, not from the Hermes Docker runtime.
+
 ## GeoAgent behavior
 
 `/api/geoagent/report` takes:

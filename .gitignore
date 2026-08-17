@@ -26,6 +26,13 @@ backend/data/annotations.json
 backend/output/
 output/
 
+# Local datasets, training runs, and generated artifacts
+artifacts/
+datasets/
+runs/
+*.sqlite3
+*.log
+
 # OS / editor
 .DS_Store
 .vscode/

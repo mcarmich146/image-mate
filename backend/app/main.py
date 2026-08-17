@@ -1,9 +1,14 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from contextlib import asynccontextmanager
+from dataclasses import replace
+import ipaddress
+import json
 import logging
+import socket
 import time
 import base64
 import re
@@ -25,10 +30,18 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from .config import settings
+from .aircraft_detector import (
+    AircraftDetector,
+    AircraftDetectorConfig,
+    AircraftDetectorError,
+    AircraftDetectorUnavailable,
+)
 from .geoagent import generate_geo_report
 from .models import (
     AnimationSearchRequest,
     AnimationRequest,
+    AircraftDetectorRequest,
+    AircraftLabAnnotationRequest,
     CueCreateRequest,
     DownloadBundleRequest,
     GeoAgentRequest,
@@ -37,6 +50,11 @@ from .models import (
     MonitoringEventAckRequest,
     MonitoringEventCreateRequest,
     MonitoringSubscriptionCreateRequest,
+    GridPlanRequest,
+    GridSubmitRequest,
+    RecollectionMonitorPatchRequest,
+    RecollectionMonitorCreateRequest,
+    RecollectionRefreshRequest,
     Mp4AnimationJobRequest,
     PoiSetCreateRequest,
     RunCreateRequest,
@@ -46,10 +64,14 @@ from .models import (
     SearchResponse,
     SearchResultItem,
     SubscriptionCreateRequest,
+    TaskingOpportunityRequest,
+    TaskingOrderCancelRequest,
     TaskingOrderCreateRequest,
     WorkflowDefinitionPayload,
 )
 from .monitoring_store import MonitoringStore
+from .grid_plan_store import GridPlanStore
+from .recollection_monitor import refresh_recollection_monitor
 from .merlin_sentinel2_client import MerlinSentinel2Client
 from .satellogic_client import SatellogicClient
 from .source_manager import DEFAULT_SOURCE_ID, SOURCE_MERLIN_S2, SOURCE_SATELLOGIC, SourceManager
@@ -59,14 +81,52 @@ from .services import (
     make_selected_extent_mp4,
 )
 from .workbench import GeoWorkbenchEngine
+from .grid_tasking.domain.schemas import CampaignParameters
+from .grid_tasking.services.geometry import normalize_aoi
+from .grid_tasking.services.planning import build_grid, build_order_feature
+from .grid_tasking.domain.status import remote_rollup
+
+try:
+    from shapely.geometry import shape
+except Exception:  # pragma: no cover - dependency is pinned in requirements
+    shape = None
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("image_mate")
 
-app = FastAPI(title="image-mate", version="0.1.0")
+@asynccontextmanager
+async def app_lifespan(_app: FastAPI):
+    startup_event()
+    try:
+        yield
+    finally:
+        shutdown_event()
+
+
+app = FastAPI(title="image-mate", version="0.1.0", lifespan=app_lifespan)
 client = SatellogicClient()
 merlin_client = MerlinSentinel2Client()
 sources = SourceManager(client, merlin_client)
+
+
+def _aircraft_detector_config() -> AircraftDetectorConfig:
+    model_value = Path(str(settings.aircraft_detector_model or "yolo11n-obb.onnx")).expanduser()
+    if not model_value.is_absolute():
+        model_value = (Path(__file__).resolve().parents[2] / model_value).resolve()
+    return AircraftDetectorConfig(
+        model_path=model_value,
+        provider_mode=str(settings.aircraft_detector_provider or "auto"),
+        confidence=max(0.01, min(1.0, float(settings.aircraft_detector_confidence))),
+        iou=max(0.01, min(1.0, float(settings.aircraft_detector_iou))),
+        max_detections=max(1, min(500, int(settings.aircraft_detector_max_detections))),
+        window_size_px=max(64, min(4096, int(settings.aircraft_detector_window_px))),
+        window_overlap=max(0.0, min(0.75, float(settings.aircraft_detector_window_overlap))),
+        max_image_bytes=max(1_048_576, int(settings.aircraft_detector_max_image_bytes)),
+        max_image_pixels=max(256 * 256, int(settings.aircraft_detector_max_image_pixels)),
+    )
+
+
+aircraft_detector = AircraftDetector(_aircraft_detector_config())
 TRANSPARENT_PNG_1X1 = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII="
 )
@@ -133,9 +193,9 @@ app.state.mp4_jobs_lock = threading.Lock()
 app.state.workbench = None
 app.state.workbench_lock = threading.Lock()
 app.state.monitoring_store = MonitoringStore(settings.monitoring_db_path)
+app.state.grid_plan_store = GridPlanStore(settings.output_dir / "grid-plans.sqlite3")
 
 
-@app.on_event("startup")
 def startup_event():
     settings.output_dir.mkdir(parents=True, exist_ok=True)
     auth_mode = getattr(client, "auth_mode", "unknown")
@@ -172,7 +232,6 @@ def startup_event():
         logger.warning("workbench startup failed: %s", exc)
 
 
-@app.on_event("shutdown")
 def shutdown_event():
     wb = app.state.workbench
     if wb:
@@ -382,6 +441,37 @@ def _asset_short(url: str) -> str:
     if filename:
         return filename[:120]
     return parsed.netloc[:120]
+
+
+def _validate_proxy_url(url: str) -> str:
+    parsed = urlparse(str(url or "").strip())
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise HTTPException(status_code=400, detail="Asset URL must use http/https with a valid host")
+    if parsed.username or parsed.password:
+        raise HTTPException(status_code=400, detail="Asset URL userinfo is not allowed")
+    host = parsed.hostname.rstrip(".").lower()
+    try:
+        addresses = {
+            entry[4][0]
+            for entry in socket.getaddrinfo(
+                host,
+                parsed.port or (443 if parsed.scheme == "https" else 80),
+                type=socket.SOCK_STREAM,
+            )
+        }
+    except socket.gaierror as exc:
+        raise HTTPException(status_code=400, detail=f"Asset URL host could not be resolved: {host}") from exc
+    for address in addresses:
+        try:
+            ip = ipaddress.ip_address(address)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Asset URL resolved to an invalid address") from exc
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_unspecified or ip.is_reserved:
+            raise HTTPException(status_code=400, detail="Asset URL resolves to a private or local network address")
+    allowed = [str(item).strip().lower().lstrip(".") for item in (settings.proxy_allowed_hosts or []) if str(item).strip()]
+    if not any(host == item or host.endswith("." + item) for item in allowed):
+        raise HTTPException(status_code=400, detail=f"Asset host is not allowlisted: {host}")
+    return parsed.geturl()
 
 
 def _normalize_source_id(source_id: str | None) -> str:
@@ -700,12 +790,15 @@ def _is_tasking_sku(value: Any) -> bool:
 
 def _tasking_rows_from_payload(payload: Any) -> list[dict[str, Any]]:
     if isinstance(payload, dict):
-        features = payload.get("features")
-        if isinstance(features, list):
-            return [row for row in features if isinstance(row, dict)]
-        results = payload.get("results")
-        if isinstance(results, list):
-            return [row for row in results if isinstance(row, dict)]
+        rows = payload.get("features")
+        if isinstance(rows, list):
+            return [row for row in rows if isinstance(row, dict)]
+        rows = payload.get("results")
+        if isinstance(rows, list):
+            return [row for row in rows if isinstance(row, dict)]
+        rows = payload.get("items")
+        if isinstance(rows, list):
+            return [row for row in rows if isinstance(row, dict)]
         if isinstance(payload.get("id"), str):
             return [payload]
     if isinstance(payload, list):
@@ -736,6 +829,218 @@ def _collect_tasking_orders(contract_id: str | None, limit: int) -> list[dict[st
             break
     rows.sort(key=lambda row: str(row.get("created_at") or ""), reverse=True)
     return rows[:limit]
+
+
+def _build_tasking_feature(request: TaskingOrderCreateRequest) -> dict[str, Any]:
+    geometry_type = (request.geometry or {}).get("type") if isinstance(request.geometry, dict) else None
+    target_type = str(request.target_type or "").strip().lower()
+    if target_type == "point" and geometry_type != "Point":
+        raise HTTPException(status_code=400, detail="Point target requires Point geometry")
+    if target_type == "area" and geometry_type not in {"Polygon", "MultiPolygon"}:
+        raise HTTPException(status_code=400, detail="Area target requires Polygon or MultiPolygon geometry")
+    sku = request.sku.strip().upper()
+    product = next((row for row in TASKING_PRODUCTS if row["sku"] == sku), None)
+    if not product:
+        raise HTTPException(status_code=400, detail=f"Unsupported tasking SKU: {sku}")
+    if target_type not in product["target_types"]:
+        raise HTTPException(status_code=400, detail=f"SKU {sku} is not valid for {target_type} targets")
+    parameters: dict[str, Any] = {"start": request.start_date, "end": request.end_date}
+    if target_type == "point" and request.revisit_period:
+        parameters["revisit_period"] = request.revisit_period
+    if target_type == "area" and request.remapping_period:
+        parameters["remapping_period"] = request.remapping_period
+    for key, value in (request.additional_parameters or {}).items():
+        if value is not None:
+            parameters[str(key)] = value
+    properties: dict[str, Any] = {
+        "order_name": request.order_name.strip(),
+        "sku": sku,
+        "parameters": parameters,
+    }
+    project_name = (request.project_name or "").strip()
+    if project_name:
+        properties["project_name"] = project_name
+    return {"type": "Feature", "geometry": request.geometry, "properties": properties}
+
+
+def _tasking_order_matches(remote: dict[str, Any], expected: dict[str, Any]) -> bool:
+    normalized = _normalize_tasking_order(remote)
+    expected_props = expected.get("properties") or {}
+    if normalized.get("order_name") != expected_props.get("order_name"):
+        return False
+    if str(normalized.get("sku") or "").upper() != str(expected_props.get("sku") or "").upper():
+        return False
+    try:
+        return shape(normalized.get("geometry") or {}).equals(shape(expected.get("geometry") or {}))
+    except Exception:
+        return False
+
+
+def _exact_tasking_order(feature: dict[str, Any], contract_id: str | None) -> dict[str, Any] | None:
+    name = str((feature.get("properties") or {}).get("order_name") or "").strip()
+    if not name:
+        return None
+    try:
+        payload = client.list_orders(contract_id=contract_id, limit=100, query=name)
+        rows = _tasking_rows_from_payload(payload)
+    except Exception:
+        return None
+    matches = [row for row in rows if _tasking_order_matches(row, feature)]
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        raise HTTPException(status_code=409, detail=f"Multiple remote orders match order name {name!r}")
+    return None
+
+
+def _remote_order_id(payload: dict[str, Any]) -> str:
+    feature = payload.get("feature") if isinstance(payload.get("feature"), dict) else payload
+    properties = feature.get("properties") if isinstance(feature, dict) else {}
+    properties = properties if isinstance(properties, dict) else {}
+    return str(
+        payload.get("id")
+        or (feature.get("id") if isinstance(feature, dict) else None)
+        or properties.get("order_id")
+        or properties.get("id")
+        or ""
+    ).strip()
+
+
+def _is_ambiguous_tasking_error(exc: Exception) -> bool:
+    if isinstance(exc, (requests.Timeout, requests.ConnectionError)):
+        return True
+    if isinstance(exc, requests.HTTPError):
+        status_code = int(getattr(getattr(exc, "response", None), "status_code", 0) or 0)
+        return status_code in {409, 429, 500, 502, 503, 504}
+    return False
+
+
+def _create_or_reconcile_tasking_order(
+    feature: dict[str, Any],
+    contract_id: str | None,
+    *,
+    preflight: bool = False,
+) -> tuple[dict[str, Any], bool]:
+    """Create once, reconciling ambiguous provider outcomes before any replay."""
+    if preflight:
+        existing = _exact_tasking_order(feature, contract_id)
+        if existing:
+            return existing, True
+
+    try:
+        created = client.create_order(feature, contract_id=contract_id)
+    except Exception as exc:
+        if not _is_ambiguous_tasking_error(exc):
+            raise
+        reconciled = _exact_tasking_order(feature, contract_id)
+        if reconciled:
+            return reconciled, True
+        raise
+
+    if _remote_order_id(created):
+        return created, False
+
+    reconciled = _exact_tasking_order(feature, contract_id)
+    if reconciled:
+        return reconciled, True
+    raise HTTPException(status_code=502, detail="Tasking response contained no order ID and could not be reconciled")
+
+
+def _analysis_id(payload: dict[str, Any]) -> str:
+    properties = payload.get("properties") if isinstance(payload.get("properties"), dict) else {}
+    return str(
+        payload.get("analysis_id")
+        or payload.get("id")
+        or properties.get("analysis_id")
+        or properties.get("id")
+        or ""
+    ).strip()
+
+
+def _analysis_status(payload: dict[str, Any]) -> str:
+    properties = payload.get("properties") if isinstance(payload.get("properties"), dict) else {}
+    return str(
+        payload.get("status")
+        or payload.get("state")
+        or properties.get("status")
+        or properties.get("state")
+        or ""
+    ).strip().lower()
+
+
+def _related_rows(payload: Any) -> list[dict[str, Any]]:
+    if isinstance(payload, dict):
+        for key in ("results", "features", "items"):
+            rows = payload.get(key)
+            if isinstance(rows, list):
+                return [row for row in rows if isinstance(row, dict)]
+    if isinstance(payload, list):
+        return [row for row in payload if isinstance(row, dict)]
+    return []
+
+
+def _status_from_row(row: dict[str, Any]) -> str:
+    props = row.get("properties") if isinstance(row.get("properties"), dict) else row
+    return str(props.get("status") or props.get("state") or "").strip().lower()
+
+
+def _order_lifecycle(order_id: str, contract_id: str | None) -> dict[str, Any]:
+    order = client.get_order(order_id, contract_id=contract_id)
+    events = _related_rows(client.list_order_events(order_id, contract_id=contract_id))
+    captures = _related_rows(client.list_order_captures(order_id, contract_id=contract_id))
+    deliverables = _related_rows(client.list_order_deliverables(order_id, contract_id=contract_id))
+    event_types = []
+    for row in events:
+        props = row.get("properties") if isinstance(row.get("properties"), dict) else row
+        event_types.append(str(props.get("type") or props.get("event_type") or ""))
+    order_status = _status_from_row(order)
+    rollup = remote_rollup(
+        order_status,
+        event_types,
+        [_status_from_row(row) for row in captures],
+        [_status_from_row(row) for row in deliverables],
+    )
+    return {
+        "order_id": order_id,
+        "order": _normalize_tasking_order(order),
+        "events": events,
+        "captures": captures,
+        "deliverables": deliverables,
+        "rollup_status": rollup,
+        "checked_at": _utc_now_iso(),
+    }
+
+
+def _analytics_summary(payload: dict[str, Any]) -> dict[str, Any]:
+    features = payload.get("features") if isinstance(payload, dict) else []
+    features = features if isinstance(features, list) else []
+    categories: dict[str, dict[str, Any]] = {}
+    confidences: list[float] = []
+    for feature in features:
+        props = feature.get("properties") if isinstance(feature, dict) and isinstance(feature.get("properties"), dict) else {}
+        classification = props.get("classification") if isinstance(props.get("classification"), dict) else {}
+        category = str(classification.get("category") or props.get("category") or "unknown")
+        class_name = str(props.get("class") or props.get("class_name") or "undefined")
+        row = categories.setdefault(category, {"count": 0, "classes": {}})
+        row["count"] += 1
+        class_row = row["classes"].setdefault(class_name, {"count": 0, "confidence_sum": 0.0, "confidence_count": 0})
+        class_row["count"] += 1
+        confidence = props.get("confidence")
+        if isinstance(confidence, (int, float)):
+            value = float(confidence)
+            confidences.append(value)
+            class_row["confidence_sum"] += value
+            class_row["confidence_count"] += 1
+    for row in categories.values():
+        for class_row in row["classes"].values():
+            count = class_row.pop("confidence_count")
+            total = class_row.pop("confidence_sum")
+            class_row["mean_confidence"] = round(total / count, 4) if count else None
+    return {
+        "feature_count": len(features),
+        "mean_confidence": round(sum(confidences) / len(confidences), 4) if confidences else None,
+        "categories": categories,
+    }
 
 
 if settings.frontend_dir.exists():
@@ -1307,59 +1612,321 @@ def tasking_order_detail(
         raise HTTPException(status_code=400, detail=f"Tasking order fetch failed: {exc}") from exc
 
 
+@app.post("/api/tasking/orders/preview")
+def tasking_orders_preview(request: TaskingOrderCreateRequest):
+    feature = _build_tasking_feature(request)
+    return {
+        "read_only": True,
+        "feature": feature,
+        "contract_id": request.contract_id,
+        "confirmation_required": request.order_name.strip(),
+    }
+
+
 @app.post("/api/tasking/orders")
 def tasking_orders_create(request: TaskingOrderCreateRequest):
-    geometry_type = (request.geometry or {}).get("type") if isinstance(request.geometry, dict) else None
-    if request.target_type == "point" and geometry_type != "Point":
-        raise HTTPException(status_code=400, detail="Point target requires Point geometry")
-    if request.target_type == "area" and geometry_type != "Polygon":
-        raise HTTPException(status_code=400, detail="Area target requires Polygon geometry")
-
-    parameters: dict[str, Any] = {
-        "start": request.start_date,
-        "end": request.end_date,
-    }
-    if request.target_type == "point" and request.revisit_period:
-        parameters["revisit_period"] = request.revisit_period
-    if request.target_type == "area" and request.remapping_period:
-        parameters["remapping_period"] = request.remapping_period
-    for key, value in (request.additional_parameters or {}).items():
-        if value is None:
-            continue
-        parameters[str(key)] = value
-
-    feature = {
-        "type": "Feature",
-        "geometry": request.geometry,
-        "properties": {
-            "order_name": request.order_name.strip(),
-            "sku": request.sku.strip(),
-            "parameters": parameters,
-        },
-    }
-    project_name = (request.project_name or "").strip()
-    if project_name:
-        feature["properties"]["project_name"] = project_name
-
+    feature = _build_tasking_feature(request)
+    if (request.confirmation or "").strip() != request.order_name.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Explicit confirmation is required; set confirmation to the exact order name",
+        )
+    contract_id = request.contract_id or client.contract_id or settings.satellogic_contract_id
     try:
-        created = client.create_order(feature, contract_id=request.contract_id)
-        rows = _tasking_rows_from_payload(created)
-        if rows:
-            normalized = [_normalize_tasking_order(row) for row in rows]
-            return {
-                "accepted": bool(normalized),
-                "count": len(normalized),
-                "order": normalized[0],
-                "orders": normalized,
-                "raw": created,
-            }
-        return {"accepted": True, "order": _normalize_tasking_order(created), "raw": created}
+        candidate, reconciled = _create_or_reconcile_tasking_order(feature, contract_id)
+        remote_id = _remote_order_id(candidate)
+        if not remote_id:
+            raise HTTPException(status_code=502, detail="Tasking response contained no order ID")
+        verified = client.get_order(remote_id, contract_id=contract_id)
+        if not _tasking_order_matches(verified, feature):
+            raise HTTPException(status_code=502, detail="Created order failed exact-name/product/geometry verification")
+        return {
+            "accepted": True,
+            "verified": True,
+            "reconciled": reconciled,
+            "order": _normalize_tasking_order(verified),
+            "raw": verified,
+        }
+    except HTTPException:
+        raise
     except requests.HTTPError as exc:
         status_code = int(getattr(getattr(exc, "response", None), "status_code", 502) or 502)
         detail = (getattr(getattr(exc, "response", None), "text", "") or str(exc)).strip()
         raise HTTPException(status_code=status_code, detail=f"Tasking create failed: {detail}") from exc
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Tasking create failed: {exc}") from exc
+
+
+@app.post("/api/tasking/opportunities")
+def tasking_opportunity_create(request: TaskingOpportunityRequest):
+    """Start provider feasibility analysis without creating an order."""
+    feature = _build_tasking_feature(request)
+    contract_id = request.contract_id or client.contract_id or settings.satellogic_contract_id
+    try:
+        raw = client.create_opportunity_analysis(feature, contract_id=contract_id)
+        analysis_id = _analysis_id(raw)
+        return {
+            "read_only": True,
+            "analysis_id": analysis_id or None,
+            "status": _analysis_status(raw) or "submitted",
+            "feature": feature,
+            "raw": raw,
+        }
+    except requests.HTTPError as exc:
+        status_code = int(getattr(getattr(exc, "response", None), "status_code", 502) or 502)
+        detail = (getattr(getattr(exc, "response", None), "text", "") or str(exc)).strip()
+        raise HTTPException(status_code=status_code, detail=f"Opportunity analysis failed: {detail}") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Opportunity analysis failed: {exc}") from exc
+
+
+@app.get("/api/tasking/opportunities/{analysis_id}")
+def tasking_opportunity_get(
+    analysis_id: str,
+    contract_id: str | None = Query(default=None),
+):
+    try:
+        raw = client.get_opportunity_analysis(
+            analysis_id,
+            contract_id=contract_id or client.contract_id or settings.satellogic_contract_id,
+        )
+        return {
+            "read_only": True,
+            "analysis_id": analysis_id,
+            "status": _analysis_status(raw) or "unknown",
+            "raw": raw,
+        }
+    except requests.HTTPError as exc:
+        status_code = int(getattr(getattr(exc, "response", None), "status_code", 502) or 502)
+        detail = (getattr(getattr(exc, "response", None), "text", "") or str(exc)).strip()
+        raise HTTPException(status_code=status_code, detail=f"Opportunity analysis fetch failed: {detail}") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Opportunity analysis fetch failed: {exc}") from exc
+
+
+@app.post("/api/tasking/orders/{order_id}/cancel")
+def tasking_order_cancel(
+    order_id: str,
+    request: TaskingOrderCancelRequest,
+):
+    target = order_id.strip()
+    if not target:
+        raise HTTPException(status_code=400, detail="order_id is required")
+    if request.confirmation.strip() != target:
+        raise HTTPException(status_code=400, detail="Explicit cancellation confirmation must exactly match the order ID")
+    contract_id = request.contract_id or client.contract_id or settings.satellogic_contract_id
+    try:
+        cancellation_response = client.cancel_order(target, contract_id=contract_id)
+        verified = client.get_order(target, contract_id=contract_id)
+        normalized = _normalize_tasking_order(verified)
+        status = str(normalized.get("status") or "").strip().lower()
+        verified_cancel = status in {"canceled", "cancelled"}
+        return {
+            "requested": True,
+            "verified": verified_cancel,
+            "order_id": target,
+            "order": normalized,
+            "cancellation_status": status or "unknown",
+            "provider_response": cancellation_response,
+            "checked_at": _utc_now_iso(),
+        }
+    except requests.HTTPError as exc:
+        status_code = int(getattr(getattr(exc, "response", None), "status_code", 502) or 502)
+        detail = (getattr(getattr(exc, "response", None), "text", "") or str(exc)).strip()
+        raise HTTPException(status_code=status_code, detail=f"Tasking cancellation failed: {detail}") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Tasking cancellation failed: {exc}") from exc
+
+
+@app.get("/api/tasking/orders/{order_id}/lifecycle")
+def tasking_order_lifecycle(
+    order_id: str,
+    contract_id: str | None = Query(default=None),
+):
+    try:
+        return _order_lifecycle(order_id, contract_id or client.contract_id or settings.satellogic_contract_id)
+    except requests.HTTPError as exc:
+        status_code = int(getattr(getattr(exc, "response", None), "status_code", 502) or 502)
+        detail = (getattr(getattr(exc, "response", None), "text", "") or str(exc)).strip()
+        raise HTTPException(status_code=status_code, detail=f"Tasking lifecycle fetch failed: {detail}") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Tasking lifecycle fetch failed: {exc}") from exc
+
+
+def _create_grid_plan(request: GridPlanRequest) -> dict[str, Any]:
+    normalized = normalize_aoi(request.geometry)
+    params = CampaignParameters.model_validate(request.parameters or {})
+    result = build_grid(normalized.geometry, params)
+    if not result.cells:
+        raise HTTPException(status_code=400, detail="Grid planning produced no retained cells")
+    order_prefix = (request.order_prefix or f"{request.campaign_name.strip()}_").strip()
+    features: list[dict[str, Any]] = []
+    order_payloads: list[dict[str, Any]] = []
+    for cell in result.cells:
+        order_name = f"{order_prefix}r{cell.row:03d}_c{cell.col:03d}"
+        payload = build_order_feature(cell, params, request.project_name.strip(), order_name)
+        order_payloads.append(payload)
+        features.append(
+            {
+                "type": "Feature",
+                "geometry": payload["geometry"],
+                "properties": {
+                    "row": cell.row,
+                    "col": cell.col,
+                    "area_km2": cell.area_km2,
+                    "order_name": order_name,
+                    "submittable": cell.submittable,
+                    "warning": cell.warning,
+                },
+            }
+        )
+    grid_geojson = {"type": "FeatureCollection", "features": features}
+    summary = {
+        "cell_count": len(result.cells),
+        "discarded_count": result.discarded_count,
+        "discarded_area_km2": round(result.discarded_area_km2, 4),
+        "total_area_km2": round(sum(cell.area_km2 for cell in result.cells), 4),
+        "utm_epsg": result.utm_epsg,
+        "warnings": normalized.warnings + result.warnings + [cell.warning for cell in result.cells if cell.warning],
+    }
+    return app.state.grid_plan_store.create(
+        campaign_name=request.campaign_name.strip(),
+        project_name=request.project_name.strip(),
+        order_prefix=order_prefix,
+        contract_id=request.contract_id,
+        geometry=normalized.geojson,
+        parameters=params.model_dump(mode="json"),
+        summary=summary,
+        grid_geojson=grid_geojson,
+        order_payloads=order_payloads,
+    )
+
+
+@app.post("/api/tasking/grid/plan")
+def tasking_grid_plan(request: GridPlanRequest):
+    try:
+        plan = _create_grid_plan(request)
+        return {
+            "read_only": True,
+            "plan_id": plan["plan_id"],
+            "summary": plan["summary"],
+            "grid_geojson": plan["grid_geojson"],
+            "order_payloads": plan["order_payloads"],
+            "confirmation_required": plan["campaign_name"],
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Grid planning failed: {exc}") from exc
+
+
+@app.get("/api/tasking/grid/plans")
+def tasking_grid_plans(limit: int = Query(default=100, ge=1, le=500)):
+    plans = app.state.grid_plan_store.list(limit=limit)
+    return {"count": len(plans), "plans": plans}
+
+
+@app.get("/api/tasking/grid/plans/{plan_id}")
+def tasking_grid_plan_detail(plan_id: str):
+    plan = app.state.grid_plan_store.get(plan_id)
+    if not plan:
+        raise HTTPException(status_code=404, detail="Grid plan not found")
+    return plan
+
+
+@app.post("/api/tasking/grid/submit")
+def tasking_grid_submit(request: GridSubmitRequest):
+    plan = app.state.grid_plan_store.get(request.plan_id)
+    if not plan:
+        raise HTTPException(status_code=404, detail="Grid plan not found")
+    if request.confirmation.strip() != str(plan["campaign_name"]).strip():
+        raise HTTPException(status_code=400, detail="Confirmation must exactly match the grid campaign name")
+    if plan["status"] == "submitted":
+        return {"verified": True, "plan": plan, "submissions": plan["submissions"]}
+    contract_id = request.contract_id or plan.get("contract_id") or client.contract_id or settings.satellogic_contract_id
+    submissions: list[dict[str, Any]] = []
+    for payload in plan["order_payloads"]:
+        order_name = str((payload.get("properties") or {}).get("order_name") or "")
+        try:
+            created, reconciled = _create_or_reconcile_tasking_order(payload, contract_id, preflight=True)
+            remote_id = _remote_order_id(created)
+            if not remote_id:
+                raise RuntimeError("No remote order ID returned and exact-name reconciliation failed")
+            verified = client.get_order(remote_id, contract_id=contract_id)
+            if not _tasking_order_matches(verified, payload):
+                raise RuntimeError("Remote order failed exact planned payload verification")
+            submissions.append({
+                "order_name": order_name,
+                "remote_order_id": remote_id,
+                "status": "verified",
+                "reconciled": reconciled,
+            })
+        except Exception as exc:
+            submissions.append({"order_name": order_name, "status": "failed", "error": str(exc)})
+    good = sum(1 for row in submissions if row["status"] == "verified")
+    status = "submitted" if good == len(submissions) else ("partial" if good else "failed")
+    saved = app.state.grid_plan_store.save_submissions(request.plan_id, submissions, status) or plan
+    return {
+        "verified": status == "submitted",
+        "partial": status == "partial",
+        "plan": saved,
+        "submissions": submissions,
+    }
+
+
+def _analytics_asset_href(asset: Any) -> str:
+    if isinstance(asset, dict):
+        return str(asset.get("href") or "").strip()
+    return str(asset or "").strip()
+
+
+@app.get("/api/analytics/deliverables/{deliverable_id}")
+def analytics_deliverable(deliverable_id: str, contract_id: str | None = Query(default=None)):
+    try:
+        payload = client.get_deliverable(deliverable_id, contract_id=contract_id)
+        assets = payload.get("assets") if isinstance(payload.get("assets"), dict) else {}
+        analytics = [
+            {"key": str(key), "href_available": bool(_analytics_asset_href(value))}
+            for key, value in sorted(assets.items())
+            if str(key).startswith("analytics_")
+        ]
+        return {"deliverable_id": deliverable_id, "analytics_assets": analytics, "raw": payload}
+    except requests.HTTPError as exc:
+        status_code = int(getattr(getattr(exc, "response", None), "status_code", 502) or 502)
+        raise HTTPException(status_code=status_code, detail="Analytics deliverable lookup failed") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Analytics deliverable lookup failed: {exc}") from exc
+
+
+@app.get("/api/analytics/deliverables/{deliverable_id}/summary")
+def analytics_deliverable_summary(
+    deliverable_id: str,
+    asset_key: str = Query(default="analytics_vessels", min_length=1),
+    contract_id: str | None = Query(default=None),
+):
+    if not asset_key.startswith("analytics_"):
+        raise HTTPException(status_code=400, detail="asset_key must name a Satellogic analytics asset")
+    try:
+        payload = client.get_deliverable(deliverable_id, contract_id=contract_id)
+        assets = payload.get("assets") if isinstance(payload.get("assets"), dict) else {}
+        href = _analytics_asset_href(assets.get(asset_key))
+        if not href:
+            raise HTTPException(status_code=404, detail=f"Analytics asset not found: {asset_key}")
+        raw = client.download_bytes(href, contract_id=contract_id)
+        if len(raw) > settings.proxy_max_asset_bytes:
+            raise HTTPException(status_code=413, detail="Analytics asset exceeds configured size limit")
+        geojson = json.loads(raw.decode("utf-8"))
+        summary = _analytics_summary(geojson)
+        return {"deliverable_id": deliverable_id, "asset_key": asset_key, **summary}
+    except HTTPException:
+        raise
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=502, detail="Analytics asset was not valid JSON") from exc
+    except requests.HTTPError as exc:
+        status_code = int(getattr(getattr(exc, "response", None), "status_code", 502) or 502)
+        raise HTTPException(status_code=status_code, detail="Analytics asset download failed") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Analytics summary failed: {exc}") from exc
 
 
 @app.post("/api/download/zip")
@@ -1373,6 +1940,7 @@ def download_zip(request: DownloadBundleRequest):
 
         used_names: set[str] = set()
         downloaded_count = 0
+        total_bytes = 0
         failed_rows: list[str] = []
         payload = BytesIO()
 
@@ -1381,6 +1949,7 @@ def download_zip(request: DownloadBundleRequest):
                 url = (asset.url or "").strip()
                 if not url:
                     continue
+                url = _validate_proxy_url(url)
                 default_stem = asset.item_id or asset.outcome_id or f"asset_{idx:03d}"
                 preferred_name = (asset.filename or "").strip()
                 raw_name = preferred_name or _filename_from_url(url, default_stem=default_stem)
@@ -1389,6 +1958,11 @@ def download_zip(request: DownloadBundleRequest):
 
                 try:
                     content = _download_bytes_for_url(url, contract_id=request.contract_id)
+                    if len(content) > settings.proxy_max_asset_bytes:
+                        raise RuntimeError("asset exceeds per-asset size limit")
+                    total_bytes += len(content)
+                    if total_bytes > settings.proxy_max_zip_bytes:
+                        raise RuntimeError("bundle exceeds aggregate size limit")
                     zf.writestr(filename, content)
                     downloaded_count += 1
                 except Exception as exc:
@@ -1426,21 +2000,9 @@ def asset_proxy(
 ):
     try:
         started = time.perf_counter()
+        url = _validate_proxy_url(url)
         parsed = urlparse(url)
-        if parsed.scheme not in ("http", "https"):
-            logger.warning(
-                "asset_proxy reject invalid_scheme source_hint=%s scheme=%s url=%s",
-                source_hint or "",
-                parsed.scheme or "",
-                _asset_short(url),
-            )
-            raise HTTPException(status_code=400, detail="Asset URL must use http/https")
         if not parsed.netloc:
-            logger.warning(
-                "asset_proxy reject invalid_host source_hint=%s url=%s",
-                source_hint or "",
-                _asset_short(url),
-            )
             raise HTTPException(status_code=400, detail="Asset URL host is invalid")
 
         cache_key = _asset_cache_key(url, contract_id, render)
@@ -2113,6 +2675,251 @@ def raster_cog_tile_proxy(
         raise HTTPException(status_code=400, detail=f"Tile proxy failed: {exc}") from exc
 
 
+def _normalize_aircraft_collection(value: str | None) -> str:
+    return re.sub(r"[_-]+", "-", str(value or "").strip().lower())
+
+
+def _decode_aircraft_image(request: AircraftDetectorRequest) -> tuple[bytes, dict[str, Any]]:
+    collection_id = _normalize_aircraft_collection(request.collection_id)
+    source_id = str(request.source_id or "").strip().lower()
+    if source_id not in {"satellogic", "satl"}:
+        raise HTTPException(status_code=400, detail="The local aircraft detector currently accepts Satellogic L1D-SR input only")
+    if collection_id != "l1d-sr":
+        raise HTTPException(status_code=400, detail="The local aircraft detector requires the Satellogic l1d-sr collection")
+    asset_key = str(request.asset_key or "").strip().lower()
+    if asset_key not in {"visual", "visual_fullres", "visual-fullres"}:
+        raise HTTPException(status_code=400, detail="Aircraft detection requires the provider visual L1D asset")
+
+    provenance: dict[str, Any] = {
+        "source_id": "satellogic",
+        "collection_id": collection_id,
+        "item_id": request.item_id,
+        "asset_key": asset_key,
+        "scale": request.scale,
+    }
+    if request.bounds is not None:
+        provenance["bounds"] = list(request.bounds)
+        provenance["crs"] = request.crs
+    if request.z is not None:
+        provenance.update({"z": request.z, "x": request.x, "y": request.y})
+
+    if request.image_base64:
+        encoded = str(request.image_base64).strip()
+        if encoded.lower().startswith("data:"):
+            _, separator, encoded = encoded.partition(",")
+            if not separator:
+                raise HTTPException(status_code=400, detail="Invalid image data URL")
+        max_encoded = int(aircraft_detector.config.max_image_bytes * 1.40) + 1024
+        if len(encoded) > max_encoded:
+            raise HTTPException(status_code=413, detail="Base64 tile exceeds the configured detector input limit")
+        try:
+            raw = base64.b64decode(encoded, validate=True)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail="image_base64 is not valid base64") from exc
+        return raw, provenance
+
+    if not request.item_id:
+        raise HTTPException(status_code=400, detail="COG detector input requires an item_id; raw provider URLs are not accepted")
+    resolved_item = _resolve_item(
+        request.item_id,
+        contract_id=request.contract_id,
+        source_id="satellogic",
+        collection_id="l1d-sr",
+    )
+    if not resolved_item:
+        raise HTTPException(status_code=404, detail="Satellogic L1D item was not found")
+    resolved_collection = _normalize_aircraft_collection(resolved_item.get("collection"))
+    if resolved_collection and resolved_collection != "l1d-sr":
+        raise HTTPException(status_code=400, detail="The selected item is not from the Satellogic l1d-sr collection")
+    resolved_assets = resolved_item.get("assets") if isinstance(resolved_item.get("assets"), dict) else {}
+    raw_url = str(
+        resolved_assets.get(asset_key)
+        or resolved_assets.get("visual")
+        or ""
+    ).strip()
+    if not raw_url:
+        raise HTTPException(status_code=400, detail="The selected L1D item has no provider visual asset")
+    provenance["item_id"] = str(resolved_item.get("id") or request.item_id)
+    provenance["asset_key"] = "visual"
+
+    parsed = urlparse(raw_url)
+    if parsed.scheme not in {"s3", "http", "https"} or parsed.username or parsed.password:
+        raise HTTPException(status_code=400, detail="The resolved visual asset is not a credential-free COG URL")
+    if parsed.scheme in {"http", "https"}:
+        _validate_proxy_url(raw_url)
+    if request.z is None or request.x is None or request.y is None:
+        raise HTTPException(status_code=400, detail="COG input requires z, x, and y tile coordinates")
+    upstream, _auth_mode = _cog_upstream_request(
+        z=int(request.z),
+        x=int(request.x),
+        y=int(request.y),
+        source_url=raw_url,
+        contract_id=request.contract_id,
+        scale=int(request.scale),
+        buffer=0,
+        tile_matrix_set_id=str(request.tile_matrix_set or "WebMercatorQuad"),
+        image_format="png",
+        bidx=[1, 2, 3],
+    )
+    if upstream.status_code >= 400:
+        detail = (upstream.text or "").strip().replace("\\n", " ")[:220]
+        raise HTTPException(status_code=502, detail=f"L1D detector tile request failed upstream: {detail or upstream.status_code}")
+    return bytes(upstream.content), provenance
+
+
+def _aircraft_lab_annotation_path() -> Path:
+    root = Path(settings.aircraft_lab_dir).expanduser()
+    root.mkdir(parents=True, exist_ok=True)
+    return root / "annotations.jsonl"
+
+
+def _annotation_polygon_wgs84(request: AircraftLabAnnotationRequest) -> dict[str, Any]:
+    west, south, east, north = [float(value) for value in request.bounds_wgs84]
+    width = float(request.source_width_px)
+    height = float(request.source_height_px)
+    ring: list[list[float]] = []
+    for point in request.geometry_px:
+        x = max(0.0, min(width, float(point[0])))
+        y = max(0.0, min(height, float(point[1])))
+        lon = west + ((east - west) * x / width)
+        lat = north - ((north - south) * y / height)
+        ring.append([round(lon, 8), round(lat, 8)])
+    if ring and ring[0] != ring[-1]:
+        ring.append(list(ring[0]))
+    return {"type": "Polygon", "coordinates": [ring]}
+
+
+def _aircraft_lab_annotation_count(path: Path) -> int:
+    if not path.is_file():
+        return 0
+    try:
+        return sum(1 for line in path.read_text(encoding="utf-8").splitlines() if line.strip())
+    except OSError:
+        return 0
+
+
+@app.get("/api/aircraft-lab/catalog")
+def aircraft_lab_catalog():
+    """Return safe local models, prepared datasets, and annotation counts."""
+
+    capability = aircraft_detector.capability()
+    models = [
+        {
+            "id": "configured",
+            "name": capability.get("model_name") or "configured-aircraft-model",
+            "format": "onnx",
+            "active": True,
+            "ready": bool(capability.get("model_exists") and capability.get("runtime_available")),
+        }
+    ]
+    training_root = Path(settings.aircraft_training_dir).expanduser()
+    if training_root.is_dir():
+        for model_path in sorted(training_root.rglob("*.onnx")):
+            if not model_path.is_file():
+                continue
+            models.append(
+                {
+                    "id": f"onnx:{model_path.name}",
+                    "name": model_path.name,
+                    "format": "onnx",
+                    "active": False,
+                    "ready": True,
+                }
+            )
+    datasets: list[dict[str, Any]] = []
+    if training_root.is_dir():
+        for manifest_path in sorted(training_root.rglob("training_manifest.json")):
+            try:
+                payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            datasets.append(
+                {
+                    "id": str(manifest_path.parent.relative_to(training_root)),
+                    "name": manifest_path.parent.name,
+                    "scene_count": payload.get("scene_count", 0),
+                    "counts": payload.get("counts", {}),
+                    "validation_ready": bool(payload.get("validation_ready")),
+                    "warnings": payload.get("warnings", []),
+                }
+            )
+    annotation_path = _aircraft_lab_annotation_path()
+    return {
+        "models": models,
+        "datasets": datasets,
+        "annotation_count": _aircraft_lab_annotation_count(annotation_path),
+        "detector": capability,
+        "host_training_note": "Run PyTorch/MPS fine-tuning from the Mac host, not the Hermes Docker runtime.",
+    }
+
+
+@app.get("/api/aircraft-lab/annotations")
+def aircraft_lab_annotations(item_id: str | None = Query(default=None, max_length=240)):
+    path = _aircraft_lab_annotation_path()
+    rows: list[dict[str, Any]] = []
+    if path.is_file():
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except ValueError:
+                continue
+            if item_id and row.get("item_id") != item_id:
+                continue
+            rows.append(row)
+    return {"count": len(rows), "annotations": rows}
+
+
+@app.post("/api/aircraft-lab/annotations")
+def create_aircraft_lab_annotation(request: AircraftLabAnnotationRequest):
+    path = _aircraft_lab_annotation_path()
+    annotation = request.model_dump()
+    annotation.update(
+        {
+            "annotation_id": f"ann-{uuid.uuid4().hex[:12]}",
+            "recorded_at": datetime.now(timezone.utc).isoformat(),
+            "geometry_wgs84": _annotation_polygon_wgs84(request),
+            "source": "analyst_review",
+        }
+    )
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(annotation, sort_keys=True) + "\n")
+    return annotation
+
+
+@app.get("/api/detectors/aircraft")
+def aircraft_detector_info():
+    """Return safe local detector capability metadata."""
+    return aircraft_detector.capability()
+
+
+@app.post("/api/detectors/aircraft")
+def detect_aircraft(request: AircraftDetectorRequest):
+    """Run local aircraft inference on one supplied L1D-SR visual tile."""
+    raw, provenance = _decode_aircraft_image(request)
+    config = aircraft_detector.config
+    if request.confidence is not None or request.iou is not None or request.max_detections is not None:
+        config = replace(
+            config,
+            confidence=float(request.confidence if request.confidence is not None else config.confidence),
+            iou=float(request.iou if request.iou is not None else config.iou),
+            max_detections=int(request.max_detections if request.max_detections is not None else config.max_detections),
+        )
+        detector = AircraftDetector(config)
+    else:
+        detector = aircraft_detector
+    try:
+        return detector.detect_bytes(raw, provenance=provenance)
+    except AircraftDetectorUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except AircraftDetectorError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("local aircraft detector failed")
+        raise HTTPException(status_code=500, detail="Local aircraft detector failed") from exc
+
+
 def _cache_items(items: list[dict[str, Any]]):
     for item in items:
         item_id = str(item.get("id") or "").strip()
@@ -2597,6 +3404,7 @@ def runtime_info():
         "has_cdse_credentials": bool(settings.cdse_client_id and settings.cdse_client_secret),
         "has_openai_key": bool(settings.openai_api_key),
         "collection_default": settings.satellogic_collection_id,
+        "aircraft_detector": aircraft_detector.capability(),
     }
 
 
@@ -2804,6 +3612,71 @@ def monitoring_subscriptions_create(payload: MonitoringSubscriptionCreateRequest
         return row
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Monitoring subscription create failed: {exc}") from exc
+
+
+@app.post("/api/recollection-monitors")
+def recollection_monitors_create(payload: RecollectionMonitorCreateRequest):
+    source_id = _normalize_source_id(payload.source_id)
+    if not sources.has_source(source_id):
+        raise HTTPException(status_code=400, detail=f"Unknown source_id '{payload.source_id}'")
+    if source_id != SOURCE_SATELLOGIC:
+        raise HTTPException(status_code=400, detail="Recollection monitors currently support Satellogic only")
+    try:
+        return app.state.monitoring_store.create_recollection_monitor(
+            {**payload.model_dump(), "source_id": source_id}
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Recollection monitor create failed: {exc}") from exc
+
+
+@app.get("/api/recollection-monitors")
+def recollection_monitors_list():
+    rows = app.state.monitoring_store.list_recollection_monitors()
+    return {"count": len(rows), "monitors": rows}
+
+
+@app.get("/api/recollection-monitors/{monitor_id}")
+def recollection_monitors_get(monitor_id: str):
+    row = app.state.monitoring_store.get_recollection_monitor(monitor_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Recollection monitor not found")
+    return row
+
+
+@app.patch("/api/recollection-monitors/{monitor_id}")
+def recollection_monitors_patch(monitor_id: str, payload: RecollectionMonitorPatchRequest):
+    row = app.state.monitoring_store.update_recollection_monitor(
+        monitor_id,
+        {key: value for key, value in payload.model_dump().items() if value is not None},
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Recollection monitor not found")
+    return row
+
+
+@app.delete("/api/recollection-monitors/{monitor_id}")
+def recollection_monitors_delete(monitor_id: str):
+    if not app.state.monitoring_store.delete_recollection_monitor(monitor_id):
+        raise HTTPException(status_code=404, detail="Recollection monitor not found")
+    return {"deleted": True, "monitor_id": monitor_id}
+
+
+@app.post("/api/recollection-monitors/{monitor_id}/refresh")
+def recollection_monitors_refresh(monitor_id: str, payload: RecollectionRefreshRequest):
+    try:
+        return refresh_recollection_monitor(
+            app.state.monitoring_store,
+            sources,
+            monitor_id,
+            start_date=payload.start_date,
+            end_date=payload.end_date,
+            limit=payload.limit,
+            tasking_lifecycle_fn=_order_lifecycle,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Recollection monitor refresh failed: {exc}") from exc
 
 
 @app.get("/api/monitoring/subscriptions")

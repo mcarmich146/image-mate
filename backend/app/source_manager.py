@@ -182,7 +182,11 @@ class SourceManager:
             item_id = native_id
 
         if hint == SOURCE_SATELLOGIC:
-            feature = self.satellogic_client.item_by_id(item_id, contract_id=contract_id)
+            feature = self.satellogic_client.item_by_id(
+                item_id,
+                contract_id=contract_id,
+                collection_id=collection_id,
+            )
             if not feature:
                 return None
             item = normalize_item(feature)

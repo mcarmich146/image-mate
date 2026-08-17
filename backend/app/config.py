@@ -23,6 +23,11 @@ def _as_bool(value: str, default: bool = False) -> bool:
     return raw in {"1", "true", "yes", "on"}
 
 
+def _rooted_path(name: str, default: Path) -> Path:
+    value = Path(os.getenv(name, str(default))).expanduser()
+    return value if value.is_absolute() else (ROOT_DIR / value).resolve()
+
+
 @dataclass
 class Settings:
     satellogic_bearer_token: str = os.getenv("SATELLOGIC_BEARER_TOKEN", "")
@@ -63,12 +68,27 @@ class Settings:
     openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
     openai_model: str = os.getenv("OPENAI_MODEL", "gpt-4.1")
 
-    host: str = os.getenv("IMAGE_MATE_HOST", "0.0.0.0")
+    aircraft_detector_model: str = os.getenv("IMAGE_MATE_AIRCRAFT_MODEL", "yolo11n-obb.onnx")
+    aircraft_detector_provider: str = os.getenv("IMAGE_MATE_AIRCRAFT_PROVIDER", "auto")
+    aircraft_detector_confidence: float = float(os.getenv("IMAGE_MATE_AIRCRAFT_CONFIDENCE", "0.25"))
+    aircraft_detector_iou: float = float(os.getenv("IMAGE_MATE_AIRCRAFT_IOU", "0.45"))
+    aircraft_detector_max_detections: int = int(os.getenv("IMAGE_MATE_AIRCRAFT_MAX_DETECTIONS", "200"))
+    aircraft_detector_window_px: int = int(os.getenv("IMAGE_MATE_AIRCRAFT_WINDOW_PX", "1024"))
+    aircraft_detector_window_overlap: float = float(os.getenv("IMAGE_MATE_AIRCRAFT_WINDOW_OVERLAP", "0.20"))
+    aircraft_detector_max_image_bytes: int = int(os.getenv("IMAGE_MATE_AIRCRAFT_MAX_IMAGE_BYTES", str(16 * 1024 * 1024)))
+    aircraft_detector_max_image_pixels: int = int(os.getenv("IMAGE_MATE_AIRCRAFT_MAX_IMAGE_PIXELS", str(4096 * 4096)))
+    aircraft_lab_dir: Path = _rooted_path("IMAGE_MATE_AIRCRAFT_LAB_DIR", ROOT_DIR / "backend" / "output" / "aircraft-lab")
+    aircraft_training_dir: Path = _rooted_path("IMAGE_MATE_AIRCRAFT_TRAINING_DIR", ROOT_DIR / "artifacts" / "aircraft-training")
+
+    host: str = os.getenv("IMAGE_MATE_HOST", "127.0.0.1")
     port: int = int(os.getenv("IMAGE_MATE_PORT", "8000"))
     cors_origins: list[str] = None  # type: ignore[assignment]
     asset_cache_max_entries: int = int(os.getenv("IMAGE_MATE_ASSET_CACHE_MAX_ENTRIES", "1200"))
     proxy_cache_ttl_seconds: int = int(os.getenv("IMAGE_MATE_PROXY_CACHE_TTL_SECONDS", "1800"))
     proxy_empty_tile_ttl_seconds: int = int(os.getenv("IMAGE_MATE_PROXY_EMPTY_TILE_TTL_SECONDS", "300"))
+    proxy_max_asset_bytes: int = int(os.getenv("IMAGE_MATE_PROXY_MAX_ASSET_BYTES", str(64 * 1024 * 1024)))
+    proxy_max_zip_bytes: int = int(os.getenv("IMAGE_MATE_PROXY_MAX_ZIP_BYTES", str(512 * 1024 * 1024)))
+    proxy_allowed_hosts: list[str] = None  # type: ignore[assignment]
 
     output_dir: Path = ROOT_DIR / "backend" / "output"
     monitoring_db_path: Path = ROOT_DIR / "backend" / "output" / "monitoring.sqlite3"
@@ -80,6 +100,15 @@ class Settings:
         if self.cdse_sentinel2_collections is None:
             self.cdse_sentinel2_collections = _split_csv(
                 os.getenv("CDSE_SENTINEL2_COLLECTIONS", "sentinel-2-l2a,sentinel-2-l1c")
+            )
+        if self.proxy_allowed_hosts is None:
+            self.proxy_allowed_hosts = _split_csv(
+                os.getenv(
+                    "IMAGE_MATE_PROXY_ALLOWED_HOSTS",
+                    "api.satellogic.com,platform.satellogic.com,auth.platform.satellogic.com,"
+                    "sh.dataspace.copernicus.eu,catalogue.dataspace.copernicus.eu,"
+                    "identity.dataspace.copernicus.eu",
+                )
             )
 
 

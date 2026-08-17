@@ -102,6 +102,46 @@ body {
   overflow-y: auto;
 }
 
+.aircraft-detection-list {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 0.55rem;
+  max-height: 35vh;
+  overflow-y: auto;
+}
+
+.aircraft-detection-row {
+  display: grid;
+  gap: 0.42rem;
+  padding: 0.55rem;
+  border: 1px solid #2d4260;
+  border-radius: 8px;
+  background: rgba(7, 17, 31, 0.76);
+}
+
+.aircraft-detection-row > div:first-child {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.4rem;
+}
+
+.aircraft-detection-actions {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.35rem;
+}
+
+.aircraft-detection-actions button {
+  margin-top: 0;
+  padding: 0.38rem 0.42rem;
+  font-size: 0.7rem;
+}
+
+.lab-hero .monitoring-status-cards {
+  margin: 0.55rem 0 0.7rem;
+}
+
 .tasking-order-card {
   border: 1px solid #2d4260;
   border-radius: 8px;

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from pathlib import Path
+from datetime import datetime, timedelta, timezone
 from typing import Any
+import copy
 import json
 import sqlite3
 import threading
@@ -14,7 +14,7 @@ def utc_now_iso() -> str:
 
 
 class MonitoringStore:
-    def __init__(self, db_path: Path):
+    def __init__(self, db_path):
         self.db_path = db_path
         self._lock = threading.Lock()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -76,6 +76,27 @@ class MonitoringStore:
                     )
                     """
                 )
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS recollection_monitors (
+                        monitor_id TEXT PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        source_id TEXT NOT NULL,
+                        collection_id TEXT NOT NULL,
+                        contract_id TEXT,
+                        geometry_json TEXT NOT NULL,
+                        filters_json TEXT NOT NULL,
+                        expected_revisit_days REAL,
+                        linked_order_id TEXT,
+                        enabled INTEGER NOT NULL,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        last_refresh_at TEXT,
+                        summary_json TEXT NOT NULL,
+                        observations_json TEXT NOT NULL
+                    )
+                    """
+                )
                 conn.commit()
 
     def create_subscription(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -104,17 +125,9 @@ class MonitoringStore:
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
-                        row["subscription_id"],
-                        row["source_id"],
-                        row["name"],
-                        row["collection_ids_json"],
-                        row["geometry_json"],
-                        row["filters_json"],
-                        row["status"],
-                        row["external_subscription_id"],
-                        row["cursor"],
-                        row["created_at"],
-                        row["updated_at"],
+                        row["subscription_id"], row["source_id"], row["name"], row["collection_ids_json"],
+                        row["geometry_json"], row["filters_json"], row["status"], row["external_subscription_id"],
+                        row["cursor"], row["created_at"], row["updated_at"],
                     ),
                 )
                 conn.commit()
@@ -123,13 +136,7 @@ class MonitoringStore:
     def list_subscriptions(self) -> list[dict[str, Any]]:
         with self._lock:
             with self._connect() as conn:
-                rows = conn.execute(
-                    """
-                    SELECT *
-                    FROM monitoring_subscriptions
-                    ORDER BY created_at DESC
-                    """
-                ).fetchall()
+                rows = conn.execute("SELECT * FROM monitoring_subscriptions ORDER BY created_at DESC").fetchall()
         return [self._deserialize_subscription(dict(row)) for row in rows]
 
     def create_event(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -149,22 +156,8 @@ class MonitoringStore:
         with self._lock:
             with self._connect() as conn:
                 conn.execute(
-                    """
-                    INSERT INTO monitoring_events (
-                        event_id, subscription_id, source_id, scene_id, event_type, status, payload_json, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        row["event_id"],
-                        row["subscription_id"],
-                        row["source_id"],
-                        row["scene_id"],
-                        row["event_type"],
-                        row["status"],
-                        row["payload_json"],
-                        row["created_at"],
-                        row["updated_at"],
-                    ),
+                    "INSERT INTO monitoring_events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    tuple(row.values()),
                 )
                 conn.commit()
         return self._deserialize_event(row)
@@ -174,45 +167,19 @@ class MonitoringStore:
         with self._lock:
             with self._connect() as conn:
                 if status:
-                    rows = conn.execute(
-                        """
-                        SELECT *
-                        FROM monitoring_events
-                        WHERE status = ?
-                        ORDER BY created_at DESC
-                        LIMIT ?
-                        """,
-                        (status, limit_n),
-                    ).fetchall()
+                    rows = conn.execute("SELECT * FROM monitoring_events WHERE status = ? ORDER BY created_at DESC LIMIT ?", (status, limit_n)).fetchall()
                 else:
-                    rows = conn.execute(
-                        """
-                        SELECT *
-                        FROM monitoring_events
-                        ORDER BY created_at DESC
-                        LIMIT ?
-                        """,
-                        (limit_n,),
-                    ).fetchall()
+                    rows = conn.execute("SELECT * FROM monitoring_events ORDER BY created_at DESC LIMIT ?", (limit_n,)).fetchall()
         return [self._deserialize_event(dict(row)) for row in rows]
 
     def ack_event(self, event_id: str, status: str = "acked") -> dict[str, Any] | None:
         now = utc_now_iso()
         with self._lock:
             with self._connect() as conn:
-                conn.execute(
-                    """
-                    UPDATE monitoring_events
-                    SET status = ?, updated_at = ?
-                    WHERE event_id = ?
-                    """,
-                    (status, now, event_id),
-                )
+                conn.execute("UPDATE monitoring_events SET status = ?, updated_at = ? WHERE event_id = ?", (status, now, event_id))
                 row = conn.execute("SELECT * FROM monitoring_events WHERE event_id = ?", (event_id,)).fetchone()
                 conn.commit()
-        if not row:
-            return None
-        return self._deserialize_event(dict(row))
+        return self._deserialize_event(dict(row)) if row else None
 
     def create_cue(self, payload: dict[str, Any]) -> dict[str, Any]:
         now = utc_now_iso()
@@ -230,24 +197,7 @@ class MonitoringStore:
         }
         with self._lock:
             with self._connect() as conn:
-                conn.execute(
-                    """
-                    INSERT INTO cue_tasks (
-                        cue_id, event_id, source_id, status, priority, geometry_json, payload_json, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        row["cue_id"],
-                        row["event_id"],
-                        row["source_id"],
-                        row["status"],
-                        row["priority"],
-                        row["geometry_json"],
-                        row["payload_json"],
-                        row["created_at"],
-                        row["updated_at"],
-                    ),
-                )
+                conn.execute("INSERT INTO cue_tasks VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", tuple(row.values()))
                 conn.commit()
         return self._deserialize_cue(row)
 
@@ -256,65 +206,148 @@ class MonitoringStore:
         with self._lock:
             with self._connect() as conn:
                 if status:
-                    rows = conn.execute(
-                        """
-                        SELECT *
-                        FROM cue_tasks
-                        WHERE status = ?
-                        ORDER BY created_at DESC
-                        LIMIT ?
-                        """,
-                        (status, limit_n),
-                    ).fetchall()
+                    rows = conn.execute("SELECT * FROM cue_tasks WHERE status = ? ORDER BY created_at DESC LIMIT ?", (status, limit_n)).fetchall()
                 else:
-                    rows = conn.execute(
-                        """
-                        SELECT *
-                        FROM cue_tasks
-                        ORDER BY created_at DESC
-                        LIMIT ?
-                        """,
-                        (limit_n,),
-                    ).fetchall()
+                    rows = conn.execute("SELECT * FROM cue_tasks ORDER BY created_at DESC LIMIT ?", (limit_n,)).fetchall()
         return [self._deserialize_cue(dict(row)) for row in rows]
+
+    def create_recollection_monitor(self, payload: dict[str, Any]) -> dict[str, Any]:
+        now = utc_now_iso()
+        monitor_id = f"rmon.{uuid.uuid4()}"
+        summary = {
+            "archive_status": "not_checked",
+            "tasking_status": "not_checked",
+            "capture_status": "not_checked",
+            "deliverable_status": "not_checked",
+            "tasking_checked_at": None,
+            "tasking_error": None,
+            "observations_count": 0,
+            "new_observations": 0,
+            "latest_capture_at": None,
+            "last_refresh_at": None,
+            "health": "unknown",
+        }
+        row = {
+            "monitor_id": monitor_id,
+            "name": str(payload.get("name") or "AOI recollection monitor").strip(),
+            "source_id": str(payload.get("source_id") or "satellogic").strip(),
+            "collection_id": str(payload.get("collection_id") or "quickview-visual-thumb").strip(),
+            "contract_id": payload.get("contract_id"),
+            "geometry_json": json.dumps(payload.get("geometry") or {}, ensure_ascii=True),
+            "filters_json": json.dumps(payload.get("filters") or {}, ensure_ascii=True),
+            "expected_revisit_days": payload.get("expected_revisit_days"),
+            "linked_order_id": payload.get("linked_order_id"),
+            "enabled": 1 if bool(payload.get("enabled", True)) else 0,
+            "created_at": now,
+            "updated_at": now,
+            "last_refresh_at": None,
+            "summary_json": json.dumps(summary, ensure_ascii=True),
+            "observations_json": "[]",
+        }
+        with self._lock:
+            with self._connect() as conn:
+                conn.execute(
+                    """INSERT INTO recollection_monitors (
+                        monitor_id, name, source_id, collection_id, contract_id, geometry_json, filters_json,
+                        expected_revisit_days, linked_order_id, enabled, created_at, updated_at, last_refresh_at,
+                        summary_json, observations_json
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    tuple(row.values()),
+                )
+                conn.commit()
+        return self._deserialize_monitor(row)
+
+    def get_recollection_monitor(self, monitor_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            with self._connect() as conn:
+                row = conn.execute("SELECT * FROM recollection_monitors WHERE monitor_id = ?", (monitor_id,)).fetchone()
+        return self._deserialize_monitor(dict(row)) if row else None
+
+    def list_recollection_monitors(self) -> list[dict[str, Any]]:
+        with self._lock:
+            with self._connect() as conn:
+                rows = conn.execute("SELECT * FROM recollection_monitors ORDER BY updated_at DESC").fetchall()
+        return [self._deserialize_monitor(dict(row)) for row in rows]
+
+    def save_recollection_refresh(self, monitor_id: str, observations: list[dict[str, Any]], summary: dict[str, Any]) -> dict[str, Any] | None:
+        now = utc_now_iso()
+        with self._lock:
+            with self._connect() as conn:
+                row = conn.execute("SELECT * FROM recollection_monitors WHERE monitor_id = ?", (monitor_id,)).fetchone()
+                if not row:
+                    return None
+                conn.execute(
+                    "UPDATE recollection_monitors SET updated_at = ?, last_refresh_at = ?, summary_json = ?, observations_json = ? WHERE monitor_id = ?",
+                    (now, now, json.dumps(summary, ensure_ascii=True), json.dumps(observations, ensure_ascii=True), monitor_id),
+                )
+                row = conn.execute("SELECT * FROM recollection_monitors WHERE monitor_id = ?", (monitor_id,)).fetchone()
+                conn.commit()
+        return self._deserialize_monitor(dict(row)) if row else None
+
+    def update_recollection_monitor(self, monitor_id: str, updates: dict[str, Any]) -> dict[str, Any] | None:
+        allowed = {
+            "name": "name",
+            "expected_revisit_days": "expected_revisit_days",
+            "linked_order_id": "linked_order_id",
+            "enabled": "enabled",
+        }
+        assignments: list[str] = []
+        values: list[Any] = []
+        for key, column in allowed.items():
+            if key not in updates:
+                continue
+            assignments.append(f"{column} = ?")
+            value = updates[key]
+            if key == "enabled":
+                value = 1 if bool(value) else 0
+            values.append(value)
+        if "filters" in updates:
+            assignments.append("filters_json = ?")
+            values.append(json.dumps(updates["filters"] or {}, ensure_ascii=True))
+        if not assignments:
+            return self.get_recollection_monitor(monitor_id)
+        assignments.append("updated_at = ?")
+        values.append(utc_now_iso())
+        values.append(monitor_id)
+        with self._lock:
+            with self._connect() as conn:
+                conn.execute(
+                    f"UPDATE recollection_monitors SET {', '.join(assignments)} WHERE monitor_id = ?",
+                    tuple(values),
+                )
+                row = conn.execute("SELECT * FROM recollection_monitors WHERE monitor_id = ?", (monitor_id,)).fetchone()
+                conn.commit()
+        return self._deserialize_monitor(dict(row)) if row else None
+
+    def delete_recollection_monitor(self, monitor_id: str) -> bool:
+        with self._lock:
+            with self._connect() as conn:
+                cur = conn.execute("DELETE FROM recollection_monitors WHERE monitor_id = ?", (monitor_id,))
+                conn.commit()
+                return cur.rowcount > 0
 
     def _deserialize_subscription(self, row: dict[str, Any]) -> dict[str, Any]:
         return {
-            "subscription_id": row.get("subscription_id"),
-            "source_id": row.get("source_id"),
-            "name": row.get("name"),
-            "collection_ids": json.loads(row.get("collection_ids_json") or "[]"),
-            "geometry": json.loads(row.get("geometry_json") or "{}"),
-            "filters": json.loads(row.get("filters_json") or "{}"),
-            "status": row.get("status"),
-            "external_subscription_id": row.get("external_subscription_id"),
-            "cursor": row.get("cursor"),
-            "created_at": row.get("created_at"),
-            "updated_at": row.get("updated_at"),
+            "subscription_id": row.get("subscription_id"), "source_id": row.get("source_id"), "name": row.get("name"),
+            "collection_ids": json.loads(row.get("collection_ids_json") or "[]"), "geometry": json.loads(row.get("geometry_json") or "{}"),
+            "filters": json.loads(row.get("filters_json") or "{}"), "status": row.get("status"),
+            "external_subscription_id": row.get("external_subscription_id"), "cursor": row.get("cursor"),
+            "created_at": row.get("created_at"), "updated_at": row.get("updated_at"),
         }
 
     def _deserialize_event(self, row: dict[str, Any]) -> dict[str, Any]:
-        return {
-            "event_id": row.get("event_id"),
-            "subscription_id": row.get("subscription_id"),
-            "source_id": row.get("source_id"),
-            "scene_id": row.get("scene_id"),
-            "event_type": row.get("event_type"),
-            "status": row.get("status"),
-            "payload": json.loads(row.get("payload_json") or "{}"),
-            "created_at": row.get("created_at"),
-            "updated_at": row.get("updated_at"),
-        }
+        return {"event_id": row.get("event_id"), "subscription_id": row.get("subscription_id"), "source_id": row.get("source_id"), "scene_id": row.get("scene_id"), "event_type": row.get("event_type"), "status": row.get("status"), "payload": json.loads(row.get("payload_json") or "{}"), "created_at": row.get("created_at"), "updated_at": row.get("updated_at")}
 
     def _deserialize_cue(self, row: dict[str, Any]) -> dict[str, Any]:
+        return {"cue_id": row.get("cue_id"), "event_id": row.get("event_id"), "source_id": row.get("source_id"), "status": row.get("status"), "priority": row.get("priority"), "geometry": json.loads(row.get("geometry_json") or "{}"), "payload": json.loads(row.get("payload_json") or "{}"), "created_at": row.get("created_at"), "updated_at": row.get("updated_at")}
+
+    def _deserialize_monitor(self, row: dict[str, Any]) -> dict[str, Any]:
         return {
-            "cue_id": row.get("cue_id"),
-            "event_id": row.get("event_id"),
-            "source_id": row.get("source_id"),
-            "status": row.get("status"),
-            "priority": row.get("priority"),
-            "geometry": json.loads(row.get("geometry_json") or "{}"),
-            "payload": json.loads(row.get("payload_json") or "{}"),
-            "created_at": row.get("created_at"),
-            "updated_at": row.get("updated_at"),
+            "monitor_id": row.get("monitor_id"), "name": row.get("name"), "source_id": row.get("source_id"),
+            "collection_id": row.get("collection_id"), "contract_id": row.get("contract_id"),
+            "geometry": json.loads(row.get("geometry_json") or "{}"), "filters": json.loads(row.get("filters_json") or "{}"),
+            "expected_revisit_days": row.get("expected_revisit_days"), "linked_order_id": row.get("linked_order_id"),
+            "enabled": bool(row.get("enabled")), "created_at": row.get("created_at"), "updated_at": row.get("updated_at"),
+            "last_refresh_at": row.get("last_refresh_at"), "summary": json.loads(row.get("summary_json") or "{}"),
+            "observations": json.loads(row.get("observations_json") or "[]"),
         }

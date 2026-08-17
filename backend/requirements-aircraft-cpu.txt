@@ -1,0 +1,2 @@
+# Optional local CPU detector runtime. The base backend requirements already list this package.
+onnxruntime>=1.18,<2

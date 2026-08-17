@@ -50,7 +50,20 @@ const state = {
   reportRunId: null,
   reportRunTimer: null,
   reportRunDownloading: false,
+  aircraftDetectionLayer: null,
+  aircraftAnnotationLayer: null,
+  aircraftAnnotations: [],
+  aircraftDetectorRuntime: null,
+  aircraftDetectorResult: null,
+  aircraftAnnotationMode: false,
   activeTab: "explore",
+  gridPlan: null,
+  monitoring: {
+    monitors: [],
+    selectedId: null,
+    selectedRefresh: null,
+    footprintLayer: null,
+  },
   taskingMode: "idle",
   taskingTargetType: null,
   taskingTargetGeometry: null,
@@ -244,6 +257,18 @@ map.addControl(drawControl);
 const taskingDrawLayer = L.layerGroup().addTo(map);
 
 map.on(L.Draw.Event.CREATED, (evt) => {
+  if (state.aircraftAnnotationMode) {
+    state.aircraftAnnotationMode = false;
+    const geometry = normalizeGeometryLongitudes(evt.layer.toGeoJSON().geometry);
+    if (geometry?.type !== "Polygon") {
+      toast("Aircraft annotations must be polygons");
+      renderAircraftDetectorPanel();
+      return;
+    }
+    saveManualAircraftPolygon(geometry).catch((err) => toast(err.message));
+    renderAircraftDetectorPanel();
+    return;
+  }
   drawnItems.clearLayers();
   drawnItems.addLayer(evt.layer);
   const geometry = normalizeGeometryLongitudes(evt.layer.toGeoJSON().geometry);
@@ -394,9 +419,68 @@ const rightPanelTitleEl = document.getElementById("rightPanelTitle");
 const workbenchTabsEl = document.getElementById("workbenchTabs");
 const leftExploreViewEl = document.getElementById("leftExploreView");
 const leftTaskingViewEl = document.getElementById("leftTaskingView");
+const leftGridViewEl = document.getElementById("leftGridView");
+const leftAnalyticsViewEl = document.getElementById("leftAnalyticsView");
+const leftLabViewEl = document.getElementById("leftLabView");
 const leftWorkflowsViewEl = document.getElementById("leftWorkflowsView");
 const leftSchedulesViewEl = document.getElementById("leftSchedulesView");
+const leftMonitoringViewEl = document.getElementById("leftMonitoringView");
 const leftRunsViewEl = document.getElementById("leftRunsView");
+const monitoringNameEl = document.getElementById("monitoringName");
+const monitoringExpectedDaysEl = document.getElementById("monitoringExpectedDays");
+const monitoringCollectionEl = document.getElementById("monitoringCollection");
+const monitoringMaxCloudEl = document.getElementById("monitoringMaxCloud");
+const monitoringOrderIdEl = document.getElementById("monitoringOrderId");
+const monitoringCreateBtnEl = document.getElementById("monitoringCreateBtn");
+const monitoringRefreshAllBtnEl = document.getElementById("monitoringRefreshAllBtn");
+const monitoringRefreshBtnEl = document.getElementById("monitoringRefreshBtn");
+const monitoringMetaEl = document.getElementById("monitoringMeta");
+const monitoringCountEl = document.getElementById("monitoringCount");
+const monitoringListEl = document.getElementById("monitoringList");
+const monitoringStatusCardsEl = document.getElementById("monitoringStatusCards");
+const monitoringDetailEl = document.getElementById("monitoringDetail");
+const taskingConfirmationEl = document.getElementById("taskingConfirmation");
+const taskingOpportunityBtnEl = document.getElementById("taskingOpportunityBtn");
+const taskingOpportunityResultEl = document.getElementById("taskingOpportunityResult");
+const gridCampaignNameEl = document.getElementById("gridCampaignName");
+const gridProjectNameEl = document.getElementById("gridProjectName");
+const gridCellSizeEl = document.getElementById("gridCellSize");
+const gridMinAreaEl = document.getElementById("gridMinArea");
+const gridStartEl = document.getElementById("gridStart");
+const gridEndEl = document.getElementById("gridEnd");
+const gridPlanBtnEl = document.getElementById("gridPlanBtn");
+const gridClearBtnEl = document.getElementById("gridClearBtn");
+const gridMetaEl = document.getElementById("gridMeta");
+const gridSummaryEl = document.getElementById("gridSummary");
+const gridCellsListEl = document.getElementById("gridCellsList");
+const gridConfirmationEl = document.getElementById("gridConfirmation");
+const gridSubmitBtnEl = document.getElementById("gridSubmitBtn");
+const gridResultEl = document.getElementById("gridResult");
+const analyticsDeliverableIdEl = document.getElementById("analyticsDeliverableId");
+const analyticsAssetKeyEl = document.getElementById("analyticsAssetKey");
+const analyticsInspectBtnEl = document.getElementById("analyticsInspectBtn");
+const analyticsSummaryBtnEl = document.getElementById("analyticsSummaryBtn");
+const analyticsResultEl = document.getElementById("analyticsResult");
+const aircraftDetectorRuntimeEl = document.getElementById("aircraftDetectorRuntime");
+const aircraftDetectorSelectionEl = document.getElementById("aircraftDetectorSelection");
+const aircraftDetectorRunBtnEl = document.getElementById("aircraftDetectorRunBtn");
+const aircraftDetectorClearBtnEl = document.getElementById("aircraftDetectorClearBtn");
+const aircraftDetectorResultEl = document.getElementById("aircraftDetectorResult");
+const labRuntimeCardsEl = document.getElementById("labRuntimeCards");
+const labModelSelectEl = document.getElementById("labModelSelect");
+const labDatasetSelectEl = document.getElementById("labDatasetSelect");
+const labCatalogRefreshBtnEl = document.getElementById("labCatalogRefreshBtn");
+const labHostTrainingBtnEl = document.getElementById("labHostTrainingBtn");
+const labCatalogMetaEl = document.getElementById("labCatalogMeta");
+const labTrainingCommandEl = document.getElementById("labTrainingCommand");
+const labActiveImageEl = document.getElementById("labActiveImage");
+const labRunDetectorBtnEl = document.getElementById("labRunDetectorBtn");
+const labDrawPolygonBtnEl = document.getElementById("labDrawPolygonBtn");
+const labAnnotationLabelEl = document.getElementById("labAnnotationLabel");
+const labAnnotationNoteEl = document.getElementById("labAnnotationNote");
+const labReviewMetaEl = document.getElementById("labReviewMeta");
+const labDetectionListEl = document.getElementById("labDetectionList");
+const labDetectionCountEl = document.getElementById("labDetectionCount");
 const taskingRefreshBtnEl = document.getElementById("taskingRefreshBtn");
 const taskingOrdersMetaEl = document.getElementById("taskingOrdersMeta");
 const taskingOrdersListEl = document.getElementById("taskingOrdersList");
@@ -1059,10 +1143,10 @@ function renderSentinelAnalyticsLayerChecklist() {
     label.className = "layer-check";
     label.innerHTML = `
       <span class="layer-check-main">
-        <input type="checkbox" data-layer-id="${row.id}" ${row.enabled ? "checked" : ""} ${wmtsReady ? "" : "disabled"} />
-        <span class="layer-check-text">${row.title || row.id}</span>
+        <input type="checkbox" data-layer-id="${escapeHtml(row.id)}" ${row.enabled ? "checked" : ""} ${wmtsReady ? "" : "disabled"} />
+        <span class="layer-check-text">${escapeHtml(row.title || row.id)}</span>
       </span>
-      <span class="layer-check-id">${row.id}</span>
+      <span class="layer-check-id">${escapeHtml(row.id)}</span>
     `;
     sentinelAnalyticsLayersEl.appendChild(label);
   });
@@ -2934,6 +3018,30 @@ function formatTaskingDate(value) {
   }
 }
 
+function taskingOrderMayBeCanceled(order) {
+  const status = (order?.status || "").toString().trim().toLowerCase();
+  return ["received", "submitted", "in_progress", "active", "collecting", "processing", "acquired", "accepted", "programming"].includes(status);
+}
+
+async function cancelTaskingOrder(order) {
+  const orderId = (order?.id || "").toString().trim();
+  if (!orderId) throw new Error("This order has no provider ID and cannot be canceled.");
+  const confirmation = window.prompt(`Cancellation is operationally consequential. Type the exact order ID to continue:\n${orderId}`);
+  if (confirmation === null) return;
+  if (confirmation.trim() !== orderId) {
+    toast("Cancellation canceled: exact order ID did not match.");
+    return;
+  }
+  const data = await apiJson(`/api/tasking/orders/${encodeURIComponent(orderId)}/cancel`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ confirmation: confirmation.trim(), contract_id: selectedContractId() }),
+  });
+  await refreshTaskingPanel();
+  const status = data?.cancellation_status || data?.order?.status || "unknown";
+  toast(data?.verified ? `Order ${orderId} canceled and verified.` : `Cancellation requested; provider status is ${status}.`);
+}
+
 function renderTaskingOrdersList() {
   if (!taskingOrdersListEl || !taskingOrdersMetaEl) return;
   const rows = Array.isArray(state.taskingOrders) ? state.taskingOrders : [];
@@ -2950,15 +3058,34 @@ function renderTaskingOrdersList() {
     const status = (order.status || "unknown").toString();
     card.innerHTML = `
       <div class="row-main">
-        <strong>${order.order_name || "(unnamed order)"}</strong>
-        <span class="status-chip">${status}</span>
+        <strong>${escapeHtml(order.order_name || "(unnamed order)")}</strong>
+        <span class="status-chip">${escapeHtml(status)}</span>
       </div>
-      <div class="row-meta">Project: ${order.project_name || "-"}</div>
-      <div class="row-meta">Product: ${order.sku || "-"}</div>
-      <div class="row-meta">Window: ${formatTaskingDate(order.start)} to ${formatTaskingDate(order.end)}</div>
-      <div class="row-meta">Geometry: ${order.geometry_type || "-"}</div>
-      <div class="row-id">${order.id || "-"}</div>
+      <div class="row-meta">Project: ${escapeHtml(order.project_name || "-")}</div>
+      <div class="row-meta">Product: ${escapeHtml(order.sku || "-")}</div>
+      <div class="row-meta">Window: ${escapeHtml(formatTaskingDate(order.start))} to ${escapeHtml(formatTaskingDate(order.end))}</div>
+      <div class="row-meta">Geometry: ${escapeHtml(order.geometry_type || "-")}</div>
+      <div class="row-id">${escapeHtml(order.id || "-")}</div>
+      ${taskingOrderMayBeCanceled(order) ? `<button type="button" class="ghost tiny tasking-cancel-btn" data-cancel-order-id="${escapeHtml(order.id || "")}">Cancel order</button>` : ""}
     `;
+    card.querySelector("[data-cancel-order-id]")?.addEventListener("click", async (evt) => {
+      evt.stopPropagation();
+      try {
+        await cancelTaskingOrder(order);
+      } catch (err) {
+        toast(err.message || "Tasking cancellation failed");
+      }
+    });
+    card.addEventListener("click", async () => {
+      if (!order.id) return;
+      try {
+        const data = await apiJson(`/api/tasking/orders/${encodeURIComponent(order.id)}/lifecycle?contract_id=${encodeURIComponent(selectedContractId() || "")}`);
+        if (timeCarouselListEl) {
+          setRightPanelTitle(`Lifecycle: ${order.order_name || order.id}`);
+          timeCarouselListEl.innerHTML = `<pre class="report compact">${escapeHtml(JSON.stringify(data, null, 2))}</pre>`;
+        }
+      } catch (err) { toast(err.message); }
+    });
     taskingOrdersListEl.appendChild(card);
   });
 }
@@ -2995,7 +3122,7 @@ async function refreshTaskingPanel() {
   ]);
 }
 
-async function submitTaskingOrder() {
+function currentTaskingPayload(includeConfirmation = true) {
   if (!state.taskingTargetGeometry || !state.taskingTargetType) {
     throw new Error("Select a target geometry first.");
   }
@@ -3011,8 +3138,7 @@ async function submitTaskingOrder() {
   if (new Date(endDate).getTime() <= new Date(startDate).getTime()) {
     throw new Error("End date must be after start date.");
   }
-
-  const payload = {
+  return {
     target_type: state.taskingTargetType,
     geometry: state.taskingTargetGeometry,
     order_name: orderName,
@@ -3022,8 +3148,13 @@ async function submitTaskingOrder() {
     end_date: endDate,
     revisit_period: state.taskingTargetType === "point" ? (cadence || null) : null,
     remapping_period: state.taskingTargetType === "area" ? (cadence || null) : null,
+    confirmation: includeConfirmation ? (taskingConfirmationEl?.value || "").trim() : null,
     contract_id: selectedContractId(),
   };
+}
+
+async function submitTaskingOrder() {
+  const payload = currentTaskingPayload(true);
   const data = await apiJson("/api/tasking/orders", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -3038,6 +3169,25 @@ async function submitTaskingOrder() {
   toast(`Task accepted: ${order.id || "created"}`);
 }
 
+async function checkTaskingOpportunity() {
+  const payload = currentTaskingPayload(false);
+  if (taskingOpportunityResultEl) taskingOpportunityResultEl.textContent = "Starting read-only feasibility analysis...";
+  let data = await apiJson("/api/tasking/opportunities", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (taskingOpportunityResultEl) taskingOpportunityResultEl.textContent = JSON.stringify(data, null, 2);
+  const analysisId = (data?.analysis_id || "").toString().trim();
+  if (!analysisId) return;
+  const terminal = new Set(["success", "succeeded", "complete", "completed", "failure", "failed"]);
+  for (let attempt = 0; attempt < 5 && !terminal.has((data?.status || "").toString().toLowerCase()); attempt += 1) {
+    await new Promise((resolve) => window.setTimeout(resolve, 1200));
+    data = await apiJson(`/api/tasking/opportunities/${encodeURIComponent(analysisId)}?contract_id=${encodeURIComponent(selectedContractId() || "")}`);
+    if (taskingOpportunityResultEl) taskingOpportunityResultEl.textContent = JSON.stringify(data, null, 2);
+  }
+}
+
 function openAnimationDialog() {
   animStartDateEl.value = startDateEl.value;
   animEndDateEl.value = endDateEl.value;
@@ -3048,6 +3198,407 @@ function openAnimationDialog() {
   if (typeof animationDialogEl.showModal === "function") {
     animationDialogEl.showModal();
   }
+}
+
+function viewportGeometry() {
+  return geometryFromBounds(map.getBounds());
+}
+
+function renderGridPlan(plan) {
+  state.gridPlan = plan || null;
+  const summary = plan?.summary || {};
+  if (gridMetaEl) gridMetaEl.textContent = plan ? `Plan ${plan.plan_id}: ${summary.cell_count || 0} cells, ${summary.total_area_km2 || 0} km²` : "No grid plan loaded.";
+  if (gridSummaryEl) {
+    gridSummaryEl.innerHTML = plan ? [
+      ["Cells", summary.cell_count], ["Area", `${summary.total_area_km2 || 0} km²`], ["UTM", summary.utm_epsg || "n/a"], ["Discarded", summary.discarded_count || 0],
+    ].map(([label, value]) => `<div class="status-card"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join("") : "";
+  }
+  if (gridCellsListEl) {
+    const rows = plan?.grid_geojson?.features || [];
+    gridCellsListEl.innerHTML = rows.length ? rows.map((row) => {
+      const p = row.properties || {};
+      return `<div class="tasking-order-card"><strong>${escapeHtml(p.order_name || "cell")}</strong><div class="row-meta">Row ${p.row}, Col ${p.col} · ${p.area_km2 || 0} km²</div><div class="row-meta">${p.submittable ? "Ready" : escapeHtml(p.warning || "Not submittable")}</div></div>`;
+    }).join("") : `<div class="meta">Plan a grid to review individual cell payloads.</div>`;
+  }
+  if (gridConfirmationEl) { gridConfirmationEl.disabled = !plan; gridConfirmationEl.value = ""; }
+  if (gridSubmitBtnEl) gridSubmitBtnEl.disabled = !plan;
+}
+
+async function planGrid() {
+  const campaignName = (gridCampaignNameEl?.value || "").trim();
+  const projectName = (gridProjectNameEl?.value || "").trim();
+  if (!campaignName || !projectName) throw new Error("Campaign and project names are required.");
+  const start = gridStartEl?.value ? toUtcIsoFromLocalInput(gridStartEl.value) : new Date(Date.now() + 2 * DAY_MS).toISOString();
+  const end = gridEndEl?.value ? toUtcIsoFromLocalInput(gridEndEl.value) : new Date(Date.now() + 62 * DAY_MS).toISOString();
+  const data = await apiJson("/api/tasking/grid/plan", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+    campaign_name: campaignName, project_name: projectName, geometry: viewportGeometry(), contract_id: selectedContractId(),
+    parameters: { cell_size_km: Number(gridCellSizeEl?.value || 20), min_area_km2: Number(gridMinAreaEl?.value || 25), start, end },
+  }) });
+  renderGridPlan(data);
+  if (gridResultEl) gridResultEl.textContent = "Read-only plan created. Review every cell before submission.";
+}
+
+async function submitGridPlan() {
+  const plan = state.gridPlan;
+  if (!plan) throw new Error("Create a grid plan first.");
+  if ((gridConfirmationEl?.value || "").trim() !== (plan.confirmation_required || "").trim()) throw new Error("Type the exact campaign name to submit the grid.");
+  const result = await apiJson("/api/tasking/grid/submit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ plan_id: plan.plan_id, confirmation: gridConfirmationEl.value.trim(), contract_id: selectedContractId() }) });
+  if (gridResultEl) gridResultEl.textContent = JSON.stringify(result, null, 2);
+  renderGridPlan(result.plan || plan);
+}
+
+async function inspectAnalytics(summary = false) {
+  const deliverableId = (analyticsDeliverableIdEl?.value || "").trim();
+  const assetKey = analyticsAssetKeyEl?.value || "analytics_vessels";
+  if (!deliverableId) throw new Error("Deliverable ID is required.");
+  const path = summary ? `/api/analytics/deliverables/${encodeURIComponent(deliverableId)}/summary?asset_key=${encodeURIComponent(assetKey)}` : `/api/analytics/deliverables/${encodeURIComponent(deliverableId)}`;
+  const data = await apiJson(path);
+  if (analyticsResultEl) analyticsResultEl.textContent = JSON.stringify(data, null, 2);
+}
+
+function activeAircraftTileSelection() {
+  const allItems = dedupeById([...(state.detailItems || []), ...(state.items || [])]);
+  let candidates = allItems.filter((item) => (
+    isSatellogicItem(item)
+    && normalizeCollectionId(item?.collection) === "l1d-sr"
+    && Boolean(item?.assets?.visual)
+  ));
+  const selectedOverview = overviewSourceItems().find((item) => item?.id === state.selectedCarouselId);
+  if (selectedOverview) {
+    const matching = tilesForOverviewItem(candidates, selectedOverview, false);
+    if (matching.length) candidates = matching;
+  }
+  if (!candidates.length) return null;
+  const visible = filterItemsToViewport(candidates, map.getBounds());
+  const item = prioritizeClosestToCenter(visible.length ? visible : candidates, 1)[0];
+  if (!item) return null;
+  const bounds = boundsFromGeometry(item.geometry);
+  const center = bounds?.getCenter() || map.getCenter();
+  const zoom = Math.max(17, Math.min(20, Math.round(Number(map.getZoom() || 17))));
+  const tile = latLngToTileXY(center.lat, center.lng, zoom);
+  return {
+    item,
+    tile,
+    scale: 4,
+    buffer: 0,
+    asset_key: "visual",
+    contract_id: selectedSatellogicContractId(),
+  };
+}
+
+function renderAircraftDetectorPanel() {
+  const runtime = state.aircraftDetectorRuntime;
+  const selection = activeAircraftTileSelection();
+  if (aircraftDetectorRuntimeEl) {
+    if (!runtime) {
+      aircraftDetectorRuntimeEl.textContent = "Local detector runtime has not been checked.";
+    } else if (!runtime.model_exists || !runtime.runtime_available) {
+      const reason = runtime.error || (!runtime.model_exists ? "model_not_found" : "runtime_unavailable");
+      aircraftDetectorRuntimeEl.textContent = `Detector unavailable: ${reason}. Install the configured ONNX Runtime build and model.`;
+    } else {
+      const providers = Array.isArray(runtime.available_providers) ? runtime.available_providers.join(", ") : "unknown";
+      aircraftDetectorRuntimeEl.textContent = `Ready: ${runtime.model_name || "aircraft model"} · providers: ${providers}`;
+    }
+  }
+  if (aircraftDetectorSelectionEl) {
+    aircraftDetectorSelectionEl.textContent = selection
+      ? `Input: ${selection.item.id} · l1d-sr visual · z/x/y ${selection.tile.z}/${selection.tile.x}/${selection.tile.y} · 1024px tile (scale=4, buffer=0)`
+      : "Select an L1D-SR detail frame and zoom the map to choose a tile.";
+  }
+  if (aircraftDetectorRunBtnEl) {
+    aircraftDetectorRunBtnEl.disabled = !selection || !runtime?.model_exists || !runtime?.runtime_available;
+  }
+  if (labActiveImageEl) {
+    labActiveImageEl.textContent = selection
+      ? `${selection.item.id} · L1D-SR visual · tile z${selection.tile.z}/${selection.tile.x}/${selection.tile.y}`
+      : "Select an L1D-SR image from the carousel on the right.";
+  }
+  if (labRunDetectorBtnEl) {
+    labRunDetectorBtnEl.disabled = !selection || !runtime?.model_exists || !runtime?.runtime_available;
+  }
+  if (labDrawPolygonBtnEl) {
+    labDrawPolygonBtnEl.disabled = !selection || !state.aircraftDetectorResult;
+  }
+}
+
+function clearAircraftDetectorResults() {
+  if (state.aircraftDetectionLayer && map.hasLayer(state.aircraftDetectionLayer)) map.removeLayer(state.aircraftDetectionLayer);
+  state.aircraftDetectionLayer = null;
+  if (state.aircraftAnnotationLayer && map.hasLayer(state.aircraftAnnotationLayer)) map.removeLayer(state.aircraftAnnotationLayer);
+  state.aircraftAnnotationLayer = null;
+  state.aircraftAnnotations = [];
+  state.aircraftDetectorResult = null;
+  if (aircraftDetectorResultEl) aircraftDetectorResultEl.textContent = "No local detection run yet.";
+  renderAircraftDetectionList();
+  renderAircraftDetectorPanel();
+}
+
+function aircraftLabelColor(label) {
+  if (label === "helicopter") return "#ff7f66";
+  if (label === "background") return "#9ca8b8";
+  return "#70e0c1";
+}
+
+function renderAircraftAnnotationLayer() {
+  if (state.aircraftAnnotationLayer && map.hasLayer(state.aircraftAnnotationLayer)) map.removeLayer(state.aircraftAnnotationLayer);
+  const features = (state.aircraftAnnotations || [])
+    .filter((row) => row?.geometry_wgs84)
+    .map((row) => ({
+      type: "Feature",
+      geometry: row.geometry_wgs84,
+      properties: row,
+    }));
+  if (!features.length) {
+    state.aircraftAnnotationLayer = null;
+    return;
+  }
+  state.aircraftAnnotationLayer = L.geoJSON({ type: "FeatureCollection", features }, {
+    style: (feature) => {
+      const label = feature?.properties?.label || "plane";
+      return { color: aircraftLabelColor(label), weight: 2, fillColor: aircraftLabelColor(label), fillOpacity: 0.12 };
+    },
+    onEachFeature: (feature, layer) => {
+      const props = feature.properties || {};
+      layer.bindPopup(`<strong>${escapeHtml(props.label || "annotation")}</strong><br>${escapeHtml(props.item_id || "")}`);
+    },
+  }).addTo(map);
+}
+
+function renderAircraftDetectionList() {
+  const detections = Array.isArray(state.aircraftDetectorResult?.detections) ? state.aircraftDetectorResult.detections : [];
+  if (labDetectionCountEl) labDetectionCountEl.textContent = String(detections.length);
+  if (!labDetectionListEl) return;
+  if (!detections.length) {
+    labDetectionListEl.innerHTML = `<p class="meta">No detections to review. A zero result is not proof of absence.</p>`;
+    return;
+  }
+  const annotationByDetection = new Map((state.aircraftAnnotations || []).filter((row) => row.detection_id).map((row) => [row.detection_id, row]));
+  labDetectionListEl.innerHTML = detections.map((detection) => {
+    const saved = annotationByDetection.get(detection.detection_id);
+    const savedText = saved ? ` · saved as ${escapeHtml(saved.label)}` : "";
+    return `<article class="aircraft-detection-row">
+      <div><strong>${escapeHtml(detection.class_name || "aircraft")}</strong><span class="meta"> ${(Number(detection.confidence || 0) * 100).toFixed(1)}%${savedText}</span></div>
+      <div class="aircraft-detection-actions">
+        <button type="button" class="tiny" data-aircraft-label="plane" data-detection-id="${escapeHtml(detection.detection_id)}">Plane</button>
+        <button type="button" class="tiny" data-aircraft-label="helicopter" data-detection-id="${escapeHtml(detection.detection_id)}">Helicopter</button>
+        <button type="button" class="ghost tiny" data-aircraft-label="background" data-detection-id="${escapeHtml(detection.detection_id)}">None</button>
+      </div>
+    </article>`;
+  }).join("");
+}
+
+async function loadAircraftLabAnnotations() {
+  const selection = activeAircraftTileSelection();
+  if (!selection) return;
+  const data = await apiJson(`/api/aircraft-lab/annotations?item_id=${encodeURIComponent(selection.item.id)}`, { cache: "no-store" });
+  state.aircraftAnnotations = Array.isArray(data.annotations) ? data.annotations : [];
+  renderAircraftAnnotationLayer();
+  renderAircraftDetectionList();
+}
+
+async function saveAircraftAnnotation(geometryPx, label, detection = null) {
+  const selection = activeAircraftTileSelection();
+  const result = state.aircraftDetectorResult;
+  if (!selection || !result?.input?.bounds_wgs84) throw new Error("Run the detector on an active tile before saving an annotation.");
+  const payload = {
+    item_id: selection.item.id,
+    source_id: "satellogic",
+    collection_id: "l1d-sr",
+    asset_key: "visual",
+    z: selection.tile.z,
+    x: selection.tile.x,
+    y: selection.tile.y,
+    scale: selection.scale,
+    bounds_wgs84: result.input.bounds_wgs84,
+    source_width_px: result.input.width_px,
+    source_height_px: result.input.height_px,
+    geometry_px: geometryPx,
+    label,
+    detection_id: detection?.detection_id || null,
+    confidence: detection?.confidence ?? null,
+    note: (labAnnotationNoteEl?.value || "").trim() || null,
+  };
+  const annotation = await apiJson("/api/aircraft-lab/annotations", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  state.aircraftAnnotations = [...(state.aircraftAnnotations || []).filter((row) => row.detection_id !== annotation.detection_id || !annotation.detection_id), annotation];
+  renderAircraftAnnotationLayer();
+  renderAircraftDetectionList();
+  if (labReviewMetaEl) labReviewMetaEl.textContent = `Saved ${label} annotation for ${selection.item.id}.`;
+  toast(`Saved ${label} label`);
+}
+
+async function saveAircraftDetectionLabel(detection, label) {
+  const points = Array.isArray(detection.obb_px) && detection.obb_px.length === 4
+    ? detection.obb_px
+    : [[detection.bbox_px[0], detection.bbox_px[1]], [detection.bbox_px[2], detection.bbox_px[1]], [detection.bbox_px[2], detection.bbox_px[3]], [detection.bbox_px[0], detection.bbox_px[3]]];
+  await saveAircraftAnnotation(points, label, detection);
+}
+
+function startAircraftPolygonAnnotation() {
+  const selection = activeAircraftTileSelection();
+  if (!selection || !state.aircraftDetectorResult) {
+    toast("Run the detector on an active L1D-SR tile first.");
+    return;
+  }
+  state.aircraftAnnotationMode = true;
+  new L.Draw.Polygon(map, {
+    allowIntersection: false,
+    showArea: false,
+    shapeOptions: { color: aircraftLabelColor(labAnnotationLabelEl?.value || "plane"), weight: 2, fillOpacity: 0.14 },
+  }).enable();
+  if (labReviewMetaEl) labReviewMetaEl.textContent = "Draw a polygon around a missed object on the map, then choose its label.";
+}
+
+function geometryPolygonToPixels(geometry, result) {
+  const ring = geometry?.coordinates?.[0];
+  const bounds = result?.input?.bounds_wgs84;
+  if (!Array.isArray(ring) || !Array.isArray(bounds)) throw new Error("The drawn polygon has no tile geometry.");
+  const [west, south, east, north] = bounds.map(Number);
+  const width = Number(result.input.width_px || 0);
+  const height = Number(result.input.height_px || 0);
+  if (!(east > west && north > south && width > 0 && height > 0)) throw new Error("The active detection tile has invalid geometry.");
+  return ring.slice(0, -1).map(([lon, lat]) => [
+    Math.max(0, Math.min(width, ((Number(lon) - west) / (east - west)) * width)),
+    Math.max(0, Math.min(height, ((north - Number(lat)) / (north - south)) * height)),
+  ]);
+}
+
+async function saveManualAircraftPolygon(geometry) {
+  const label = labAnnotationLabelEl?.value || "plane";
+  await saveAircraftAnnotation(geometryPolygonToPixels(geometry, state.aircraftDetectorResult), label, null);
+}
+
+async function loadAircraftLabCatalog() {
+  const data = await apiJson("/api/aircraft-lab/catalog", { cache: "no-store" });
+  if (labModelSelectEl) {
+    labModelSelectEl.innerHTML = (data.models || []).map((model) => `<option value="${escapeHtml(model.id)}">${escapeHtml(model.name)}${model.active ? " · active" : ""}</option>`).join("") || `<option value="configured">Configured local model</option>`;
+  }
+  if (labDatasetSelectEl) {
+    labDatasetSelectEl.innerHTML = `<option value="">No prepared bundle</option>` + (data.datasets || []).map((dataset) => `<option value="${escapeHtml(dataset.id)}">${escapeHtml(dataset.name)} · ${dataset.scene_count || 0} scenes</option>`).join("");
+  }
+  if (labRuntimeCardsEl) {
+    const detector = data.detector || {};
+    labRuntimeCardsEl.innerHTML = [["Model", detector.model_name || "n/a"], ["Runtime", detector.runtime_available ? "ready" : "unavailable"], ["Annotations", String(data.annotation_count || 0)]].map(([label, value]) => `<div class="status-card"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join("");
+  }
+  if (labCatalogMetaEl) labCatalogMetaEl.textContent = `${(data.models || []).length} model(s) · ${(data.datasets || []).length} prepared bundle(s) · ${data.annotation_count || 0} saved annotation(s).`;
+}
+
+function showHostTrainingCommand() {
+  if (!labTrainingCommandEl) return;
+  const model = labModelSelectEl?.selectedOptions?.[0]?.textContent || "configured model";
+  const dataset = labDatasetSelectEl?.selectedOptions?.[0]?.textContent || "selected review manifests";
+  labTrainingCommandEl.textContent = `Selected model: ${model}\nSelected data: ${dataset}\n\nRun from the Mac host after you have separate train and held-out review manifests:\n\n.venv/bin/python backend/scripts/train_aircraft.py \\\n  --manifest /path/to/train/review_manifest.json \\\n  --validation-manifest /path/to/held-out/review_manifest.json \\\n  --outdir /path/to/new-finetune \\\n  --device mps --epochs 10 --imgsz 1024 --batch 1 --workers 0 --export-onnx`;
+  labTrainingCommandEl.hidden = !labTrainingCommandEl.hidden;
+}
+
+function renderAircraftDetectorResult(result) {
+  if (state.aircraftDetectionLayer && map.hasLayer(state.aircraftDetectionLayer)) map.removeLayer(state.aircraftDetectionLayer);
+  const featureCollection = result?.geojson && result.geojson.type === "FeatureCollection" ? result.geojson : { type: "FeatureCollection", features: [] };
+  const features = (featureCollection.features || []).filter((feature) => feature && feature.geometry);
+  state.aircraftDetectionLayer = L.geoJSON({ type: "FeatureCollection", features }, {
+    style: { color: "#ffd166", weight: 2, fillColor: "#ffd166", fillOpacity: 0.18 },
+    onEachFeature: (feature, layer) => {
+      const props = feature.properties || {};
+      layer.bindPopup(`<strong>${escapeHtml(props.class_name || "aircraft")}</strong><br>confidence: ${escapeHtml(String(props.confidence ?? "n/a"))}<br>id: ${escapeHtml(String(props.detection_id || ""))}<br><span class="meta">Local model evidence; not provider ground truth.</span>`);
+    },
+  }).addTo(map);
+  state.aircraftDetectorResult = result;
+  if (aircraftDetectorResultEl) aircraftDetectorResultEl.textContent = JSON.stringify(result, null, 2);
+  renderAircraftDetectionList();
+  loadAircraftLabAnnotations().catch(() => {});
+}
+
+async function loadAircraftDetectorRuntime() {
+  try {
+    state.aircraftDetectorRuntime = await apiJson("/api/detectors/aircraft", { cache: "no-store" });
+  } catch (err) {
+    state.aircraftDetectorRuntime = { model_exists: false, runtime_available: false, error: err.message };
+  }
+  renderAircraftDetectorPanel();
+}
+
+async function runAircraftDetector() {
+  const selection = activeAircraftTileSelection();
+  if (!selection) throw new Error("Select an active Satellogic L1D-SR visual tile first.");
+  if (!state.aircraftDetectorRuntime?.runtime_available || !state.aircraftDetectorRuntime?.model_exists) {
+    throw new Error("The local aircraft detector runtime or model is unavailable.");
+  }
+  if (aircraftDetectorResultEl) aircraftDetectorResultEl.textContent = "Fetching one high-resolution buffer-free tile and running local inference...";
+  renderAircraftDetectorPanel();
+  const data = await apiJson("/api/detectors/aircraft", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      item_id: selection.item.id,
+      source_id: "satellogic",
+      collection_id: "l1d-sr",
+      asset_key: "visual",
+      z: selection.tile.z,
+      x: selection.tile.x,
+      y: selection.tile.y,
+      scale: selection.scale,
+      tile_matrix_set: "WebMercatorQuad",
+      contract_id: selection.contract_id,
+    }),
+  });
+  renderAircraftDetectorResult(data);
+  renderAircraftDetectorPanel();
+  toast(`Local aircraft detection complete: ${(data.detections || []).length} detections.`);
+}
+
+async function loadMonitoring() {
+  const data = await apiJson("/api/recollection-monitors");
+  state.monitoring.monitors = Array.isArray(data.monitors) ? data.monitors : [];
+  renderMonitoringList();
+}
+
+function renderMonitoringList() {
+  const rows = state.monitoring.monitors || [];
+  if (monitoringCountEl) monitoringCountEl.textContent = String(rows.length);
+  if (!monitoringListEl) return;
+  monitoringListEl.innerHTML = rows.length ? rows.map((row) => `<button type="button" class="monitoring-row ${row.monitor_id === state.monitoring.selectedId ? "active" : ""}" data-monitor-id="${escapeHtml(row.monitor_id)}"><strong>${escapeHtml(row.name)}</strong><span>${escapeHtml(row.summary?.archive_status || "not_checked")} · ${row.summary?.observations_count || 0} observations</span></button>`).join("") : `<p class="meta">No recollection monitors yet.</p>`;
+  monitoringListEl.querySelectorAll("[data-monitor-id]").forEach((button) => button.addEventListener("click", () => selectMonitoring(button.dataset.monitorId)));
+}
+
+function renderMonitoringFootprints() {
+  const row = (state.monitoring.monitors || []).find((item) => item.monitor_id === state.monitoring.selectedId);
+  if (!row) return;
+  const summary = row.summary || {};
+  if (monitoringStatusCardsEl) monitoringStatusCardsEl.innerHTML = [["Archive", summary.archive_status], ["Tasking", summary.tasking_status], ["Capture", summary.capture_status], ["Deliverable", summary.deliverable_status], ["Health", summary.health]].map(([label, value]) => `<div class="status-card"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value || "n/a")}</strong></div>`).join("");
+  if (monitoringDetailEl) monitoringDetailEl.textContent = JSON.stringify(row, null, 2);
+  renderMonitoringList();
+}
+
+async function selectMonitoring(monitorId) {
+  state.monitoring.selectedId = monitorId;
+  const row = await apiJson(`/api/recollection-monitors/${encodeURIComponent(monitorId)}`);
+  const idx = state.monitoring.monitors.findIndex((item) => item.monitor_id === monitorId);
+  if (idx >= 0) state.monitoring.monitors[idx] = row;
+  renderMonitoringFootprints();
+}
+
+async function refreshMonitoring(monitorId) {
+  const id = monitorId || state.monitoring.selectedId;
+  if (!id) throw new Error("Select a monitor first.");
+  const data = await apiJson(`/api/recollection-monitors/${encodeURIComponent(id)}/refresh`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+  const idx = state.monitoring.monitors.findIndex((item) => item.monitor_id === id);
+  if (idx >= 0) state.monitoring.monitors[idx] = data.monitor;
+  state.monitoring.selectedId = id;
+  renderMonitoringFootprints();
+}
+
+async function createMonitoring() {
+  const name = (monitoringNameEl?.value || "").trim();
+  if (!name) throw new Error("Monitor name is required.");
+  const data = await apiJson("/api/recollection-monitors", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+    name, geometry: viewportGeometry(), collection_id: monitoringCollectionEl?.value || "quickview-visual-thumb", contract_id: selectedContractId(), expected_revisit_days: Number(monitoringExpectedDaysEl?.value || 30), linked_order_id: (monitoringOrderIdEl?.value || "").trim() || null, filters: { max_cloud_cover: Number(monitoringMaxCloudEl?.value || 60) },
+  }) });
+  state.monitoring.selectedId = data.monitor_id;
+  await loadMonitoring();
+  await refreshMonitoring(data.monitor_id);
 }
 
 function openAnimationWindow(gifBase64, filename = "capture_animation.gif") {
@@ -3167,7 +3718,7 @@ function makeCarouselCard(item, idx) {
 }
 
 function appendCarouselBatch() {
-  if (!timeCarouselListEl || state.activeTab !== "explore") return;
+  if (!timeCarouselListEl || !["explore", "lab"].includes(state.activeTab)) return;
   const items = state.carouselRenderItems || [];
   if (!items.length || state.carouselRenderNextIndex >= items.length) return;
   const start = state.carouselRenderNextIndex;
@@ -3181,7 +3732,7 @@ function appendCarouselBatch() {
 }
 
 function fillCarouselViewport() {
-  if (!timeCarouselListEl || state.activeTab !== "explore") return;
+  if (!timeCarouselListEl || !["explore", "lab"].includes(state.activeTab)) return;
   let safety = 0;
   while (
     state.carouselRenderNextIndex < (state.carouselRenderItems || []).length
@@ -3194,7 +3745,7 @@ function fillCarouselViewport() {
 }
 
 function maybeLoadMoreCarouselOnScroll() {
-  if (!timeCarouselListEl || state.activeTab !== "explore") return;
+  if (!timeCarouselListEl || !["explore", "lab"].includes(state.activeTab)) return;
   let remaining = timeCarouselListEl.scrollHeight - (timeCarouselListEl.scrollTop + timeCarouselListEl.clientHeight);
   let guard = 0;
   while (remaining <= CAROUSEL_SCROLL_THRESHOLD_PX && state.carouselRenderNextIndex < (state.carouselRenderItems || []).length && guard < 8) {
@@ -3235,7 +3786,7 @@ function viewportFilteredCarouselItems(bounds = map.getBounds()) {
 }
 
 function renderTimeCarouselForViewport(bounds = map.getBounds()) {
-  if (state.activeTab !== "explore") return;
+  if (!["explore", "lab"].includes(state.activeTab)) return;
   const total = overviewItemsForCarousel().length;
   const visible = viewportFilteredCarouselItems(bounds);
   renderTimeCarousel(visible, total);
@@ -3276,8 +3827,12 @@ function findRenderedCarouselCard(itemId) {
 
 function setActiveCarouselCard(itemId, options = {}) {
   const autoScroll = Boolean(options.autoScroll);
+  if (state.selectedCarouselId && state.selectedCarouselId !== itemId) {
+    clearAircraftDetectorResults();
+  }
   state.selectedCarouselId = itemId;
-  if (state.activeTab === "explore" && itemId && !findRenderedCarouselCard(itemId)) {
+  renderAircraftDetectorPanel();
+  if (["explore", "lab"].includes(state.activeTab) && itemId && !findRenderedCarouselCard(itemId)) {
     let guard = 0;
     while (!findRenderedCarouselCard(itemId) && state.carouselRenderNextIndex < (state.carouselRenderItems || []).length && guard < 80) {
       appendCarouselBatch();
@@ -5603,8 +6158,12 @@ function showLeftView(tab) {
   const viewByTab = {
     explore: leftExploreViewEl,
     tasking: leftTaskingViewEl,
+    grid: leftGridViewEl,
+    analytics: leftAnalyticsViewEl,
+    lab: leftLabViewEl,
     workflows: leftWorkflowsViewEl,
     schedules: leftSchedulesViewEl,
+    monitoring: leftMonitoringViewEl,
     runs: leftRunsViewEl,
   };
   Object.entries(viewByTab).forEach(([key, el]) => {
@@ -5673,7 +6232,9 @@ function escapeHtml(value) {
     .toString()
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }
 
 function renderEvidenceJumpList(reportJson, rawText = "") {
@@ -6232,6 +6793,22 @@ function setWorkbenchTab(tab) {
     refreshTaskingPanel().catch((err) => {
       if (taskingOrdersMetaEl) taskingOrdersMetaEl.textContent = `Tasking load failed: ${err.message}`;
     });
+  } else if (tab === "grid") {
+    resetCarouselLazyState();
+    setRightPanelTitle("Grid Tasking Review");
+    timeCarouselListEl.innerHTML = `<div class="meta">Grid planning and submission controls are in the left panel.</div>`;
+  } else if (tab === "analytics") {
+    resetCarouselLazyState();
+    setRightPanelTitle("Satellogic Analytics");
+    renderAircraftDetectorPanel();
+    timeCarouselListEl.innerHTML = `<div class="meta">Enter a deliverable ID in the Analytics tab to inspect delivered detections.</div>`;
+  } else if (tab === "lab") {
+    setRightPanelTitle("Archive Captures · Model Lab");
+    renderAircraftDetectorPanel();
+    renderTimeCarouselForViewport();
+    loadAircraftLabCatalog().catch((err) => {
+      if (labCatalogMetaEl) labCatalogMetaEl.textContent = `Catalog load failed: ${err.message}`;
+    });
   } else if (tab === "runs") {
     const selected = state.runs.find((r) => r.run_id === state.selectedRunId) || null;
     renderRunArtifactsInRightPanel(selected);
@@ -6240,6 +6817,14 @@ function setWorkbenchTab(tab) {
     resetCarouselLazyState();
     setRightPanelTitle("Schedules");
     timeCarouselListEl.innerHTML = `<div class="meta">Schedules and subscriptions are managed in the left panel.</div>`;
+  } else if (tab === "monitoring") {
+    resetCarouselLazyState();
+    setRightPanelTitle("Capture Monitoring");
+    timeCarouselListEl.innerHTML = `<div class="meta">Select a monitored AOI to inspect its latest archive-observed footprints.</div>`;
+    renderMonitoringFootprints();
+    loadMonitoring().catch((err) => {
+      if (monitoringMetaEl) monitoringMetaEl.textContent = `Monitoring load failed: ${err.message}`;
+    });
   } else {
     resetCarouselLazyState();
     setRightPanelTitle("Workflows");
@@ -7453,6 +8038,42 @@ taskingFormEl?.addEventListener("submit", async (evt) => {
   }
 });
 
+gridPlanBtnEl?.addEventListener("click", async () => {
+  try { await planGrid(); } catch (err) { if (gridResultEl) gridResultEl.textContent = err.message; toast(err.message); }
+});
+
+gridSubmitBtnEl?.addEventListener("click", async () => {
+  try { await submitGridPlan(); toast("Grid submission completed with verification results."); } catch (err) { if (gridResultEl) gridResultEl.textContent = err.message; toast(err.message); }
+});
+
+gridClearBtnEl?.addEventListener("click", () => {
+  renderGridPlan(null);
+  if (gridResultEl) gridResultEl.textContent = "Planning is read-only until you explicitly submit.";
+});
+
+analyticsInspectBtnEl?.addEventListener("click", () => inspectAnalytics(false).catch((err) => { if (analyticsResultEl) analyticsResultEl.textContent = err.message; toast(err.message); }));
+analyticsSummaryBtnEl?.addEventListener("click", () => inspectAnalytics(true).catch((err) => { if (analyticsResultEl) analyticsResultEl.textContent = err.message; toast(err.message); }));
+aircraftDetectorRunBtnEl?.addEventListener("click", () => runAircraftDetector().catch((err) => { if (aircraftDetectorResultEl) aircraftDetectorResultEl.textContent = err.message; toast(err.message); }));
+aircraftDetectorClearBtnEl?.addEventListener("click", clearAircraftDetectorResults);
+labRunDetectorBtnEl?.addEventListener("click", () => runAircraftDetector().catch((err) => { if (labReviewMetaEl) labReviewMetaEl.textContent = err.message; toast(err.message); }));
+labDrawPolygonBtnEl?.addEventListener("click", startAircraftPolygonAnnotation);
+labCatalogRefreshBtnEl?.addEventListener("click", () => loadAircraftLabCatalog().then(() => toast("Model catalog refreshed")).catch((err) => toast(err.message)));
+labHostTrainingBtnEl?.addEventListener("click", showHostTrainingCommand);
+labDetectionListEl?.addEventListener("click", (evt) => {
+  const button = evt.target.closest("[data-aircraft-label]");
+  if (!button) return;
+  const detection = (state.aircraftDetectorResult?.detections || []).find((row) => row.detection_id === button.dataset.detectionId);
+  if (detection) saveAircraftDetectionLabel(detection, button.dataset.aircraftLabel).catch((err) => toast(err.message));
+});
+taskingOpportunityBtnEl?.addEventListener("click", () => checkTaskingOpportunity().catch((err) => { if (taskingOpportunityResultEl) taskingOpportunityResultEl.textContent = err.message; toast(err.message); }));
+
+monitoringCreateBtnEl?.addEventListener("click", () => createMonitoring().then(() => toast("Monitoring target created and refreshed.")).catch((err) => { if (monitoringMetaEl) monitoringMetaEl.textContent = err.message; toast(err.message); }));
+monitoringRefreshAllBtnEl?.addEventListener("click", async () => {
+  try { await Promise.all((state.monitoring.monitors || []).map((row) => refreshMonitoring(row.monitor_id))); await loadMonitoring(); toast("All monitoring targets refreshed."); }
+  catch (err) { toast(err.message); }
+});
+monitoringRefreshBtnEl?.addEventListener("click", () => refreshMonitoring().then(() => toast("Monitor refreshed.")).catch((err) => toast(err.message)));
+
 animationFormEl.addEventListener("submit", async (evt) => {
   evt.preventDefault();
   try {
@@ -7525,6 +8146,7 @@ sentinelCollectionEl?.addEventListener("change", () => {
 updateLockButtonState();
 updateMapStatus();
 refreshMapTimebarData();
+renderAircraftDetectorPanel();
 loadLocationHistory();
 ensureLayerEditorControlAnchor();
 applyLayerControlUiState();
@@ -7543,6 +8165,7 @@ if (DEBUG_NET) {
 
 (async () => {
   resetLayerSearchResults();
+  await loadAircraftDetectorRuntime();
   await loadSources();
   await loadContracts();
   await loadCollections();
