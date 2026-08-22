@@ -22,6 +22,24 @@ const state = {
   animationGeometry: null,
   selectedCarouselId: null,
   selectedCarouselIds: new Set(),
+  mosaic: {
+    open: false,
+    mode: "whole_strip",
+    geometry: null,
+    selectedItemIds: [],
+    sensorGeneration: "",
+    resolution: null,
+    jobId: null,
+    job: null,
+    projectId: null,
+    pollTimer: null,
+    drawLayer: null,
+    drawHandlerActive: false,
+    repairGeometry: null,
+    repairLayer: null,
+    repairId: null,
+    repairDrawHandlerActive: false,
+  },
   compareMode: false,
   compareFrames: [],
   lastDetailFetchAt: 0,
@@ -56,13 +74,32 @@ const state = {
   aircraftDetectorRuntime: null,
   aircraftDetectorResult: null,
   aircraftAnnotationMode: false,
+  aircraftLabCatalog: null,
+  aircraftLabJobId: null,
+  aircraftLabJobTimer: null,
   activeTab: "explore",
+  activeTool: null,
+  secondaryTabs: {
+    tasking: "proposed",
+    monitoring: "overview",
+    analyze: "run_analysis",
+    mosaic: "projects",
+  },
   gridPlan: null,
   monitoring: {
     monitors: [],
     selectedId: null,
     selectedRefresh: null,
     footprintLayer: null,
+  },
+  monitoringProjectId: null,
+  archiveWatch: {
+    watches: [],
+    selectedId: null,
+    geometry: null,
+    layer: null,
+    drawHandler: null,
+    drawHandlerActive: false,
   },
   taskingMode: "idle",
   taskingTargetType: null,
@@ -74,6 +111,9 @@ const state = {
   taskingProducts: [],
   taskingProjects: [],
   taskingOrders: [],
+  proposedActions: [],
+  analysisRecipes: [],
+  monitoringProjects: [],
   taskingRefreshAt: null,
   taskingIgnoreOutsideClickUntil: 0,
   workflows: [],
@@ -201,6 +241,7 @@ const MP4_JOB_POLL_MS = 2500;
 const REPORT_RUN_POLL_MS = 3000;
 const LOCATION_HISTORY_KEY = "imageMate.locationHistory.v1";
 const LOCATION_HISTORY_LIMIT = 80;
+const MAP_DEFAULT_VIEW_KEY = "imageMate.mapDefaultView.v1";
 const DETAIL_LAYER_LABELS = {
   natural: "Natural Colour",
   false_color: "False Colour",
@@ -217,10 +258,27 @@ function debugLog(message, meta = null) {
   else console.debug(`[GeoDebug] ${message}`);
 }
 
+function loadMapDefaultView() {
+  const fallback = { lat: 37.6188, lon: -122.375, zoom: 10 };
+  try {
+    const raw = window.localStorage.getItem(MAP_DEFAULT_VIEW_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    const lat = Number(parsed?.lat);
+    const lon = Number(parsed?.lon);
+    const zoom = Number(parsed?.zoom);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon) || !Number.isFinite(zoom)) return fallback;
+    if (Math.abs(lat) > 90 || Math.abs(lon) > 180 || zoom < 1 || zoom > 20) return fallback;
+    return { lat, lon, zoom };
+  } catch (_) {
+    return fallback;
+  }
+}
+
+const initialMapView = loadMapDefaultView();
 const map = L.map("map", {
   zoomControl: true,
   fadeAnimation: false,
-}).setView([37.6188, -122.375], 10);
+}).setView([initialMapView.lat, initialMapView.lon], initialMapView.zoom);
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
   attribution: "&copy; OpenStreetMap contributors",
   maxZoom: 20,
@@ -257,6 +315,50 @@ map.addControl(drawControl);
 const taskingDrawLayer = L.layerGroup().addTo(map);
 
 map.on(L.Draw.Event.CREATED, (evt) => {
+  if (state.archiveWatch.drawHandlerActive) {
+    state.archiveWatch.drawHandlerActive = false;
+    state.archiveWatch.drawHandler = null;
+    const geometry = normalizeGeometryLongitudes(evt.layer.toGeoJSON().geometry);
+    if (geometry?.type !== "Polygon") {
+      toast("Archive watches must use a polygon");
+      return;
+    }
+    if (state.archiveWatch.layer) map.removeLayer(state.archiveWatch.layer);
+    state.archiveWatch.geometry = geometry;
+    state.archiveWatch.layer = evt.layer;
+    evt.layer.addTo(map);
+    if (archiveWatchMetaEl) archiveWatchMetaEl.textContent = "Watch polygon captured. Create the watch when the area and filters are ready.";
+    toast("Archive watch polygon captured");
+    return;
+  }
+  if (state.mosaic.repairDrawHandlerActive) {
+    state.mosaic.repairDrawHandlerActive = false;
+    const geometry = normalizeGeometryLongitudes(evt.layer.toGeoJSON().geometry);
+    if (geometry?.type !== "Polygon") {
+      toast("Cloud repair AOI must be a polygon");
+      return;
+    }
+    state.mosaic.repairGeometry = geometry;
+    state.mosaic.repairLayer = evt.layer;
+    evt.layer.addTo(map);
+    submitMosaicCloudRepair().catch((err) => toast(err.message || "Cloud repair could not be queued"));
+    return;
+  }
+  if (state.mosaic.drawHandlerActive) {
+    state.mosaic.drawHandlerActive = false;
+    const geometry = normalizeGeometryLongitudes(evt.layer.toGeoJSON().geometry);
+    if (geometry?.type !== "Polygon") {
+      toast("Mosaic AOI must be a polygon");
+      return;
+    }
+    state.mosaic.geometry = geometry;
+    state.mosaic.drawLayer = evt.layer;
+    evt.layer.addTo(map);
+    if (mosaicPopoverStatusEl) mosaicPopoverStatusEl.textContent = "AOI captured. Generate when the source stack is ready.";
+    renderMosaicWorkbench();
+    showMosaicPopover();
+    return;
+  }
   if (state.aircraftAnnotationMode) {
     state.aircraftAnnotationMode = false;
     const geometry = normalizeGeometryLongitudes(evt.layer.toGeoJSON().geometry);
@@ -307,6 +409,7 @@ const maxCloudEl = document.getElementById("maxCloud");
 const satelliteNameEl = document.getElementById("satelliteName");
 const minGsdEl = document.getElementById("minGsd");
 const maxGsdEl = document.getElementById("maxGsd");
+const sensorGenerationEl = document.getElementById("sensorGeneration");
 const limitEl = document.getElementById("limit");
 const sourceSelectEl = document.getElementById("sourceSelect");
 const sentinelCollectionEl = document.getElementById("sentinelCollection");
@@ -353,11 +456,14 @@ const tilePerfMerlinEl = document.getElementById("tilePerfMerlin");
 const mapLocateEl = document.getElementById("mapLocate");
 const mapLocateFormEl = document.getElementById("mapLocateForm");
 const mapLocateInputEl = document.getElementById("mapLocateInput");
+const mapLocateSaveBtnEl = document.getElementById("mapLocateSaveBtn");
 const mapLocateHistoryBtnEl = document.getElementById("mapLocateHistoryBtn");
 const mapLocateHistoryEl = document.getElementById("mapLocateHistory");
 const mapContextMenuEl = document.getElementById("mapContextMenu");
 const ctxCopyLatLonEl = document.getElementById("ctxCopyLatLon");
 const ctxCreateAnimationEl = document.getElementById("ctxCreateAnimation");
+const ctxCreateMonitoringProjectEl = document.getElementById("ctxCreateMonitoringProject");
+const ctxCreateMosaicEl = document.getElementById("ctxCreateMosaic");
 const ctxTaskImageEl = document.getElementById("ctxTaskImage");
 const taskingTypeMenuEl = document.getElementById("taskingTypeMenu");
 const taskingTypePointEl = document.getElementById("taskingTypePoint");
@@ -369,6 +475,8 @@ const taskingFormEl = document.getElementById("taskingForm");
 const taskingOrderNameEl = document.getElementById("taskingOrderName");
 const taskingProjectNameEl = document.getElementById("taskingProjectName");
 const taskingProductEl = document.getElementById("taskingProduct");
+const taskingAnalysisRecipeEl = document.getElementById("taskingAnalysisRecipe");
+const taskingMonitoringProjectEl = document.getElementById("taskingMonitoringProject");
 const taskingStartEl = document.getElementById("taskingStart");
 const taskingEndEl = document.getElementById("taskingEnd");
 const taskingCadenceLabelEl = document.getElementById("taskingCadenceLabel");
@@ -395,6 +503,16 @@ const compareDateTagEl = document.getElementById("compareDateTag");
 const compareStepUpBtnEl = document.getElementById("compareStepUpBtn");
 const compareStepDownBtnEl = document.getElementById("compareStepDownBtn");
 const animateSeriesBtnEl = document.getElementById("animateSeriesBtn");
+const mosaicBtnEl = document.getElementById("mosaicBtn");
+const mosaicPopoverEl = document.getElementById("mosaicPopover");
+const mosaicSelectionSummaryEl = document.getElementById("mosaicSelectionSummary");
+const mosaicPopoverStatusEl = document.getElementById("mosaicPopoverStatus");
+const mosaicGenerateBtnEl = document.getElementById("mosaicGenerateBtn");
+const mosaicCloseBtnEl = document.getElementById("mosaicCloseBtn");
+const mosaicSensorGenerationEl = document.getElementById("mosaicSensorGeneration");
+const mosaicOutputBandsEl = document.getElementById("mosaicOutputBands");
+const mosaicResolutionEl = document.getElementById("mosaicResolution");
+const mosaicAcceleratorEl = document.getElementById("mosaicAccelerator");
 const animateSeriesPopoverEl = document.getElementById("animateSeriesPopover");
 const animateSeriesSecondsEl = document.getElementById("animateSeriesSeconds");
 const animateSeriesLoopEl = document.getElementById("animateSeriesLoop");
@@ -414,18 +532,45 @@ const downloadOutcomeCsvBtnEl = document.getElementById("downloadOutcomeCsvBtn")
 const downloadVisibleQuickviewBtnEl = document.getElementById("downloadVisibleQuickviewBtn");
 const downloadVisibleL1dBtnEl = document.getElementById("downloadVisibleL1dBtn");
 const downloadCopiedTipEl = document.getElementById("downloadCopiedTip");
+const carouselSelectionBarEl = document.getElementById("carouselSelectionBar");
+const carouselSelectionCountEl = document.getElementById("carouselSelectionCount");
+const carouselAnalyzeBtnEl = document.getElementById("carouselAnalyzeBtn");
+const carouselMoreBtnEl = document.getElementById("carouselMoreBtn");
+const carouselMorePopoverEl = document.getElementById("carouselMorePopover");
+const carouselReportBtnEl = document.getElementById("carouselReportBtn");
 const lockIconEl = lockSelectionBtnEl?.querySelector(".lock-icon");
 const rightPanelTitleEl = document.getElementById("rightPanelTitle");
 const workbenchTabsEl = document.getElementById("workbenchTabs");
+const toolsMenuBtnEl = document.getElementById("toolsMenuBtn");
+const toolsDrawerEl = document.getElementById("toolsDrawer");
+const toolsDrawerCloseBtnEl = document.getElementById("toolsDrawerCloseBtn");
+const leftSettingsViewEl = document.getElementById("leftSettingsView");
+const settingsSummaryEl = document.getElementById("settingsSummary");
+const settingsRefreshBtnEl = document.getElementById("settingsRefreshBtn");
+const analysisRecipesPanelEl = document.getElementById("analysisRecipesPanel");
+const analysisRecipesListEl = document.getElementById("analysisRecipesList");
+const analysisRecipesRefreshBtnEl = document.getElementById("analysisRecipesRefreshBtn");
 const leftExploreViewEl = document.getElementById("leftExploreView");
 const leftTaskingViewEl = document.getElementById("leftTaskingView");
 const leftGridViewEl = document.getElementById("leftGridView");
 const leftAnalyticsViewEl = document.getElementById("leftAnalyticsView");
 const leftLabViewEl = document.getElementById("leftLabView");
+const leftMosaicViewEl = document.getElementById("leftMosaicView");
 const leftWorkflowsViewEl = document.getElementById("leftWorkflowsView");
 const leftSchedulesViewEl = document.getElementById("leftSchedulesView");
 const leftMonitoringViewEl = document.getElementById("leftMonitoringView");
 const leftRunsViewEl = document.getElementById("leftRunsView");
+const mosaicStatusCardsEl = document.getElementById("mosaicStatusCards");
+const mosaicWorkbenchMetaEl = document.getElementById("mosaicWorkbenchMeta");
+const mosaicSourceCountEl = document.getElementById("mosaicSourceCount");
+const mosaicSourceListEl = document.getElementById("mosaicSourceList");
+const mosaicQualityResultEl = document.getElementById("mosaicQualityResult");
+const mosaicRepairMetaEl = document.getElementById("mosaicRepairMeta");
+const mosaicClearBtnEl = document.getElementById("mosaicClearBtn");
+const mosaicRefreshBtnEl = document.getElementById("mosaicRefreshBtn");
+const mosaicStartWorkerBtnEl = document.getElementById("mosaicStartWorkerBtn");
+const mosaicCloudEditBtnEl = document.getElementById("mosaicCloudEditBtn");
+const mosaicFinalizeBtnEl = document.getElementById("mosaicFinalizeBtn");
 const monitoringNameEl = document.getElementById("monitoringName");
 const monitoringExpectedDaysEl = document.getElementById("monitoringExpectedDays");
 const monitoringCollectionEl = document.getElementById("monitoringCollection");
@@ -439,6 +584,29 @@ const monitoringCountEl = document.getElementById("monitoringCount");
 const monitoringListEl = document.getElementById("monitoringList");
 const monitoringStatusCardsEl = document.getElementById("monitoringStatusCards");
 const monitoringDetailEl = document.getElementById("monitoringDetail");
+const monitoringProjectNameEl = document.getElementById("monitoringProjectName");
+const monitoringProjectSourceEl = document.getElementById("monitoringProjectSource");
+const monitoringProjectCollectionEl = document.getElementById("monitoringProjectCollection");
+const monitoringProjectRecipeEl = document.getElementById("monitoringProjectRecipe");
+const monitoringProjectEmailActionEl = document.getElementById("monitoringProjectEmailAction");
+const monitoringProjectWorkflowIdEl = document.getElementById("monitoringProjectWorkflowId");
+const monitoringProjectTaskingActionEl = document.getElementById("monitoringProjectTaskingAction");
+const monitoringProjectCreateBtnEl = document.getElementById("monitoringProjectCreateBtn");
+const monitoringProjectCheckBtnEl = document.getElementById("monitoringProjectCheckBtn");
+const monitoringProjectMetaEl = document.getElementById("monitoringProjectMeta");
+const monitoringProjectListEl = document.getElementById("monitoringProjectList");
+const archiveWatchNameEl = document.getElementById("archiveWatchName");
+const archiveWatchIntervalEl = document.getElementById("archiveWatchInterval");
+const archiveWatchSourceEl = document.getElementById("archiveWatchSource");
+const archiveWatchCollectionEl = document.getElementById("archiveWatchCollection");
+const archiveWatchMaxCloudEl = document.getElementById("archiveWatchMaxCloud");
+const archiveWatchEmailEl = document.getElementById("archiveWatchEmail");
+const archiveWatchDrawBtnEl = document.getElementById("archiveWatchDrawBtn");
+const archiveWatchCreateBtnEl = document.getElementById("archiveWatchCreateBtn");
+const archiveWatchMetaEl = document.getElementById("archiveWatchMeta");
+const archiveWatchCountEl = document.getElementById("archiveWatchCount");
+const archiveWatchListEl = document.getElementById("archiveWatchList");
+const archiveWatchDetailEl = document.getElementById("archiveWatchDetail");
 const taskingConfirmationEl = document.getElementById("taskingConfirmation");
 const taskingOpportunityBtnEl = document.getElementById("taskingOpportunityBtn");
 const taskingOpportunityResultEl = document.getElementById("taskingOpportunityResult");
@@ -470,9 +638,21 @@ const labRuntimeCardsEl = document.getElementById("labRuntimeCards");
 const labModelSelectEl = document.getElementById("labModelSelect");
 const labDatasetSelectEl = document.getElementById("labDatasetSelect");
 const labCatalogRefreshBtnEl = document.getElementById("labCatalogRefreshBtn");
-const labHostTrainingBtnEl = document.getElementById("labHostTrainingBtn");
+const labActivateModelBtnEl = document.getElementById("labActivateModelBtn");
 const labCatalogMetaEl = document.getElementById("labCatalogMeta");
 const labTrainingCommandEl = document.getElementById("labTrainingCommand");
+const labDatasetNameEl = document.getElementById("labDatasetName");
+const labTrainScenesEl = document.getElementById("labTrainScenes");
+const labValidationSceneEl = document.getElementById("labValidationScene");
+const labAllowSingleSceneEl = document.getElementById("labAllowSingleScene");
+const labEpochsEl = document.getElementById("labEpochs");
+const labImgSizeEl = document.getElementById("labImgSize");
+const labTrainingDeviceEl = document.getElementById("labTrainingDevice");
+const labBuildDatasetBtnEl = document.getElementById("labBuildDatasetBtn");
+const labTrainBtnEl = document.getElementById("labTrainBtn");
+const labEvaluateBtnEl = document.getElementById("labEvaluateBtn");
+const labDatasetMetaEl = document.getElementById("labDatasetMeta");
+const labJobMetaEl = document.getElementById("labJobMeta");
 const labActiveImageEl = document.getElementById("labActiveImage");
 const labRunDetectorBtnEl = document.getElementById("labRunDetectorBtn");
 const labDrawPolygonBtnEl = document.getElementById("labDrawPolygonBtn");
@@ -842,6 +1022,7 @@ function buildSearchPayloadForSource(geometry, sourceId, collectionOverride = nu
     limit,
     max_cloud_cover: parseOptionalNumber(maxCloudEl.value),
     satellite_name: (satelliteNameEl.value || "").trim() || null,
+    sensor_generation: (sensorGenerationEl?.value || "").trim() || null,
     min_gsd: parseOptionalNumber(minGsdEl.value),
     max_gsd: parseOptionalNumber(maxGsdEl.value),
   });
@@ -1642,6 +1823,25 @@ function saveLocationHistory() {
   }
 }
 
+function saveCurrentMapViewAsDefault() {
+  const center = map.getCenter();
+  const view = {
+    lat: Number(clampLatitude(center.lat)),
+    lon: Number(normalizeLongitude(center.lng)),
+    zoom: Number(map.getZoom()),
+  };
+  try {
+    window.localStorage.setItem(MAP_DEFAULT_VIEW_KEY, JSON.stringify(view));
+    if (mapLocateSaveBtnEl) {
+      mapLocateSaveBtnEl.title = `Default view saved at zoom ${view.zoom}`;
+      mapLocateSaveBtnEl.setAttribute("aria-label", `Default view saved at zoom ${view.zoom}`);
+    }
+    toast(`Default map view saved at zoom ${view.zoom}`);
+  } catch (_) {
+    toast("Could not save the default map view in this browser");
+  }
+}
+
 function addLocationHistory(entry) {
   const lat = clampLatitude(entry?.lat);
   const lon = normalizeLongitude(entry?.lon);
@@ -2093,7 +2293,10 @@ function formatCarouselMeta(item) {
   const captureDate = formatCaptureDate(item?.datetime);
   const gsd = collectionGsdForOverviewItem(item);
   const gsdText = formatGsdMeters(gsd);
-  return `${captureDate}, GSD=${gsdText === "n/a" ? gsdText : `${gsdText}m`}`;
+  const generation = item?.sensor_generation && item.sensor_generation !== "unknown"
+    ? `, ${item.sensor_generation === "mark-v" ? "Mark V" : "Mark IV"}`
+    : "";
+  return `${captureDate}, GSD=${gsdText === "n/a" ? gsdText : `${gsdText}m`}${generation}`;
 }
 
 function assetProxyUrl(rawUrl, options = {}) {
@@ -2105,6 +2308,19 @@ function assetProxyUrl(rawUrl, options = {}) {
   params.set("source_hint", sourceHint);
   if (options.render === true) params.set("render", "true");
   return `${apiBase}/api/assets/proxy?${params.toString()}`;
+}
+
+function archivePreviewUrl(item, assetKey = "thumbnail") {
+  if (!item?.id) return assetProxyUrl(thumbnailUrl(item), { sourceHint: sourceIdForItem(item) });
+  const params = new URLSearchParams({
+    item_id: String(item.id),
+    asset_key: assetKey,
+    source_id: sourceIdForItem(item),
+    collection_id: normalizeCollectionId(item.collection || ""),
+  });
+  const contractId = sourceIdForItem(item) === "satellogic" ? selectedSatellogicContractId() : selectedContractId();
+  if (contractId) params.set("contract_id", contractId);
+  return `${apiBase}/api/archive/preview?${params.toString()}`;
 }
 
 function hideContextMenu() {
@@ -3045,14 +3261,38 @@ async function cancelTaskingOrder(order) {
 function renderTaskingOrdersList() {
   if (!taskingOrdersListEl || !taskingOrdersMetaEl) return;
   const rows = Array.isArray(state.taskingOrders) ? state.taskingOrders : [];
+  const mode = state.secondaryTabs.tasking || "proposed";
   taskingOrdersListEl.innerHTML = "";
-  if (!rows.length) {
-    taskingOrdersListEl.innerHTML = `<div class="meta">No tasking orders found.</div>`;
-    taskingOrdersMetaEl.textContent = "No tasking orders loaded.";
+  if (mode === "proposed") {
+    const proposals = state.proposedActions || [];
+    taskingOrdersMetaEl.textContent = proposals.length ? `${proposals.length} action${proposals.length === 1 ? "" : "s"} awaiting analyst approval.` : "No proposed operational actions.";
+    taskingOrdersListEl.innerHTML = proposals.length ? proposals.map((action) => `<div class="tasking-order-card"><div class="row-main"><strong>${escapeHtml(action.action_type || "action")}</strong><span class="status-chip">${escapeHtml(action.status)}</span></div><div class="row-meta">Alert: ${escapeHtml(action.alert_id || "-")}</div><div class="row-meta">${escapeHtml(JSON.stringify(action.payload || {}))}</div><div class="actions"><button type="button" class="tiny proposed-approve-btn" data-proposed-action="${escapeHtml(action.action_id)}" data-proposed-decision="approve">Approve</button><button type="button" class="ghost tiny proposed-reject-btn" data-proposed-action="${escapeHtml(action.action_id)}" data-proposed-decision="reject">Reject</button></div></div>`).join("") : `<div class="meta">NewSat tasking and product-generation requests will appear here before submission.</div>`;
+    taskingOrdersListEl.querySelectorAll("[data-proposed-action]").forEach((button) => button.addEventListener("click", async (evt) => {
+      evt.stopPropagation();
+      try {
+        const actionId = button.dataset.proposedAction;
+        const decision = button.dataset.proposedDecision;
+        await apiJson(`/api/proposed-actions/${encodeURIComponent(actionId)}/${decision}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
+        await loadProposedActions();
+        toast(decision === "approve" ? "Action approved." : "Action rejected.");
+      } catch (err) { toast(err.message); }
+    }));
     return;
   }
-  taskingOrdersMetaEl.textContent = `Loaded ${rows.length} tasking order${rows.length === 1 ? "" : "s"}.`;
-  rows.forEach((order) => {
+  const statusSets = {
+    upcoming: new Set(["received", "submitted", "accepted", "programming", "queued"]),
+    active: new Set(["in_progress", "active", "collecting", "processing", "acquired"]),
+    history: new Set(["completed", "delivered", "canceled", "cancelled", "failed", "rejected"]),
+  };
+  const filterSet = statusSets[mode];
+  const filteredRows = filterSet ? rows.filter((order) => filterSet.has(String(order.status || "").toLowerCase())) : rows;
+  if (!filteredRows.length) {
+    taskingOrdersListEl.innerHTML = `<div class="meta">No tasking orders found.</div>`;
+    taskingOrdersMetaEl.textContent = `No ${mode} tasking orders found.`;
+    return;
+  }
+  taskingOrdersMetaEl.textContent = `Loaded ${filteredRows.length} ${mode} tasking order${filteredRows.length === 1 ? "" : "s"}.`;
+  filteredRows.forEach((order) => {
     const card = document.createElement("div");
     card.className = "tasking-order-card";
     const status = (order.status || "unknown").toString();
@@ -3101,6 +3341,14 @@ async function refreshTaskingOrders() {
   refreshMapTimebarData();
 }
 
+async function loadProposedActions() {
+  const data = await apiJson("/api/proposed-actions?status=pending_approval");
+  state.proposedActions = Array.isArray(data.actions) ? data.actions : [];
+  const badge = document.getElementById("proposedTaskingBadge");
+  if (badge) { badge.hidden = state.proposedActions.length === 0; badge.textContent = String(state.proposedActions.length); }
+  renderTaskingOrdersList();
+}
+
 async function refreshTaskingProjects() {
   const params = new URLSearchParams({ limit: "120" });
   const contractId = selectedContractId();
@@ -3115,10 +3363,97 @@ async function loadTaskingProducts() {
   state.taskingProducts = Array.isArray(data.products) ? data.products : [];
 }
 
+async function loadAnalysisRecipes() {
+  const data = await apiJson("/api/analysis/recipes?enabled_only=true");
+  state.analysisRecipes = Array.isArray(data.recipes) ? data.recipes : [];
+  if (taskingAnalysisRecipeEl) {
+    const selected = taskingAnalysisRecipeEl.value;
+    taskingAnalysisRecipeEl.innerHTML = `<option value="">Run manually later</option>${state.analysisRecipes.map((recipe) => `<option value="${escapeHtml(recipe.recipe_id)}">${escapeHtml(recipe.name)} · v${escapeHtml(recipe.version)}</option>`).join("")}`;
+    taskingAnalysisRecipeEl.value = selected;
+  }
+  if (monitoringProjectRecipeEl) {
+    const selected = monitoringProjectRecipeEl.value;
+    monitoringProjectRecipeEl.innerHTML = `<option value="">No recipe selected</option>${state.analysisRecipes.map((recipe) => `<option value="${escapeHtml(recipe.recipe_id)}">${escapeHtml(recipe.name)} · v${escapeHtml(recipe.version)}</option>`).join("")}`;
+    monitoringProjectRecipeEl.value = selected;
+  }
+  renderAnalysisRecipesList();
+}
+
+function renderAnalysisRecipesList() {
+  if (!analysisRecipesListEl) return;
+  analysisRecipesListEl.innerHTML = state.analysisRecipes.length ? state.analysisRecipes.map((recipe) => `
+    <div class="monitoring-row"><strong>${escapeHtml(recipe.name)} · v${escapeHtml(recipe.version)}</strong>
+      <span>${escapeHtml(recipe.description || "No description")}</span>
+      <span>${escapeHtml((recipe.compatibility?.sources || []).join(", ") || "Any source")} · ${(recipe.classes || []).length} classes</span>
+    </div>`).join("") : `<p class="meta">No recipes loaded.</p>`;
+}
+
+async function loadMonitoringProjects() {
+  const data = await apiJson("/api/monitoring/projects?enabled_only=true");
+  state.monitoringProjects = Array.isArray(data.projects) ? data.projects : [];
+  if (taskingMonitoringProjectEl) {
+    const selected = taskingMonitoringProjectEl.value;
+    taskingMonitoringProjectEl.innerHTML = `<option value="">No linked project</option>${state.monitoringProjects.map((project) => `<option value="${escapeHtml(project.project_id)}">${escapeHtml(project.name)}</option>`).join("")}`;
+    taskingMonitoringProjectEl.value = selected;
+  }
+  renderMonitoringProjectList();
+}
+
+function renderMonitoringProjectList() {
+  if (!monitoringProjectListEl) return;
+  const rows = state.monitoringProjects || [];
+  monitoringProjectListEl.innerHTML = rows.length ? rows.map((project) => `
+    <button type="button" class="monitoring-row ${project.project_id === state.monitoringProjectId ? "active" : ""}" data-monitoring-project-id="${escapeHtml(project.project_id)}">
+      <strong>${escapeHtml(project.name)}</strong><span>${escapeHtml(project.health || "unknown")} · ${escapeHtml(project.analysis_recipe_id || "no recipe")}</span>
+    </button>`).join("") : `<p class="meta">No projects yet.</p>`;
+  monitoringProjectListEl.querySelectorAll("[data-monitoring-project-id]").forEach((button) => button.addEventListener("click", async () => {
+    state.monitoringProjectId = button.dataset.monitoringProjectId;
+    renderMonitoringProjectList();
+    setRightPanelTitle("Monitor Evidence");
+    try {
+      const data = await apiJson(`/api/monitoring/projects/${encodeURIComponent(state.monitoringProjectId)}/alerts`);
+      timeCarouselListEl.innerHTML = data.alerts?.length ? data.alerts.map((alert) => `<div class="carousel-card"><div class="carousel-card-head"><strong>${escapeHtml(alert.title)}</strong></div><div class="card-date">${escapeHtml(alert.status)} · ${escapeHtml(alert.severity)}</div></div>`).join("") : `<div class="meta">No alerts for this project.</div>`;
+    } catch (err) { toast(err.message); }
+  }));
+}
+
+async function createMonitoringProject() {
+  const name = (monitoringProjectNameEl?.value || "").trim();
+  if (!name) throw new Error("Project name is required.");
+  const geometry = state.archiveWatch.geometry || viewportGeometry();
+  const sourceId = monitoringProjectSourceEl?.value || "satellogic";
+  const payload = {
+    name,
+    geometry,
+    sources: [{ source_id: sourceId, collection_id: (monitoringProjectCollectionEl?.value || "").trim() || (sourceId === "merlin-s2" ? "sentinel-2-l2a" : "quickview-visual-thumb"), contract_id: selectedContractId() }],
+    analysis_recipe_id: (monitoringProjectRecipeEl?.value || "").trim() || null,
+    actions: {
+      ...(monitoringProjectEmailActionEl?.checked ? { email: true } : {}),
+      ...((monitoringProjectWorkflowIdEl?.value || "").trim() ? { workflow_id: monitoringProjectWorkflowIdEl.value.trim() } : {}),
+      ...(monitoringProjectTaskingActionEl?.checked ? { new_sat_tasking: true } : {}),
+    },
+    quality_filters: { max_cloud_cover: Number(monitoringMaxCloudEl?.value || 60) },
+  };
+  const project = await apiJson("/api/monitoring/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+  state.monitoringProjectId = project.project_id;
+  if (monitoringProjectMetaEl) monitoringProjectMetaEl.textContent = `Created ${project.name}. The project is ready to check for new imagery.`;
+  await loadMonitoringProjects();
+}
+
+async function checkSelectedMonitoringProject() {
+  if (!state.monitoringProjectId) throw new Error("Select a monitoring project first.");
+  const data = await apiJson(`/api/monitoring/projects/${encodeURIComponent(state.monitoringProjectId)}/check`, { method: "POST" });
+  if (monitoringProjectMetaEl) monitoringProjectMetaEl.textContent = `Check complete: ${data.new_items?.length || 0} new imagery item(s), ${data.alerts?.length || 0} new alert(s).`;
+  await loadMonitoringProjects();
+}
+
 async function refreshTaskingPanel() {
   await Promise.all([
     refreshTaskingOrders(),
     refreshTaskingProjects(),
+    loadProposedActions(),
+    loadAnalysisRecipes(),
+    loadMonitoringProjects(),
   ]);
 }
 
@@ -3148,6 +3483,8 @@ function currentTaskingPayload(includeConfirmation = true) {
     end_date: endDate,
     revisit_period: state.taskingTargetType === "point" ? (cadence || null) : null,
     remapping_period: state.taskingTargetType === "area" ? (cadence || null) : null,
+    analysis_recipe_id: (taskingAnalysisRecipeEl?.value || "").trim() || null,
+    monitoring_project_id: (taskingMonitoringProjectEl?.value || "").trim() || null,
     confirmation: includeConfirmation ? (taskingConfirmationEl?.value || "").trim() : null,
     contract_id: selectedContractId(),
   };
@@ -3409,6 +3746,7 @@ async function saveAircraftAnnotation(geometryPx, label, detection = null) {
     x: selection.tile.x,
     y: selection.tile.y,
     scale: selection.scale,
+    contract_id: selection.contract_id || null,
     bounds_wgs84: result.input.bounds_wgs84,
     source_width_px: result.input.width_px,
     source_height_px: result.input.height_px,
@@ -3417,6 +3755,7 @@ async function saveAircraftAnnotation(geometryPx, label, detection = null) {
     detection_id: detection?.detection_id || null,
     confidence: detection?.confidence ?? null,
     note: (labAnnotationNoteEl?.value || "").trim() || null,
+    model_id: result.model?.id || labModelSelectEl?.value || "active",
   };
   const annotation = await apiJson("/api/aircraft-lab/annotations", {
     method: "POST",
@@ -3473,25 +3812,158 @@ async function saveManualAircraftPolygon(geometry) {
 
 async function loadAircraftLabCatalog() {
   const data = await apiJson("/api/aircraft-lab/catalog", { cache: "no-store" });
+  state.aircraftLabCatalog = data;
   if (labModelSelectEl) {
     labModelSelectEl.innerHTML = (data.models || []).map((model) => `<option value="${escapeHtml(model.id)}">${escapeHtml(model.name)}${model.active ? " · active" : ""}</option>`).join("") || `<option value="configured">Configured local model</option>`;
+    const activeModel = (data.models || []).find((model) => model.active);
+    if (activeModel) labModelSelectEl.value = activeModel.id;
   }
   if (labDatasetSelectEl) {
-    labDatasetSelectEl.innerHTML = `<option value="">No prepared bundle</option>` + (data.datasets || []).map((dataset) => `<option value="${escapeHtml(dataset.id)}">${escapeHtml(dataset.name)} · ${dataset.scene_count || 0} scenes</option>`).join("");
+    labDatasetSelectEl.innerHTML = `<option value="">Select a prepared bundle</option>` + (data.datasets || []).map((dataset) => `<option value="${escapeHtml(dataset.id)}">${escapeHtml(dataset.name)} · ${dataset.scene_count || 0} scenes${dataset.validation_ready ? " · validated" : " · experimental"}</option>`).join("");
   }
+  renderAircraftLabSceneSelectors(data.annotation_scenes || []);
   if (labRuntimeCardsEl) {
     const detector = data.detector || {};
     labRuntimeCardsEl.innerHTML = [["Model", detector.model_name || "n/a"], ["Runtime", detector.runtime_available ? "ready" : "unavailable"], ["Annotations", String(data.annotation_count || 0)]].map(([label, value]) => `<div class="status-card"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join("");
   }
   if (labCatalogMetaEl) labCatalogMetaEl.textContent = `${(data.models || []).length} model(s) · ${(data.datasets || []).length} prepared bundle(s) · ${data.annotation_count || 0} saved annotation(s).`;
+  renderAircraftLabDatasetMeta();
 }
 
-function showHostTrainingCommand() {
-  if (!labTrainingCommandEl) return;
-  const model = labModelSelectEl?.selectedOptions?.[0]?.textContent || "configured model";
-  const dataset = labDatasetSelectEl?.selectedOptions?.[0]?.textContent || "selected review manifests";
-  labTrainingCommandEl.textContent = `Selected model: ${model}\nSelected data: ${dataset}\n\nRun from the Mac host after you have separate train and held-out review manifests:\n\n.venv/bin/python backend/scripts/train_aircraft.py \\\n  --manifest /path/to/train/review_manifest.json \\\n  --validation-manifest /path/to/held-out/review_manifest.json \\\n  --outdir /path/to/new-finetune \\\n  --device mps --epochs 10 --imgsz 1024 --batch 1 --workers 0 --export-onnx`;
-  labTrainingCommandEl.hidden = !labTrainingCommandEl.hidden;
+function renderAircraftLabSceneSelectors(scenes) {
+  if (!labTrainScenesEl || !labValidationSceneEl) return;
+  const previousTrain = new Set([...labTrainScenesEl.selectedOptions].map((option) => option.value));
+  const previousValidation = labValidationSceneEl.value;
+  const options = (scenes || []).map((scene) => `<option value="${escapeHtml(scene.item_id)}">${escapeHtml(scene.item_id)} · ${scene.annotation_count || 0} labels · ${escapeHtml(JSON.stringify(scene.counts || {}))}</option>`).join("");
+  labTrainScenesEl.innerHTML = options;
+  labValidationSceneEl.innerHTML = `<option value="">Select a held-out scene</option>${options}`;
+  [...labTrainScenesEl.options].forEach((option) => {
+    option.selected = previousTrain.size ? previousTrain.has(option.value) : true;
+  });
+  if (previousValidation && [...labValidationSceneEl.options].some((option) => option.value === previousValidation)) {
+    labValidationSceneEl.value = previousValidation;
+  }
+  if (labValidationSceneEl.value) {
+    const heldOut = [...labTrainScenesEl.options].find((option) => option.value === labValidationSceneEl.value);
+    if (heldOut) heldOut.selected = false;
+  }
+}
+
+function renderAircraftLabDatasetMeta() {
+  if (!labDatasetMetaEl) return;
+  const dataset = (state.aircraftLabCatalog?.datasets || []).find((row) => row.id === labDatasetSelectEl?.value);
+  if (!dataset) {
+    labDatasetMetaEl.textContent = "Build a dataset from saved labels, then select it here.";
+    return;
+  }
+  const warnings = Array.isArray(dataset.warnings) && dataset.warnings.length ? ` Warnings: ${dataset.warnings.join("; ")}` : "";
+  labDatasetMetaEl.textContent = `${dataset.name}: ${dataset.annotation_count || 0} labels across ${dataset.scene_count || 0} scene(s).${warnings}`;
+}
+
+function clearAircraftLabJobTimer() {
+  if (state.aircraftLabJobTimer) window.clearTimeout(state.aircraftLabJobTimer);
+  state.aircraftLabJobTimer = null;
+}
+
+async function pollAircraftLabJob(jobId) {
+  if (!jobId) return;
+  try {
+    const job = await apiJson(`/api/aircraft-lab/jobs/${encodeURIComponent(jobId)}`, { cache: "no-store" });
+    const progress = Number(job.progress || 0);
+    if (labJobMetaEl) labJobMetaEl.textContent = `${job.kind || "job"}: ${job.status || "unknown"} · ${progress}% · ${job.message || ""}${job.error ? ` ${job.error}` : ""}`;
+    if (["queued", "running"].includes(String(job.status || ""))) {
+      state.aircraftLabJobTimer = window.setTimeout(() => pollAircraftLabJob(jobId), 1500);
+    } else {
+      state.aircraftLabJobId = null;
+      clearAircraftLabJobTimer();
+      await loadAircraftLabCatalog();
+      if (job.status === "succeeded") toast(`${job.kind === "training" ? "Fine-tune" : "Evaluation"} completed.`);
+    }
+  } catch (err) {
+    if (labJobMetaEl) labJobMetaEl.textContent = `Job status unavailable: ${err.message}`;
+    state.aircraftLabJobTimer = window.setTimeout(() => pollAircraftLabJob(jobId), 2500);
+  }
+}
+
+function startAircraftLabJobPolling(job) {
+  clearAircraftLabJobTimer();
+  state.aircraftLabJobId = job?.job_id || null;
+  if (state.aircraftLabJobId) pollAircraftLabJob(state.aircraftLabJobId).catch(() => {});
+}
+
+async function buildAircraftLabDataset() {
+  const validationId = labValidationSceneEl?.value || "";
+  const trainIds = [...(labTrainScenesEl?.selectedOptions || [])].map((option) => option.value).filter((value) => value && value !== validationId);
+  const allowSingleScene = Boolean(labAllowSingleSceneEl?.checked);
+  if (!trainIds.length) throw new Error("Select at least one training scene.");
+  const data = await apiJson("/api/aircraft-lab/datasets/build", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: (labDatasetNameEl?.value || "aircraft-l1d-finetune").trim(),
+      train_item_ids: trainIds,
+      validation_item_ids: validationId ? [validationId] : [],
+      allow_single_scene: allowSingleScene,
+    }),
+  });
+  await loadAircraftLabCatalog();
+  if (labDatasetSelectEl && data.dataset?.id) labDatasetSelectEl.value = data.dataset.id;
+  renderAircraftLabDatasetMeta();
+  toast("Training dataset built from Model Lab labels.");
+}
+
+async function startAircraftLabTraining() {
+  const datasetId = labDatasetSelectEl?.value || "";
+  if (!datasetId) throw new Error("Select a prepared training dataset first.");
+  const job = await apiJson("/api/aircraft-lab/train", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      dataset_id: datasetId,
+      model_id: labModelSelectEl?.value || "active",
+      device: labTrainingDeviceEl?.value || "mps",
+      epochs: Number(labEpochsEl?.value || 10),
+      imgsz: Number(labImgSizeEl?.value || 1024),
+      batch: 1,
+      workers: 0,
+      allow_single_scene: Boolean(labAllowSingleSceneEl?.checked),
+      export_onnx: true,
+    }),
+  });
+  if (labTrainingCommandEl) {
+    labTrainingCommandEl.hidden = false;
+    labTrainingCommandEl.textContent = `Fine-tune job ${job.job_id} queued. The host training runtime will produce a new ONNX model without changing the active model.`;
+  }
+  startAircraftLabJobPolling(job);
+}
+
+async function startAircraftLabEvaluation() {
+  const datasetId = labDatasetSelectEl?.value || "";
+  if (!datasetId) throw new Error("Select a prepared validation dataset first.");
+  const job = await apiJson("/api/aircraft-lab/evaluate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dataset_id: datasetId, model_id: labModelSelectEl?.value || "active", device: labTrainingDeviceEl?.value || "mps" }),
+  });
+  if (labTrainingCommandEl) {
+    labTrainingCommandEl.hidden = false;
+    labTrainingCommandEl.textContent = `Evaluation job ${job.job_id} queued against the held-out scene. Metrics will appear in the job status and evaluation artifact.`;
+  }
+  startAircraftLabJobPolling(job);
+}
+
+async function activateAircraftLabModel() {
+  const modelId = labModelSelectEl?.value || "configured";
+  const model = labModelSelectEl?.selectedOptions?.[0]?.textContent || modelId;
+  const data = await apiJson("/api/aircraft-lab/models/activate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model_id: modelId }),
+  });
+  await loadAircraftLabCatalog();
+  await loadAircraftDetectorRuntime();
+  toast(`Activated ${model}`);
+  if (labReviewMetaEl) labReviewMetaEl.textContent = `${data.model?.model_name || model} is now the active detector.`;
 }
 
 function renderAircraftDetectorResult(result) {
@@ -3542,6 +4014,7 @@ async function runAircraftDetector() {
       scale: selection.scale,
       tile_matrix_set: "WebMercatorQuad",
       contract_id: selection.contract_id,
+      model_id: labModelSelectEl?.value || "active",
     }),
   });
   renderAircraftDetectorResult(data);
@@ -3601,6 +4074,152 @@ async function createMonitoring() {
   await refreshMonitoring(data.monitor_id);
 }
 
+function renderArchiveWatchGeometry() {
+  if (state.archiveWatch.layer) {
+    map.removeLayer(state.archiveWatch.layer);
+    state.archiveWatch.layer = null;
+  }
+  if (!state.archiveWatch.geometry) return;
+  state.archiveWatch.layer = L.geoJSON(state.archiveWatch.geometry, {
+    style: { color: "#26c0a5", weight: 2, dashArray: "6 4", fillColor: "#26c0a5", fillOpacity: 0.1 },
+  }).addTo(map);
+}
+
+function renderArchiveWatchList() {
+  const rows = state.archiveWatch.watches || [];
+  if (archiveWatchCountEl) archiveWatchCountEl.textContent = String(rows.length);
+  if (!archiveWatchListEl) return;
+  if (!rows.length) {
+    archiveWatchListEl.innerHTML = `<p class="meta">No archive watches yet.</p>`;
+    if (archiveWatchDetailEl) archiveWatchDetailEl.textContent = "Select an archive watch to inspect it.";
+    return;
+  }
+  archiveWatchListEl.innerHTML = rows.map((row) => `
+    <div class="archive-watch-row">
+      <button type="button" class="monitoring-row ${row.watch_id === state.archiveWatch.selectedId ? "active" : ""}" data-archive-watch-id="${escapeHtml(row.watch_id)}">
+        <strong>${escapeHtml(row.name || "Archive watch")}</strong>
+        <span>${row.enabled ? "active" : "paused"} · ${escapeHtml(row.source_id || "source")} / ${escapeHtml(row.collection_id || "collection")}</span>
+        <span>${row.last_new_count || 0} new last check · ${row.pending_count || 0} pending email</span>
+      </button>
+      <div class="archive-watch-actions">
+        <button type="button" class="ghost tiny" data-archive-watch-check="${escapeHtml(row.watch_id)}">Check now</button>
+        <button type="button" class="ghost tiny" data-archive-watch-toggle="${escapeHtml(row.watch_id)}">${row.enabled ? "Pause" : "Resume"}</button>
+        <button type="button" class="ghost tiny" data-archive-watch-delete="${escapeHtml(row.watch_id)}">Delete</button>
+      </div>
+    </div>`).join("");
+  archiveWatchListEl.querySelectorAll("[data-archive-watch-id]").forEach((button) => button.addEventListener("click", () => selectArchiveWatch(button.dataset.archiveWatchId)));
+  archiveWatchListEl.querySelectorAll("[data-archive-watch-check]").forEach((button) => button.addEventListener("click", () => checkArchiveWatch(button.dataset.archiveWatchCheck).catch((err) => toast(err.message))));
+  archiveWatchListEl.querySelectorAll("[data-archive-watch-toggle]").forEach((button) => button.addEventListener("click", () => toggleArchiveWatch(button.dataset.archiveWatchToggle).catch((err) => toast(err.message))));
+  archiveWatchListEl.querySelectorAll("[data-archive-watch-delete]").forEach((button) => button.addEventListener("click", () => deleteArchiveWatch(button.dataset.archiveWatchDelete).catch((err) => toast(err.message))));
+}
+
+async function loadArchiveWatches() {
+  const data = await apiJson("/api/archive-watches");
+  state.archiveWatch.watches = Array.isArray(data.watches) ? data.watches : [];
+  if (state.archiveWatch.selectedId && !state.archiveWatch.watches.some((row) => row.watch_id === state.archiveWatch.selectedId)) {
+    state.archiveWatch.selectedId = null;
+  }
+  renderArchiveWatchList();
+  const selected = state.archiveWatch.watches.find((row) => row.watch_id === state.archiveWatch.selectedId);
+  if (selected && archiveWatchDetailEl) archiveWatchDetailEl.textContent = JSON.stringify(selected, null, 2);
+}
+
+async function selectArchiveWatch(watchId) {
+  const row = await apiJson(`/api/archive-watches/${encodeURIComponent(watchId)}`);
+  state.archiveWatch.selectedId = watchId;
+  state.archiveWatch.geometry = row.geometry || null;
+  renderArchiveWatchGeometry();
+  if (archiveWatchDetailEl) archiveWatchDetailEl.textContent = JSON.stringify(row, null, 2);
+  renderArchiveWatchList();
+}
+
+async function checkArchiveWatch(watchId) {
+  const id = watchId || state.archiveWatch.selectedId;
+  if (!id) throw new Error("Select an archive watch first.");
+  if (archiveWatchMetaEl) archiveWatchMetaEl.textContent = "Checking the archive for new imagery…";
+  const result = await apiJson(`/api/archive-watches/${encodeURIComponent(id)}/check`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+  state.archiveWatch.selectedId = id;
+  const index = state.archiveWatch.watches.findIndex((row) => row.watch_id === id);
+  if (index >= 0 && result.watch) state.archiveWatch.watches[index] = result.watch;
+  if (archiveWatchDetailEl) archiveWatchDetailEl.textContent = JSON.stringify(result, null, 2);
+  renderArchiveWatchList();
+  const emailStatus = result.email?.status || "none";
+  if (archiveWatchMetaEl) archiveWatchMetaEl.textContent = `${result.new_count || 0} new item(s). Email status: ${emailStatus}.`;
+  toast(`${result.new_count || 0} new archive item(s) found`);
+  return result;
+}
+
+async function toggleArchiveWatch(watchId) {
+  const row = state.archiveWatch.watches.find((item) => item.watch_id === watchId);
+  if (!row) return;
+  const updated = await apiJson(`/api/archive-watches/${encodeURIComponent(watchId)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled: !row.enabled }) });
+  const index = state.archiveWatch.watches.findIndex((item) => item.watch_id === watchId);
+  if (index >= 0) state.archiveWatch.watches[index] = updated;
+  renderArchiveWatchList();
+  toast(updated.enabled ? "Archive watch resumed" : "Archive watch paused");
+}
+
+async function deleteArchiveWatch(watchId) {
+  const row = state.archiveWatch.watches.find((item) => item.watch_id === watchId);
+  if (!row) return;
+  if (typeof window.confirm === "function" && !window.confirm(`Delete archive watch “${row.name || "Archive watch"}”?`)) return;
+  await apiJson(`/api/archive-watches/${encodeURIComponent(watchId)}`, { method: "DELETE" });
+  if (state.archiveWatch.selectedId === watchId) {
+    state.archiveWatch.selectedId = null;
+    state.archiveWatch.geometry = null;
+    renderArchiveWatchGeometry();
+  }
+  await loadArchiveWatches();
+  toast("Archive watch deleted");
+}
+
+function startArchiveWatchDraw() {
+  setWorkbenchTab("monitoring");
+  if (state.archiveWatch.drawHandler) state.archiveWatch.drawHandler.disable();
+  state.archiveWatch.drawHandlerActive = true;
+  state.archiveWatch.drawHandler = new L.Draw.Polygon(map, {
+    allowIntersection: false,
+    showArea: true,
+    shapeOptions: { color: "#26c0a5", weight: 2, dashArray: "6 4", fillColor: "#26c0a5", fillOpacity: 0.1 },
+  });
+  state.archiveWatch.drawHandler.enable();
+  if (archiveWatchMetaEl) archiveWatchMetaEl.textContent = "Click polygon vertices on the map and close the shape to capture the watch area.";
+  toast("Draw the archive watch polygon");
+}
+
+async function createArchiveWatch() {
+  const name = (archiveWatchNameEl?.value || "").trim();
+  if (!name) throw new Error("Archive watch name is required.");
+  if (!state.archiveWatch.geometry) throw new Error("Draw an archive watch polygon first.");
+  const sourceId = normalizeSourceId(archiveWatchSourceEl?.value || selectedSourceId());
+  let collectionId = (archiveWatchCollectionEl?.value || "").trim();
+  if (sourceId === "merlin-s2" && ["quickview-visual-thumb", "quickview-visual", "l1d-sr"].includes(collectionId)) collectionId = "sentinel-2-l2a";
+  if (sourceId === "satellogic" && collectionId.startsWith("sentinel-2")) collectionId = "quickview-visual-thumb";
+  const data = await apiJson("/api/archive-watches", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+    name,
+    geometry: state.archiveWatch.geometry,
+    source_id: sourceId,
+    collection_id: collectionId,
+    contract_id: sourceId === "satellogic" ? selectedContractId() : null,
+    filters: { max_cloud_cover: parseOptionalNumber(archiveWatchMaxCloudEl?.value) },
+    email_to: (archiveWatchEmailEl?.value || "").trim() || null,
+    poll_interval_seconds: Number(archiveWatchIntervalEl?.value || 300),
+  }) });
+  state.archiveWatch.selectedId = data.watch_id;
+  await loadArchiveWatches();
+  await selectArchiveWatch(data.watch_id);
+  if (archiveWatchMetaEl) archiveWatchMetaEl.textContent = "Archive watch created. Use Check now to verify the archive and email configuration.";
+  toast("Archive watch created");
+}
+
+function syncArchiveWatchCollection() {
+  if (!archiveWatchSourceEl || !archiveWatchCollectionEl) return;
+  const sourceId = normalizeSourceId(archiveWatchSourceEl.value);
+  const sentinel = archiveWatchCollectionEl.value.startsWith("sentinel-2");
+  if (sourceId === "merlin-s2" && !sentinel) archiveWatchCollectionEl.value = "sentinel-2-l2a";
+  if (sourceId === "satellogic" && sentinel) archiveWatchCollectionEl.value = "quickview-visual-thumb";
+}
+
 function openAnimationWindow(gifBase64, filename = "capture_animation.gif") {
   const popup = window.open("", "_blank");
   if (!popup) {
@@ -3652,10 +4271,7 @@ function resetCarouselLazyState() {
 }
 
 function makeCarouselCard(item, idx) {
-  const thumb = assetProxyUrl(thumbnailUrl(item), {
-    render: false,
-    sourceHint: sourceIdForItem(item),
-  });
+  const thumb = archivePreviewUrl(item, "thumbnail");
   const card = document.createElement("button");
   card.className = "carousel-card";
   card.type = "button";
@@ -3667,7 +4283,7 @@ function makeCarouselCard(item, idx) {
     <div class="carousel-card-head">
       <label class="check-wrap">
         <input type="checkbox" data-select-id="${item.id}" />
-        show
+        select
       </label>
     </div>
     ${imageMarkup}
@@ -3676,9 +4292,7 @@ function makeCarouselCard(item, idx) {
   card.addEventListener("click", (evt) => {
     const target = evt.target;
     if (target instanceof HTMLInputElement) return;
-    state.selectedCarouselIds.add(item.id);
     setActiveCarouselCard(item.id);
-    syncCarouselCheckboxes();
     if (state.compareMode) updateCompareModeState(item.id);
     focusFromCarousel(item, { preserveViewport: true }).catch((err) => toast(err.message));
   });
@@ -3718,7 +4332,7 @@ function makeCarouselCard(item, idx) {
 }
 
 function appendCarouselBatch() {
-  if (!timeCarouselListEl || !["explore", "lab"].includes(state.activeTab)) return;
+  if (!timeCarouselListEl || !["explore", "analytics", "lab", "mosaic", "tasking", "monitoring"].includes(state.activeTab)) return;
   const items = state.carouselRenderItems || [];
   if (!items.length || state.carouselRenderNextIndex >= items.length) return;
   const start = state.carouselRenderNextIndex;
@@ -3732,7 +4346,7 @@ function appendCarouselBatch() {
 }
 
 function fillCarouselViewport() {
-  if (!timeCarouselListEl || !["explore", "lab"].includes(state.activeTab)) return;
+  if (!timeCarouselListEl || !["explore", "analytics", "lab", "mosaic", "tasking", "monitoring"].includes(state.activeTab)) return;
   let safety = 0;
   while (
     state.carouselRenderNextIndex < (state.carouselRenderItems || []).length
@@ -3745,7 +4359,7 @@ function fillCarouselViewport() {
 }
 
 function maybeLoadMoreCarouselOnScroll() {
-  if (!timeCarouselListEl || !["explore", "lab"].includes(state.activeTab)) return;
+  if (!timeCarouselListEl || !["explore", "analytics", "lab", "mosaic", "tasking", "monitoring"].includes(state.activeTab)) return;
   let remaining = timeCarouselListEl.scrollHeight - (timeCarouselListEl.scrollTop + timeCarouselListEl.clientHeight);
   let guard = 0;
   while (remaining <= CAROUSEL_SCROLL_THRESHOLD_PX && state.carouselRenderNextIndex < (state.carouselRenderItems || []).length && guard < 8) {
@@ -3786,7 +4400,7 @@ function viewportFilteredCarouselItems(bounds = map.getBounds()) {
 }
 
 function renderTimeCarouselForViewport(bounds = map.getBounds()) {
-  if (!["explore", "lab"].includes(state.activeTab)) return;
+  if (!["explore", "analytics", "lab", "mosaic", "tasking", "monitoring"].includes(state.activeTab)) return;
   const total = overviewItemsForCarousel().length;
   const visible = viewportFilteredCarouselItems(bounds);
   renderTimeCarousel(visible, total);
@@ -3832,7 +4446,7 @@ function setActiveCarouselCard(itemId, options = {}) {
   }
   state.selectedCarouselId = itemId;
   renderAircraftDetectorPanel();
-  if (["explore", "lab"].includes(state.activeTab) && itemId && !findRenderedCarouselCard(itemId)) {
+  if (["explore", "analytics", "lab", "mosaic", "tasking", "monitoring"].includes(state.activeTab) && itemId && !findRenderedCarouselCard(itemId)) {
     let guard = 0;
     while (!findRenderedCarouselCard(itemId) && state.carouselRenderNextIndex < (state.carouselRenderItems || []).length && guard < 80) {
       appendCarouselBatch();
@@ -3862,6 +4476,22 @@ function updateLockButtonState() {
     lockIconEl.classList.toggle("locked", locked);
     lockIconEl.classList.toggle("unlocked", !locked);
   }
+  updateCarouselSelectionBar();
+}
+
+function updateCarouselSelectionBar() {
+  const selectedCount = state.selectedCarouselIds.size;
+  if (carouselSelectionBarEl) carouselSelectionBarEl.hidden = selectedCount === 0;
+  if (carouselSelectionCountEl) carouselSelectionCountEl.textContent = `${selectedCount} selected`;
+  const needsTwo = selectedCount < 2;
+  [compareModeBtnEl, animateSeriesBtnEl, mosaicBtnEl].forEach((btn) => {
+    if (!btn) return;
+    btn.disabled = needsTwo;
+    if (btn === mosaicBtnEl) btn.title = needsTwo ? "Select at least two images before creating a mosaic" : "Create mosaic from selected images";
+  });
+  [downloadMenuBtnEl, generateSeriesReportBtnEl, carouselAnalyzeBtnEl, carouselMoreBtnEl].forEach((btn) => {
+    if (btn) btn.disabled = selectedCount === 0;
+  });
 }
 
 function syncCarouselCheckboxes() {
@@ -6138,8 +6768,339 @@ async function loadSources() {
 async function apiJson(path, options = {}) {
   const res = await fetch(`${apiBase}${path}`, options);
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.detail || `${path} failed`);
+  if (!res.ok) {
+    const detail = data.detail;
+    const message = typeof detail === "string" ? detail : (detail?.message || JSON.stringify(detail || {}));
+    throw new Error(message || `${path} failed`);
+  }
   return data;
+}
+
+function selectedMosaicItems() {
+  return selectedOverviewItems().filter((item) => item?.id);
+}
+
+function mosaicMode() {
+  return document.querySelector('input[name="mosaicMode"]:checked')?.value || "whole_strip";
+}
+
+function mosaicSelectedGeneration(items = selectedMosaicItems()) {
+  const generations = [...new Set(items.map((item) => item?.sensor_generation).filter((value) => value && value !== "unknown"))];
+  return generations.length === 1 ? generations[0] : "";
+}
+
+function renderMosaicWorkbench() {
+  const mosaic = state.mosaic;
+  const items = selectedMosaicItems();
+  const job = mosaic.job;
+  if (mosaicSourceCountEl) mosaicSourceCountEl.textContent = String(items.length);
+  if (mosaicSourceListEl) {
+    mosaicSourceListEl.innerHTML = items.length
+      ? items.map((item) => `<div class="tasking-order-row"><strong>${escapeHtml(item.satellite_name || item.sensor_generation || "NewSat")}</strong><span>${escapeHtml(formatCaptureDate(item.datetime))} · ${escapeHtml(item.sensor_generation || "unknown")} · GSD ${escapeHtml(item.gsd ?? "n/a")}m</span><span>${escapeHtml(item.id)}</span></div>`).join("")
+      : `<p class="meta">No mosaic sources selected.</p>`;
+  }
+  if (mosaicStatusCardsEl) {
+    const preflight = job?.preflight || {};
+    const dependencies = preflight.dependencies || [];
+    const readyDependencies = dependencies.filter((row) => row.ready).length;
+    mosaicStatusCardsEl.innerHTML = [
+      ["Sources", items.length],
+      ["L1D-SR", dependencies.length ? `${readyDependencies}/${dependencies.length} ready` : "--"],
+      ["Mode", job?.mode || mosaicMode()],
+      ["Status", job?.status || "draft"],
+      ["Progress", job ? `${Math.round(Number(job.progress || 0))}%` : "--"],
+      ["Sensor", (preflight.sensor_generations || []).join(", ") || mosaic.sensorGeneration || "--"],
+    ].map(([label, value]) => `<div class="status-card"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join("");
+  }
+  if (mosaicWorkbenchMetaEl) {
+    if (job) {
+      mosaicWorkbenchMetaEl.textContent = `${job.message || "Mosaic job queued."}${job.error ? ` ${job.error}` : ""}`;
+    } else if (items.length < 2) {
+      mosaicWorkbenchMetaEl.textContent = "Select two or more overlapping images in the carousel, then choose Mosaic.";
+    } else if (mosaic.geometry) {
+      mosaicWorkbenchMetaEl.textContent = "AOI polygon captured. Return to the Mosaic popup to generate the mosaic.";
+    } else {
+      mosaicWorkbenchMetaEl.textContent = "Source stack ready. Choose whole strips or draw a polygon from the Mosaic button.";
+    }
+  }
+  if (mosaicQualityResultEl) {
+    mosaicQualityResultEl.textContent = job
+      ? JSON.stringify({ status: job.status, preflight: job.preflight, result: job.result, error: job.error }, null, 2)
+      : "No mosaic output yet.";
+  }
+  if (mosaicRepairMetaEl) {
+    mosaicRepairMetaEl.textContent = mosaic.repairId
+      ? `Cloud repair queued: ${mosaic.repairId}`
+      : "No cloud repair queued.";
+  }
+  if (mosaicCloudEditBtnEl) mosaicCloudEditBtnEl.disabled = !job || job.status !== "succeeded";
+  if (mosaicFinalizeBtnEl) mosaicFinalizeBtnEl.disabled = !job || job.status !== "succeeded";
+  if (mosaicStartWorkerBtnEl) {
+    const actionStatuses = ["queued", "awaiting_product_request", "awaiting_products"];
+    mosaicStartWorkerBtnEl.disabled = !job || !actionStatuses.includes(job.status);
+    mosaicStartWorkerBtnEl.textContent = job?.status === "awaiting_product_request"
+      ? "Request L1D-SR Products"
+      : job?.status === "awaiting_products"
+        ? "Check L1D-SR Availability"
+        : "Start Processing";
+  }
+}
+
+function updateMosaicPopover() {
+  const items = selectedMosaicItems();
+  const count = items.length;
+  if (mosaicSelectionSummaryEl) mosaicSelectionSummaryEl.textContent = `${count} image${count === 1 ? "" : "s"} selected${count >= 2 ? "" : " · select at least two"}.`;
+  if (mosaicSensorGenerationEl && !mosaicSensorGenerationEl.value) mosaicSensorGenerationEl.value = mosaicSelectedGeneration(items);
+  if (mosaicGenerateBtnEl) mosaicGenerateBtnEl.disabled = count < 2;
+  if (mosaicPopoverStatusEl) {
+    const generations = [...new Set(items.map((item) => item?.sensor_generation || "unknown"))];
+    mosaicPopoverStatusEl.textContent = generations.length > 1
+      ? "Selected imagery mixes sensor generations; preflight will warn before generation."
+      : "The selected images must form one connected overlap group. Mosaics always use L1D-SR Visual; unavailable products will be requested before processing.";
+  }
+}
+
+function showMosaicPopover() {
+  if (!mosaicPopoverEl) return;
+  updateMosaicPopover();
+  mosaicPopoverEl.classList.add("open");
+  state.mosaic.open = true;
+}
+
+function hideMosaicPopover() {
+  if (!mosaicPopoverEl) return;
+  mosaicPopoverEl.classList.remove("open");
+  state.mosaic.open = false;
+}
+
+function startMosaicPolygonDraw() {
+  if (state.mosaic.drawLayer) {
+    map.removeLayer(state.mosaic.drawLayer);
+    state.mosaic.drawLayer = null;
+  }
+  hideMosaicPopover();
+  state.mosaic.drawHandlerActive = true;
+  toast("Draw the polygon for the mosaic AOI");
+  new L.Draw.Polygon(map, {
+    allowIntersection: false,
+    showArea: true,
+    shapeOptions: { color: "#24b8a0", weight: 2, fillOpacity: 0.12 },
+  }).enable();
+}
+
+function mosaicJobPayload() {
+  const items = selectedMosaicItems();
+  const mode = mosaicMode();
+  if (items.length < 2) throw new Error("Select at least two images in the carousel first.");
+  if (mode === "polygon" && !state.mosaic.geometry) {
+    throw new Error("Draw the mosaic polygon before generating.");
+  }
+  return {
+    inputs: items.map((item) => ({
+      item_id: item.id,
+      source_id: sourceIdForItem(item),
+      collection_id: normalizeCollectionId(item.collection || activeCollectionId()),
+      asset_key: "visual",
+      sensor_generation: item.sensor_generation || "unknown",
+    })),
+    mode,
+    aoi: mode === "polygon" ? state.mosaic.geometry : null,
+    sensor_generation: mosaicSensorGenerationEl?.value || null,
+    output_bands: mosaicOutputBandsEl?.value || "rgb",
+    output_resolution_m: parseOptionalNumber(mosaicResolutionEl?.value),
+    accelerator: mosaicAcceleratorEl?.value || "auto",
+    contract_id: selectedSatellogicContractId(),
+  };
+}
+
+async function generateMosaic() {
+  const payload = mosaicJobPayload();
+  if (!state.mosaic.projectId) {
+    const selected = selectedMosaicItems();
+    const generations = [...new Set(selected.map((item) => item.sensor_generation).filter(Boolean))];
+    const project = await apiJson("/api/mosaics/projects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: `Mosaic ${new Date().toISOString().slice(0, 10)}`,
+        source_item_ids: selected.map((item) => item.id),
+        output_bands: payload.output_bands,
+        output_resolution_m: payload.output_resolution_m,
+        sensor_generation: generations.length === 1 ? generations[0] : "mixed",
+        geometry: payload.aoi || null,
+      }),
+    });
+    state.mosaic.projectId = project.project_id;
+  }
+  payload.project_id = state.mosaic.projectId;
+  if (mosaicPopoverStatusEl) mosaicPopoverStatusEl.textContent = "Running overlap and output-size preflight...";
+  const preflight = await apiJson("/api/mosaics/preflight", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!preflight.valid) {
+    const reasons = (preflight.messages || []).join(" ");
+    if (mosaicPopoverStatusEl) mosaicPopoverStatusEl.textContent = reasons || "Mosaic preflight failed.";
+    throw new Error(reasons || "Mosaic preflight failed.");
+  }
+  const response = await apiJson("/api/mosaics/jobs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  state.mosaic.jobId = response.job?.job_id || null;
+  state.mosaic.job = response.job || null;
+  state.mosaic.selectedItemIds = payload.inputs.map((item) => item.item_id);
+  hideMosaicPopover();
+  setWorkbenchTab("mosaic");
+  renderMosaicWorkbench();
+  if (response.product_request_required) {
+    const missingCount = Number(state.mosaic.job?.preflight?.missing_products?.length || 0);
+    const approved = window.confirm(
+      `${missingCount} selected capture${missingCount === 1 ? " does" : "s do"} not yet have complete L1D-SR Visual coverage. Request provider processing now? This may use contract entitlement and can take several hours.`,
+    );
+    if (approved) {
+      const requested = await apiJson(`/api/mosaics/jobs/${encodeURIComponent(state.mosaic.jobId)}/request-products`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirmation: "REQUEST L1D-SR" }),
+      });
+      state.mosaic.job = requested.job || state.mosaic.job;
+      toast("L1D-SR processing requested. Image-Mate will resume the mosaic automatically when all products arrive.");
+    } else {
+      toast("Mosaic saved. L1D-SR processing has not been requested yet.");
+    }
+    renderMosaicWorkbench();
+    if (state.mosaic.jobId) pollMosaicJob();
+    return;
+  }
+  try {
+    const kickoff = await apiJson(`/api/mosaics/jobs/${encodeURIComponent(state.mosaic.jobId)}/start`, { method: "POST" });
+    if (kickoff.job) state.mosaic.job = kickoff.job;
+    const worker = kickoff.worker || {};
+    toast(worker.started || worker.already_running ? "Mosaic processing started on the local host" : "Mosaic job queued");
+  } catch (err) {
+    state.mosaic.job = {
+      ...(state.mosaic.job || {}),
+      message: `Queued, but the local worker could not be started: ${err.message}`,
+    };
+    renderMosaicWorkbench();
+    toast("Mosaic queued. Use Start Processing when the host worker is available.");
+  }
+  if (state.mosaic.jobId) pollMosaicJob();
+}
+
+async function startMosaicWorker() {
+  if (!state.mosaic.jobId) throw new Error("No mosaic job is selected.");
+  if (state.mosaic.job?.status === "awaiting_product_request") {
+    const approved = window.confirm("Request L1D-SR Visual processing from Satellogic? This may use contract entitlement and can take several hours.");
+    if (!approved) return;
+    const requested = await apiJson(`/api/mosaics/jobs/${encodeURIComponent(state.mosaic.jobId)}/request-products`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirmation: "REQUEST L1D-SR" }),
+    });
+    state.mosaic.job = requested.job || state.mosaic.job;
+    renderMosaicWorkbench();
+    pollMosaicJob();
+    toast("L1D-SR processing requested; the mosaic will resume automatically.");
+    return;
+  }
+  if (state.mosaic.job?.status === "awaiting_products") {
+    const checked = await apiJson(`/api/mosaics/jobs/${encodeURIComponent(state.mosaic.jobId)}/check-products`, { method: "POST" });
+    state.mosaic.job = checked.job || state.mosaic.job;
+    renderMosaicWorkbench();
+    pollMosaicJob();
+    toast(state.mosaic.job?.status === "awaiting_products" ? "L1D-SR products are still processing." : "L1D-SR inputs are ready; mosaic processing is starting.");
+    return;
+  }
+  const kickoff = await apiJson(`/api/mosaics/jobs/${encodeURIComponent(state.mosaic.jobId)}/start`, { method: "POST" });
+  if (kickoff.job) state.mosaic.job = kickoff.job;
+  renderMosaicWorkbench();
+  pollMosaicJob();
+  const worker = kickoff.worker || {};
+  toast(worker.started || worker.already_running ? "Mosaic processing started on the local host" : "Mosaic job is already processing");
+}
+
+function stopMosaicPolling() {
+  if (state.mosaic.pollTimer) {
+    clearInterval(state.mosaic.pollTimer);
+    state.mosaic.pollTimer = null;
+  }
+}
+
+async function refreshMosaicJob() {
+  if (!state.mosaic.jobId) return null;
+  const response = await apiJson(`/api/mosaics/jobs/${encodeURIComponent(state.mosaic.jobId)}`);
+  state.mosaic.job = response.job || null;
+  renderMosaicWorkbench();
+  return state.mosaic.job;
+}
+
+function pollMosaicJob() {
+  stopMosaicPolling();
+  const poll = async () => {
+    try {
+      const job = await refreshMosaicJob();
+      if (job && ["succeeded", "failed", "canceled"].includes(job.status)) stopMosaicPolling();
+    } catch (err) {
+      stopMosaicPolling();
+      if (mosaicWorkbenchMetaEl) mosaicWorkbenchMetaEl.textContent = `Mosaic job refresh failed: ${err.message}`;
+    }
+  };
+  poll();
+  state.mosaic.pollTimer = setInterval(poll, 2500);
+}
+
+function startMosaicCloudRepairDraw() {
+  if (!state.mosaic.jobId || state.mosaic.job?.status !== "succeeded") {
+    throw new Error("Complete a mosaic before starting cloud edit.");
+  }
+  if (state.mosaic.repairLayer) {
+    map.removeLayer(state.mosaic.repairLayer);
+    state.mosaic.repairLayer = null;
+  }
+  state.mosaic.repairDrawHandlerActive = true;
+  toast("Draw the cloud repair polygon on the mosaic");
+  new L.Draw.Polygon(map, {
+    allowIntersection: false,
+    showArea: true,
+    shapeOptions: { color: "#f0b35c", weight: 2, fillOpacity: 0.14 },
+  }).enable();
+}
+
+async function submitMosaicCloudRepair() {
+  if (!state.mosaic.jobId || !state.mosaic.repairGeometry) return;
+  const response = await apiJson("/api/mosaics/repairs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      job_id: state.mosaic.jobId,
+      geometry: state.mosaic.repairGeometry,
+      preferred_item_id: null,
+      contract_id: selectedSatellogicContractId(),
+    }),
+  });
+  state.mosaic.repairId = response.repair?.repair_id || null;
+  renderMosaicWorkbench();
+  toast("Cloud repair queued for the host worker");
+}
+
+async function finalizeMosaic() {
+  if (!state.mosaic.jobId) throw new Error("No mosaic job is selected.");
+  const response = await apiJson(`/api/mosaics/jobs/${encodeURIComponent(state.mosaic.jobId)}/finalize`, { method: "POST" });
+  state.mosaic.job = response.job || state.mosaic.job;
+  renderMosaicWorkbench();
+  toast("Mosaic finalized");
+}
+
+function clearMosaicSession() {
+  stopMosaicPolling();
+  if (state.mosaic.drawLayer) map.removeLayer(state.mosaic.drawLayer);
+  if (state.mosaic.repairLayer) map.removeLayer(state.mosaic.repairLayer);
+  state.mosaic = { open: false, mode: "whole_strip", geometry: null, selectedItemIds: [], sensorGeneration: "", resolution: null, jobId: null, job: null, pollTimer: null, drawLayer: null, drawHandlerActive: false, repairGeometry: null, repairLayer: null, repairId: null, repairDrawHandlerActive: false };
+  renderMosaicWorkbench();
 }
 
 function activeSceneIdsForRun() {
@@ -6158,18 +7119,95 @@ function showLeftView(tab) {
   const viewByTab = {
     explore: leftExploreViewEl,
     tasking: leftTaskingViewEl,
-    grid: leftGridViewEl,
     analytics: leftAnalyticsViewEl,
-    lab: leftLabViewEl,
-    workflows: leftWorkflowsViewEl,
-    schedules: leftSchedulesViewEl,
+    mosaic: leftMosaicViewEl,
     monitoring: leftMonitoringViewEl,
-    runs: leftRunsViewEl,
+    tools: null,
   };
   Object.entries(viewByTab).forEach(([key, el]) => {
     if (!el) return;
     el.classList.toggle("active", key === tab);
   });
+  const taskingMode = state.secondaryTabs.tasking || "proposed";
+  leftGridViewEl?.classList.toggle("active", tab === "tasking" && taskingMode === "plan_new");
+  document.getElementById("taskingOrdersPanel")?.classList.toggle("secondary-panel-hidden", tab === "tasking" && taskingMode === "plan_new");
+  const analyzeMode = state.secondaryTabs.analyze || "run_analysis";
+  leftLabViewEl?.classList.toggle("active", tab === "analytics" && analyzeMode === "model_lab");
+  analysisRecipesPanelEl?.classList.toggle("secondary-panel-hidden", tab !== "analytics" || analyzeMode !== "recipes");
+  document.getElementById("analyzeRunPanel")?.classList.toggle("secondary-panel-hidden", tab === "analytics" && ["recipes", "model_lab"].includes(analyzeMode));
+  document.querySelectorAll(".tool-view").forEach((el) => el.classList.remove("active"));
+  if (tab === "tools") {
+    leftWorkflowsViewEl?.classList.toggle("active", state.activeTool === "workflows");
+    leftSchedulesViewEl?.classList.toggle("active", state.activeTool === "schedules");
+    leftRunsViewEl?.classList.toggle("active", state.activeTool === "runs");
+    leftSettingsViewEl?.classList.toggle("active", state.activeTool === "settings");
+  } else {
+    [leftWorkflowsViewEl, leftSchedulesViewEl, leftRunsViewEl, leftSettingsViewEl].forEach((el) => el?.classList.remove("active"));
+  }
+  document.querySelectorAll(".secondary-tab").forEach((btn) => {
+    const workspace = btn.dataset.secondaryWorkspace;
+    btn.classList.toggle("active", workspace && state.secondaryTabs[workspace] === btn.dataset.secondaryTab);
+  });
+}
+
+function setSecondaryTab(workspace, tab) {
+  if (!state.secondaryTabs[workspace]) return;
+  state.secondaryTabs[workspace] = tab;
+  if (workspace === "analyze" && tab === "model_lab") {
+    setWorkbenchTab("analytics");
+    return;
+  }
+  if (state.activeTab === "analytics" && workspace === "analyze") {
+    showLeftView("analytics");
+  } else if (state.activeTab === "tasking" && workspace === "tasking") {
+    showLeftView("tasking");
+  } else if (state.activeTab === "monitoring" && workspace === "monitoring") {
+    showLeftView("monitoring");
+  } else if (state.activeTab === "mosaic" && workspace === "mosaic") {
+    showLeftView("mosaic");
+  }
+  if (workspace === "tasking" && tab === "plan_new") {
+    setRightPanelTitle("Tasking Planner");
+    timeCarouselListEl.innerHTML = `<div class="meta">Draw a point, area, or grid target from the map, then review the combined tasking composer in the left panel.</div>`;
+  } else if (workspace === "tasking") {
+    setRightPanelTitle("Tasking Imagery");
+    renderTaskingOrdersList();
+    renderTimeCarouselForViewport();
+  }
+}
+
+function setToolView(tool) {
+  state.activeTool = tool;
+  showLeftView("tools");
+  Array.from(workbenchTabsEl?.querySelectorAll(".tab-btn") || []).forEach((btn) => btn.classList.remove("active"));
+  if (toolsDrawerEl) toolsDrawerEl.hidden = true;
+  toolsMenuBtnEl?.setAttribute("aria-expanded", "false");
+  if (tool === "workflows") {
+    setRightPanelTitle("Workflow Designer");
+    timeCarouselListEl.innerHTML = `<div class="meta">Technical workflow design is available from Tools.</div>`;
+    renderWorkflowBuilder();
+  } else if (tool === "schedules") {
+    setRightPanelTitle("Schedules & subscriptions");
+    timeCarouselListEl.innerHTML = `<div class="meta">Schedules and subscriptions are managed in the Tools drawer.</div>`;
+  } else if (tool === "runs") {
+    const selected = state.runs.find((r) => r.run_id === state.selectedRunId) || null;
+    renderRunArtifactsInRightPanel(selected);
+    renderEventFeed();
+  } else if (tool === "settings") {
+    setRightPanelTitle("System settings");
+    timeCarouselListEl.innerHTML = `<div class="meta">System settings are not imagery. The right rail is intentionally quiet here.</div>`;
+    loadRuntimeSettings().catch((err) => { if (settingsSummaryEl) settingsSummaryEl.innerHTML = `<p class="meta">${escapeHtml(err.message)}</p>`; });
+  }
+}
+
+async function loadRuntimeSettings() {
+  if (!settingsSummaryEl) return;
+  settingsSummaryEl.innerHTML = [
+    ["Mode", "Standalone / Hermes-compatible"],
+    ["API base", apiBase || "same origin"],
+    ["GPU work", "Host-side CLI available"],
+    ["Secrets", "Environment-managed"],
+  ].map(([label, value]) => `<div class="status-card"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join("");
 }
 
 function renderRunArtifactsInRightPanel(run) {
@@ -6779,6 +7817,21 @@ function stopWorkflowNodeDrag() {
 }
 
 function setWorkbenchTab(tab) {
+  if (tab === "grid") {
+    state.secondaryTabs.tasking = "plan_new";
+    setWorkbenchTab("tasking");
+    return;
+  }
+  if (tab === "lab") {
+    state.secondaryTabs.analyze = "model_lab";
+    setWorkbenchTab("analytics");
+    return;
+  }
+  if (["workflows", "schedules", "runs"].includes(tab)) {
+    setToolView(tab);
+    return;
+  }
+  state.activeTool = null;
   state.activeTab = tab;
   showLeftView(tab);
   const buttons = Array.from(workbenchTabsEl?.querySelectorAll(".tab-btn") || []);
@@ -6787,49 +7840,35 @@ function setWorkbenchTab(tab) {
     setRightPanelTitle("Search Results");
     renderTimeCarouselForViewport();
   } else if (tab === "tasking") {
-    resetCarouselLazyState();
-    setRightPanelTitle("Tasking Orders");
-    timeCarouselListEl.innerHTML = `<div class="meta">Use the Tasking tab on the left to review orders and submit new tasking from the map context menu.</div>`;
+    setRightPanelTitle("Tasking Imagery");
+    renderTimeCarouselForViewport();
     refreshTaskingPanel().catch((err) => {
       if (taskingOrdersMetaEl) taskingOrdersMetaEl.textContent = `Tasking load failed: ${err.message}`;
     });
-  } else if (tab === "grid") {
-    resetCarouselLazyState();
-    setRightPanelTitle("Grid Tasking Review");
-    timeCarouselListEl.innerHTML = `<div class="meta">Grid planning and submission controls are in the left panel.</div>`;
   } else if (tab === "analytics") {
-    resetCarouselLazyState();
-    setRightPanelTitle("Satellogic Analytics");
-    renderAircraftDetectorPanel();
-    timeCarouselListEl.innerHTML = `<div class="meta">Enter a deliverable ID in the Analytics tab to inspect delivered detections.</div>`;
-  } else if (tab === "lab") {
-    setRightPanelTitle("Archive Captures · Model Lab");
+    setRightPanelTitle("Analysis Imagery");
     renderAircraftDetectorPanel();
     renderTimeCarouselForViewport();
-    loadAircraftLabCatalog().catch((err) => {
-      if (labCatalogMetaEl) labCatalogMetaEl.textContent = `Catalog load failed: ${err.message}`;
-    });
-  } else if (tab === "runs") {
-    const selected = state.runs.find((r) => r.run_id === state.selectedRunId) || null;
-    renderRunArtifactsInRightPanel(selected);
-    renderEventFeed();
-  } else if (tab === "schedules") {
-    resetCarouselLazyState();
-    setRightPanelTitle("Schedules");
-    timeCarouselListEl.innerHTML = `<div class="meta">Schedules and subscriptions are managed in the left panel.</div>`;
+    if (state.secondaryTabs.analyze === "model_lab") {
+      loadAircraftLabCatalog().catch((err) => {
+        if (labCatalogMetaEl) labCatalogMetaEl.textContent = `Catalog load failed: ${err.message}`;
+      });
+    }
+  } else if (tab === "mosaic") {
+    setRightPanelTitle("Mosaic Sources");
+    renderMosaicWorkbench();
+    renderTimeCarouselForViewport();
   } else if (tab === "monitoring") {
     resetCarouselLazyState();
-    setRightPanelTitle("Capture Monitoring");
-    timeCarouselListEl.innerHTML = `<div class="meta">Select a monitored AOI to inspect its latest archive-observed footprints.</div>`;
+    setRightPanelTitle("Monitor Evidence");
+    renderTimeCarouselForViewport();
     renderMonitoringFootprints();
     loadMonitoring().catch((err) => {
       if (monitoringMetaEl) monitoringMetaEl.textContent = `Monitoring load failed: ${err.message}`;
     });
-  } else {
-    resetCarouselLazyState();
-    setRightPanelTitle("Workflows");
-    timeCarouselListEl.innerHTML = `<div class="meta">Choose a workflow preset and run it.</div>`;
-    renderWorkflowBuilder();
+    loadArchiveWatches().catch((err) => {
+      if (archiveWatchMetaEl) archiveWatchMetaEl.textContent = `Archive watch load failed: ${err.message}`;
+    });
   }
 }
 
@@ -7096,6 +8135,27 @@ workbenchTabsEl?.addEventListener("click", (evt) => {
   const tab = (btn.dataset.tab || "explore").trim();
   setWorkbenchTab(tab);
 });
+
+document.querySelectorAll(".secondary-tab").forEach((btn) => {
+  btn.addEventListener("click", () => setSecondaryTab(btn.dataset.secondaryWorkspace, btn.dataset.secondaryTab));
+});
+
+toolsMenuBtnEl?.addEventListener("click", (evt) => {
+  evt.stopPropagation();
+  const nextOpen = Boolean(toolsDrawerEl?.hidden);
+  if (toolsDrawerEl) toolsDrawerEl.hidden = !nextOpen;
+  toolsMenuBtnEl.setAttribute("aria-expanded", nextOpen ? "true" : "false");
+});
+toolsDrawerCloseBtnEl?.addEventListener("click", () => {
+  if (toolsDrawerEl) toolsDrawerEl.hidden = true;
+  toolsMenuBtnEl?.setAttribute("aria-expanded", "false");
+});
+toolsDrawerEl?.addEventListener("click", (evt) => {
+  const item = evt.target.closest("[data-tool-view]");
+  if (!item) return;
+  setToolView(item.dataset.toolView);
+});
+settingsRefreshBtnEl?.addEventListener("click", () => loadRuntimeSettings().catch((err) => toast(err.message)));
 
 workflowRefreshBtnEl?.addEventListener("click", async () => {
   try {
@@ -7425,6 +8485,11 @@ mapLocateFormEl?.addEventListener("submit", async (evt) => {
   } catch (err) {
     toast(err.message || "Location search failed");
   }
+});
+
+mapLocateSaveBtnEl?.addEventListener("click", (evt) => {
+  evt.stopPropagation();
+  saveCurrentMapViewAsDefault();
 });
 
 mapLocateHistoryBtnEl?.addEventListener("click", (evt) => {
@@ -7792,6 +8857,21 @@ compareModeBtnEl.addEventListener("click", () => {
   setCompareMode(!state.compareMode);
 });
 
+carouselAnalyzeBtnEl?.addEventListener("click", () => {
+  state.secondaryTabs.analyze = "run_analysis";
+  setWorkbenchTab("analytics");
+});
+
+carouselMoreBtnEl?.addEventListener("click", (evt) => {
+  evt.stopPropagation();
+  if (carouselMorePopoverEl) carouselMorePopoverEl.hidden = !carouselMorePopoverEl.hidden;
+});
+
+carouselReportBtnEl?.addEventListener("click", () => {
+  carouselMorePopoverEl && (carouselMorePopoverEl.hidden = true);
+  generateSeriesReportBtnEl?.click();
+});
+
 layerEditorSelectEl?.addEventListener("change", async (evt) => {
   const mode = evt?.target?.value || "natural";
   try {
@@ -7811,6 +8891,81 @@ animateSeriesBtnEl?.addEventListener("click", (evt) => {
   hideGenerateSeriesReportPopover();
   hideDownloadPopover();
   toggleAnimateSeriesPopover();
+});
+
+mosaicBtnEl?.addEventListener("click", (evt) => {
+  evt.stopPropagation();
+  hideLayerEditorPopover();
+  hideGenerateSeriesReportPopover();
+  hideDownloadPopover();
+  hideAnimateSeriesPopover();
+  if (selectedMosaicItems().length < 2) {
+    toast("Select at least two images in the carousel first.");
+    return;
+  }
+  showMosaicPopover();
+});
+
+mosaicCloseBtnEl?.addEventListener("click", (evt) => {
+  evt.stopPropagation();
+  hideMosaicPopover();
+});
+
+mosaicPopoverEl?.addEventListener("click", (evt) => evt.stopPropagation());
+
+document.querySelectorAll('input[name="mosaicMode"]').forEach((input) => {
+  input.addEventListener("change", () => {
+    state.mosaic.mode = mosaicMode();
+    if (state.mosaic.mode === "polygon") startMosaicPolygonDraw();
+    else updateMosaicPopover();
+  });
+});
+
+mosaicGenerateBtnEl?.addEventListener("click", async (evt) => {
+  evt.stopPropagation();
+  try {
+    await generateMosaic();
+  } catch (err) {
+    if (mosaicPopoverStatusEl) mosaicPopoverStatusEl.textContent = err.message || "Mosaic generation failed";
+    toast(err.message || "Mosaic generation failed");
+  }
+});
+
+mosaicClearBtnEl?.addEventListener("click", () => {
+  clearMosaicSession();
+  toast("Mosaic session cleared");
+});
+
+mosaicRefreshBtnEl?.addEventListener("click", async () => {
+  try {
+    await refreshMosaicJob();
+  } catch (err) {
+    toast(err.message || "Mosaic refresh failed");
+  }
+});
+
+mosaicStartWorkerBtnEl?.addEventListener("click", async () => {
+  try {
+    await startMosaicWorker();
+  } catch (err) {
+    toast(err.message || "Mosaic worker could not be started");
+  }
+});
+
+mosaicCloudEditBtnEl?.addEventListener("click", () => {
+  try {
+    startMosaicCloudRepairDraw();
+  } catch (err) {
+    toast(err.message || "Cloud edit could not start");
+  }
+});
+
+mosaicFinalizeBtnEl?.addEventListener("click", async () => {
+  try {
+    await finalizeMosaic();
+  } catch (err) {
+    toast(err.message || "Mosaic finalization failed");
+  }
 });
 
 animateSeriesRunBtnEl?.addEventListener("click", async (evt) => {
@@ -7961,9 +9116,24 @@ document.addEventListener("click", (evt) => {
     const target = evt.target;
     if (!downloadPopoverEl.contains(target) && !downloadMenuBtnEl.contains(target)) hideDownloadPopover();
   }
+  if (mosaicPopoverEl && mosaicBtnEl) {
+    const target = evt.target;
+    if (!mosaicPopoverEl.contains(target) && !mosaicBtnEl.contains(target)) hideMosaicPopover();
+  }
   if (sourcePickerMenuEl && sourcePickerBtnEl) {
     const target = evt.target;
     if (!sourcePickerMenuEl.contains(target) && !sourcePickerBtnEl.contains(target)) setSourcePickerOpen(false);
+  }
+  if (toolsDrawerEl && toolsMenuBtnEl) {
+    const target = evt.target;
+    if (!toolsDrawerEl.contains(target) && !toolsMenuBtnEl.contains(target)) {
+      toolsDrawerEl.hidden = true;
+      toolsMenuBtnEl.setAttribute("aria-expanded", "false");
+    }
+  }
+  if (carouselMorePopoverEl && carouselMoreBtnEl) {
+    const target = evt.target;
+    if (!carouselMorePopoverEl.contains(target) && !carouselMoreBtnEl.contains(target)) carouselMorePopoverEl.hidden = true;
   }
 });
 
@@ -7974,7 +9144,17 @@ document.addEventListener("keydown", (evt) => {
     hideAnimateSeriesPopover();
     hideGenerateSeriesReportPopover();
     hideDownloadPopover();
+    hideMosaicPopover();
+    if (toolsDrawerEl) toolsDrawerEl.hidden = true;
+    if (carouselMorePopoverEl) carouselMorePopoverEl.hidden = true;
+    toolsMenuBtnEl?.setAttribute("aria-expanded", "false");
     setSourcePickerOpen(false);
+    if (state.archiveWatch.drawHandlerActive && state.archiveWatch.drawHandler) {
+      state.archiveWatch.drawHandler.disable();
+      state.archiveWatch.drawHandler = null;
+      state.archiveWatch.drawHandlerActive = false;
+      if (archiveWatchMetaEl) archiveWatchMetaEl.textContent = "Archive watch drawing cancelled.";
+    }
     cancelTaskingInteraction();
   }
 });
@@ -7983,6 +9163,24 @@ ctxCreateAnimationEl.addEventListener("click", () => {
   hideContextMenu();
   state.pendingAnimationDraw = true;
   toast("Draw a rectangle AOI for animation");
+});
+
+ctxCreateMonitoringProjectEl?.addEventListener("click", () => {
+  hideContextMenu();
+  state.secondaryTabs.monitoring = "overview";
+  setWorkbenchTab("monitoring");
+  startArchiveWatchDraw();
+  toast("Draw the monitoring project AOI");
+});
+
+ctxCreateMosaicEl?.addEventListener("click", () => {
+  hideContextMenu();
+  if (selectedMosaicItems().length < 2) {
+    toast("Select at least two overlapping images before creating a mosaic.");
+    return;
+  }
+  setWorkbenchTab("mosaic");
+  showMosaicPopover();
 });
 
 ctxCopyLatLonEl.addEventListener("click", async () => {
@@ -8004,6 +9202,7 @@ ctxTaskImageEl.addEventListener("click", (evt) => {
   evt.stopPropagation();
   const point = state.contextMenuPoint || { x: 24, y: 24 };
   hideContextMenu();
+  setWorkbenchTab("tasking");
   if (!state.taskingProducts.length) {
     loadTaskingProducts().catch(() => {});
   }
@@ -8053,12 +9252,23 @@ gridClearBtnEl?.addEventListener("click", () => {
 
 analyticsInspectBtnEl?.addEventListener("click", () => inspectAnalytics(false).catch((err) => { if (analyticsResultEl) analyticsResultEl.textContent = err.message; toast(err.message); }));
 analyticsSummaryBtnEl?.addEventListener("click", () => inspectAnalytics(true).catch((err) => { if (analyticsResultEl) analyticsResultEl.textContent = err.message; toast(err.message); }));
+analysisRecipesRefreshBtnEl?.addEventListener("click", () => loadAnalysisRecipes().then(() => toast("Recipes refreshed")).catch((err) => toast(err.message)));
 aircraftDetectorRunBtnEl?.addEventListener("click", () => runAircraftDetector().catch((err) => { if (aircraftDetectorResultEl) aircraftDetectorResultEl.textContent = err.message; toast(err.message); }));
 aircraftDetectorClearBtnEl?.addEventListener("click", clearAircraftDetectorResults);
 labRunDetectorBtnEl?.addEventListener("click", () => runAircraftDetector().catch((err) => { if (labReviewMetaEl) labReviewMetaEl.textContent = err.message; toast(err.message); }));
 labDrawPolygonBtnEl?.addEventListener("click", startAircraftPolygonAnnotation);
 labCatalogRefreshBtnEl?.addEventListener("click", () => loadAircraftLabCatalog().then(() => toast("Model catalog refreshed")).catch((err) => toast(err.message)));
-labHostTrainingBtnEl?.addEventListener("click", showHostTrainingCommand);
+labActivateModelBtnEl?.addEventListener("click", () => activateAircraftLabModel().catch((err) => toast(err.message)));
+labBuildDatasetBtnEl?.addEventListener("click", () => buildAircraftLabDataset().catch((err) => { if (labDatasetMetaEl) labDatasetMetaEl.textContent = err.message; toast(err.message); }));
+labTrainBtnEl?.addEventListener("click", () => startAircraftLabTraining().catch((err) => { if (labJobMetaEl) labJobMetaEl.textContent = err.message; toast(err.message); }));
+labEvaluateBtnEl?.addEventListener("click", () => startAircraftLabEvaluation().catch((err) => { if (labJobMetaEl) labJobMetaEl.textContent = err.message; toast(err.message); }));
+labDatasetSelectEl?.addEventListener("change", renderAircraftLabDatasetMeta);
+labValidationSceneEl?.addEventListener("change", () => {
+  const validationId = labValidationSceneEl.value;
+  [...(labTrainScenesEl?.options || [])].forEach((option) => {
+    if (option.value === validationId) option.selected = false;
+  });
+});
 labDetectionListEl?.addEventListener("click", (evt) => {
   const button = evt.target.closest("[data-aircraft-label]");
   if (!button) return;
@@ -8073,6 +9283,14 @@ monitoringRefreshAllBtnEl?.addEventListener("click", async () => {
   catch (err) { toast(err.message); }
 });
 monitoringRefreshBtnEl?.addEventListener("click", () => refreshMonitoring().then(() => toast("Monitor refreshed.")).catch((err) => toast(err.message)));
+monitoringProjectCreateBtnEl?.addEventListener("click", () => createMonitoringProject().then(() => toast("Monitoring project created.")).catch((err) => { if (monitoringProjectMetaEl) monitoringProjectMetaEl.textContent = err.message; toast(err.message); }));
+monitoringProjectCheckBtnEl?.addEventListener("click", () => checkSelectedMonitoringProject().then(() => toast("Monitoring project checked.")).catch((err) => { if (monitoringProjectMetaEl) monitoringProjectMetaEl.textContent = err.message; toast(err.message); }));
+archiveWatchDrawBtnEl?.addEventListener("click", startArchiveWatchDraw);
+archiveWatchCreateBtnEl?.addEventListener("click", () => createArchiveWatch().catch((err) => {
+  if (archiveWatchMetaEl) archiveWatchMetaEl.textContent = err.message;
+  toast(err.message);
+}));
+archiveWatchSourceEl?.addEventListener("change", syncArchiveWatchCollection);
 
 animationFormEl.addEventListener("submit", async (evt) => {
   evt.preventDefault();

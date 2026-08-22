@@ -13,12 +13,32 @@
 - Before/after image comparison slider
 - Annotation capture and local persistence
 - AI GeoAgent report generation (latest frame + historical context + user prompt)
-- Workflow builder/workbench UX for orchestration and report runs
+- Five-workspace analyst shell: Explore, Tasking, Monitor, Analyze, and Mosaic
+- Analysis Recipes, durable Monitoring Projects, alerts, proposed actions, and Mosaic Projects
+- Workflow builder/workbench UX for orchestration and report runs in the top-right Tools drawer
+- Standalone HTML user manual at `/manual.html`, available from Tools
+- Durable polygon archive watches with deduplicated email alerts and identity-based preview links
 - Map-driven AOI search (draw rectangle on map) with parameterized filters:
   - date range
   - cloud cover
   - satellite name
-  - GSD min/max
+  - NewSat Mark IV / Mark V generation
+- GSD min/max
+
+## Analyst workflow APIs
+
+The new analyst-facing persistence layer is available through the versioned local API:
+
+- `GET/POST/PATCH /api/analysis/recipes`
+- `GET/POST/PATCH /api/monitoring/projects`
+- `GET /api/monitoring/projects/{id}/alerts`
+- `GET /api/monitoring/projects/{id}/activity`
+- `POST /api/alerts/{id}/disposition`
+- `GET /api/proposed-actions`
+- `POST /api/proposed-actions/{id}/approve` and `/reject`
+- `GET/POST/PATCH /api/mosaics/projects`
+
+Existing archive-watch, recollection-monitor, schedule, workflow, run, tasking, and mosaic-job routes remain available during migration. Provider-signed URLs are not persisted; integrations use item-identity proxy routes.
 
 ## Repo hygiene
 
@@ -191,6 +211,30 @@ For a passed local tile, the Hermes skill/CLI uses:
 
 Results are model evidence and still require validation against labeled L1D-SR aircraft imagery before operational or identity claims.
 
+## Mosaic Workbench
+
+The Explore carousel now uses one checkbox per archive image. Selecting cards only focuses them; checking cards adds them to the mosaic source stack. Select two or more overlapping NewSat visual images, choose **Mosaic**, then choose:
+
+- **Mosaic whole strips** to use the connected union of the selected footprints.
+- **Draw polygon for mosaic** to limit the first pass to a small AOI.
+
+The backend performs a preflight before creating a job. It rejects disconnected selections, invalid AOIs, and output sizes above the configured pixel budget. QuickView can be used to discover and select captures, but it is never used as a mosaic raster. Every source is resolved to L1D-SR Visual tiles using its capture outcome ID. NewSat generation is preserved as explicit metadata; it is never guessed from GSD alone. The current nominal profiles are Mark IV: 0.7 m L1D-SR and Mark V: 0.5 m L1D-SR.
+
+If a selected capture does not yet have complete L1D-SR coverage, the project is saved as **Awaiting L1D-SR Request**. The UI asks for confirmation before creating one Satellogic `ARCIMG-M.NN.NN` order per missing capture with `processing_level: L1D_SR`. After submission, the durable job enters **Awaiting L1D-SR**. A background listener checks the L1D-SR STAC collection every five minutes by default, verifies at least 99.5% AOI coverage for every capture, replaces the discovery inputs with the resulting L1D-SR tile identities, and starts the host worker automatically. Configure this with `IMAGE_MATE_MOSAIC_PRODUCT_POLL_ENABLED` and `IMAGE_MATE_MOSAIC_PRODUCT_POLL_SECONDS`.
+
+Mosaic generation is intentionally host-side. Once all products are available, the backend starts a job-scoped macOS worker. If worker startup fails, the Mosaic Workbench exposes **Start Processing** as a retry. The worker rejects non-L1D-SR downloads, downloads source assets by item identity, optionally clips polygon jobs, and runs the existing color-balanced, cloud-aware, graph-cut/feathered GeoTIFF mosaicker:
+
+```bash
+cd /Users/mark/.hermes/projects/image-mate
+./.venv/bin/python -m pip install -r backend/requirements-mosaic.txt
+./.venv/bin/python backend/scripts/mosaic_worker.py \
+  --api http://127.0.0.1:8000 \
+  --accelerator auto \
+  --once
+```
+
+Install optional Apple Silicon/CUDA support with `./.venv/bin/python -m pip install -r backend/requirements-mosaic-gpu.txt`. `auto` prefers PyTorch MPS on Apple Silicon, then CUDA, then OpenCV OpenCL, and finally CPU. GPU acceleration covers array-heavy radiometric and seam-image work; GDAL/Rasterio reprojection and GeoTIFF I/O remain host-side. The worker processes one job and exits; use the UI kickoff or run the command again for the next queued job. `GET /api/mosaics/worker/status` reports active host workers and their selected accelerator. The Mosaic Workbench exposes progress, the source stack, the output report, and identity-based artifact routes. Cloud Edit captures a polygon and persists a reversible repair request; the clear-observation selection, pixel patch, and rebalancing pass are the next worker increment.
+
 ### Luna-assisted active learning
 
 For a series of downloaded L1D-SR tiles, keep a same-stem JSON sidecar beside each image with `item_id`, `collection_id: l1d-sr`, and `bounds_wgs84`, then run the batch lane before preparing review chips:
@@ -222,7 +266,35 @@ The repeatable review lane can build a few-shot calibration packet from human-co
   --prime-manifest /path/to/luna-prime/luna_examples.json
 ```
 
-Luna evaluations are append-only review evidence in `luna_evaluations.jsonl`; they never overwrite the human label or silently become training data. The Model Lab tab exposes the same active archive carousel, local detector, review actions, polygon annotation, model catalog, and prepared-bundle status. The `--validation-manifest` option on `train_aircraft.py` creates a scene-held-out validation split; run that command from the macOS host with `--device mps`, not from the Hermes Docker runtime.
+Luna evaluations are append-only review evidence in `luna_evaluations.jsonl`; they never overwrite the human label or silently become training data. The Model Lab tab exposes the active archive carousel, local detector, polygon/detection annotation, scene-split dataset builder, host training/evaluation jobs, model activation, and model catalog. Labels persist their source tile under `IMAGE_MATE_AIRCRAFT_LAB_DIR`; bundles are written under `IMAGE_MATE_AIRCRAFT_TRAINING_DIR`. Set `IMAGE_MATE_AIRCRAFT_TRAINING_PYTHON` to a host Python environment with `ultralytics` and PyTorch/MPS or CUDA. Evaluation is required before a newly trained ONNX model can be activated, and the active model is never overwritten automatically.
+
+## Archive Watch alerts
+
+The Monitoring tab can create a durable polygon watch for Satellogic or Sentinel-2. Draw a polygon with **Draw Watch Polygon**, or right-click the map and choose **Watch this area for new imagery**. The API polls the selected collection on the configured interval, deduplicates archive identities in `backend/output/monitoring.sqlite3`, and retains failed deliveries as pending items.
+
+Configure delivery in `.env`:
+
+```bash
+IMAGE_MATE_ALERT_EMAIL_TO=analyst@example.org
+IMAGE_MATE_PUBLIC_BASE_URL=http://your-host:8000
+IMAGE_MATE_SMTP_HOST=smtp.example.org
+IMAGE_MATE_SMTP_PORT=587
+IMAGE_MATE_SMTP_USERNAME=analyst@example.org
+IMAGE_MATE_SMTP_PASSWORD=...
+IMAGE_MATE_SMTP_FROM=analyst@example.org
+IMAGE_MATE_SMTP_USE_TLS=true
+IMAGE_MATE_ARCHIVE_WATCH_ENABLED=true
+IMAGE_MATE_ARCHIVE_WATCH_INTERVAL_SECONDS=300
+```
+
+`IMAGE_MATE_PUBLIC_BASE_URL` must be reachable from the email recipient’s browser. Watch messages link to `/api/archive/preview` by item identity, so provider-signed URLs and credentials are not placed in email or browser URLs. The immediate-check API is:
+
+```text
+POST /api/archive-watches/{watch_id}/check
+GET  /api/archive-watches/{watch_id}/events
+```
+
+Open `/manual.html` from the running service for the operator workflow, configuration checklist, and troubleshooting guide.
 
 ## GeoAgent behavior
 

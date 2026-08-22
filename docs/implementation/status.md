@@ -28,6 +28,15 @@ Local release candidate verified against the backend test suite, syntax checks, 
 
 The deeper copied grid campaign services still reference the standalone package's ORM and client modules. They are intentionally not used by the public image-mate API. The verified public adapter is the pure geometry/planning/status layer plus `GridPlanStore`, `SatellogicClient`, and FastAPI routes. Persistent campaign synchronization, retask, extension, and remaining-AOI actions require a separate adapter increment before exposure.
 
+### Archive watch and operator manual increment
+
+- Added `frontend/manual.html` with operator guidance for archive browsing, NewSat sensor generations, aircraft Model Lab, Mosaic Workbench, archive watches, API usage, configuration, and troubleshooting.
+- Added a top-right **Manual** link in the carousel header and a right-click map action for starting an archive watch polygon.
+- Added durable `archive_watches` and `archive_watch_items` SQLite tables with overlap-window polling, identity deduplication, pending delivery state, and monitoring events.
+- Added `/api/archive-watches` CRUD, immediate check, status, and event routes.
+- Added environment-configured SMTP delivery using Image-Mate preview proxy links; raw provider-signed asset URLs are not persisted or emailed.
+- Added an application poller controlled by `IMAGE_MATE_ARCHIVE_WATCH_ENABLED` and `IMAGE_MATE_ARCHIVE_WATCH_INTERVAL_SECONDS`; immediate checks remain available through the UI/API.
+
 ## Completed implementation
 
 ### Backend
@@ -123,7 +132,7 @@ No live Satellogic order creation, cancellation, retask, extension, opportunity-
 
 ### Known limitations
 
-- No labeled Satellogic L1D-SR aircraft validation set or fine-tuning has been performed; detection quality is unverified for this domain.
+- No production-grade labeled Satellogic L1D-SR validation set or fine-tuning result has been accepted; detection quality remains unverified for this domain until a held-out Model Lab evaluation succeeds.
 - The current container has no CUDA or CoreML execution provider. The target laptop host must expose `CoreMLExecutionProvider` on Apple Silicon, or the target GPU machine must install compatible CUDA/cuDNN libraries and `onnxruntime-gpu`.
 - The UI uses a synchronous first slice; a long-running GPU job queue/persistence layer is deferred.
 - Browser automation against private localhost remains unverified; API and JavaScript checks passed.
@@ -170,7 +179,7 @@ No live Satellogic order creation, cancellation, retask, extension, opportunity-
 ### Known limitations
 
 - Candidate labels alone can improve filtering/subclassification but cannot create detector boxes for aircraft absent from all proposals. Grid positives need a later box-annotation step or a classifier/reranker path.
-- No fine-tuning has been run yet; a scene-separated labeled set is required before changing the production model.
+- Model Lab now builds scene-separated labeled bundles from UI annotations, requires held-out data for evaluation/activation, and keeps the active model unchanged until explicit promotion.
 
 ### Training bundle and host fine-tune
 
@@ -180,7 +189,7 @@ No live Satellogic order creation, cancellation, retask, extension, opportunity-
 - Training entry point: `backend/scripts/train_aircraft.py`.
 - Host-only requirements: `backend/requirements-aircraft-training.txt`.
 - The bundle is explicitly experimental: one scene, no background negatives, and too few examples for a generalization claim.
-- The actual training command was attempted and stopped before model mutation because this runtime has neither Ultralytics nor PyTorch/MPS/CUDA. The baseline `yolo11n-obb.pt` and `yolo11n-obb.onnx` were not overwritten.
+- The training command is host-runtime managed through the UI/API; if the configured training Python lacks Ultralytics/PyTorch/MPS/CUDA, the job fails with its captured host error and the baseline `yolo11n-obb.pt`/`yolo11n-obb.onnx` remain unchanged.
 
 Host-side command, after installing the host-only training requirements in a macOS Python environment with MPS:
 
@@ -197,3 +206,57 @@ python backend/scripts/train_aircraft.py \\
 ## Next recommended action
 
 Add background/hard-negative labels and at least one additional L1D-SR scene before treating any fine-tuned checkpoint as production-ready. The prepared host command may be run as an explicitly experimental Bamako-only update once the macOS MPS environment is available.
+
+## Mosaic Workbench increment
+
+### Implemented
+
+- NewSat carousel previews now resolve through `/api/archive/preview` by item identity, including the catalog S3 hostname in the default proxy allowlist.
+- Archive search and mosaic preflight carry explicit `sensor_generation` metadata for NewSat Mark IV/Mark V filtering and product-profile checks. GSD is not used to guess the spacecraft generation.
+- The carousel uses one checkbox per candidate image; focus and selection are separate interactions.
+- Added a dedicated Mosaic tab and carousel popup for whole-strip or polygon AOI mosaics.
+- Added connected-overlap, same-source/product, sensor compatibility, polygon intersection, resolution, and output-size preflight checks.
+- Added durable SQLite mosaic jobs, atomic worker claim/progress routes, identity-based worker input delivery, artifact routing, cancel, and operator finalization.
+- Added `backend/scripts/mosaic_worker.py` and `backend/requirements-mosaic.txt` for host-side execution through the existing color-balanced, cloud-aware seamless mosaicker.
+- Added Cloud Edit polygon capture and durable repair request creation as the first QC slice.
+
+### Verification evidence
+
+- `node --check frontend/app.js` → passed.
+- `PYTHONPYCACHEPREFIX=/tmp/image-mate-pyc python3 -m compileall -q backend/app backend/scripts backend/tests` → passed.
+- Focused API suite: `31 passed, 2 warnings`, including NewSat preview, overlap/sensor preflight, job persistence, worker claim/progress/input isolation, and existing archive/workbench regressions.
+- `backend/scripts/mosaic_worker.py --help` → passed.
+
+### Remaining mosaic work
+
+- Install the optional host geospatial requirements and run a real small-AOI mosaic against downloaded local rasters.
+- Add completed GeoTIFF map overlay and source/provenance panel in QC.
+- Implement the clear-observation search and real-pixel cloud repair/rebalancing worker pass.
+- Add Apple Silicon capability detection and an accelerated engine adapter only after measuring the actual host provider.
+
+## Analyst Workflow Redesign increment
+
+### Implemented
+
+- Refactored the visible shell to five workspaces: Explore, Tasking, Monitor, Analyze, and Mosaic.
+- Added secondary workspace navigation, a contextual imagery-selection action bar, top-right Tools drawer, and unique timeline control cleanup.
+- Moved Model Lab under Analyze and retained Workflow Designer, Schedules, Runs/Logs, System Settings, and Help behind Tools.
+- Added durable Analysis Recipes with source/product/GSD compatibility metadata and seeded aircraft-surveillance and Sentinel-2 baseline recipes.
+- Added durable Monitoring Projects, deduplicated project items, alert dispositions, project activity, and approval-controlled proposed actions while preserving archive-watch and recollection-monitor routes.
+- Added durable Mosaic Projects, RGB/RGB-NIR specifications, coarsest-native-resolution validation, mixed Mark IV/Mark V metadata, expanded worker states, and project/QC status updates.
+- Extended tasking orders with optional `analysis_recipe_id` and `monitoring_project_id` references.
+- Updated the manual and README to describe the analyst workflow and public API surface.
+
+### Verification evidence
+
+- New analyst workspace tests: **3 passed**.
+- Full backend suite after the redesign: **91 passed**.
+- `node --check frontend/app.js`: passed.
+- HTML duplicate-ID audit: no duplicate IDs; five primary workspace buttons detected.
+- `git diff --check`: passed.
+
+### Remaining integration boundary
+
+- The project-check endpoint currently creates durable “new imagery” evidence/alerts from newly indexed archive items; model execution on delivered products and automatic email/workflow dispatch are the next adapter layer.
+- Proposed action approval records the analyst decision and keeps operational submission behind the existing explicit tasking safeguards; provider-specific product generation remains an execution adapter.
+- Browser rendering against private localhost remains unverified in this environment; use the host macOS browser for visual QA.

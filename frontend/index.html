@@ -16,18 +16,14 @@
     <aside class="panel">
       <header class="panel-header">
         <p class="kicker">Geospatial Intelligence Workbench</p>
-        <h1>GeoAgent</h1>
+        <h1>Image-Mate</h1>
       </header>
       <nav class="workbench-tabs" id="workbenchTabs">
         <button type="button" class="tab-btn active" data-tab="explore">Explore</button>
         <button type="button" class="tab-btn" data-tab="tasking">Tasking</button>
-        <button type="button" class="tab-btn" data-tab="grid">Grid Tasking</button>
-        <button type="button" class="tab-btn" data-tab="analytics">Analytics</button>
-        <button type="button" class="tab-btn" data-tab="lab">Model Lab</button>
-        <button type="button" class="tab-btn" data-tab="workflows">Workflows</button>
-        <button type="button" class="tab-btn" data-tab="schedules">Schedules</button>
-        <button type="button" class="tab-btn" data-tab="monitoring">Monitoring</button>
-        <button type="button" class="tab-btn" data-tab="runs">Runs</button>
+        <button type="button" class="tab-btn" data-tab="monitoring">Monitor<span id="monitoringAlertBadge" class="nav-badge" hidden>0</span></button>
+        <button type="button" class="tab-btn" data-tab="analytics">Analyze<span id="analysisFailureBadge" class="nav-badge danger" hidden>0</span></button>
+        <button type="button" class="tab-btn" data-tab="mosaic">Mosaic</button>
       </nav>
 
       <div id="leftExploreView" class="left-view active">
@@ -52,6 +48,12 @@
           <label>GSD Min (m)<input id="minGsd" type="number" step="0.01" min="0" placeholder="optional" /></label>
           <label>GSD Max (m)<input id="maxGsd" type="number" step="0.01" min="0" placeholder="optional" /></label>
         </div>
+        <label>NewSat Sensor<select id="sensorGeneration">
+          <option value="">All sensor generations</option>
+          <option value="mark-iv">NewSat Mark IV</option>
+          <option value="mark-v">NewSat Mark V</option>
+          <option value="unknown">Unknown / unclassified</option>
+        </select></label>
         <div class="grid two">
           <label>Satellite Name<input id="satelliteName" type="text" placeholder="optional, e.g. SN48" /></label>
           <label>Result Limit<input id="limit" type="number" min="1" max="1000" value="250" /></label>
@@ -125,16 +127,25 @@
 
       <div id="leftTaskingView" class="left-view">
         <section class="panel-block">
+          <div class="workspace-secondary-tabs" id="taskingSecondaryTabs" role="tablist" aria-label="Tasking views">
+            <button type="button" class="secondary-tab active" data-secondary-workspace="tasking" data-secondary-tab="proposed">Proposed<span id="proposedTaskingBadge" class="nav-badge" hidden>0</span></button>
+            <button type="button" class="secondary-tab" data-secondary-workspace="tasking" data-secondary-tab="upcoming">Upcoming</button>
+            <button type="button" class="secondary-tab" data-secondary-workspace="tasking" data-secondary-tab="active">Active</button>
+            <button type="button" class="secondary-tab" data-secondary-workspace="tasking" data-secondary-tab="history">History</button>
+            <button type="button" class="secondary-tab" data-secondary-workspace="tasking" data-secondary-tab="plan_new">Plan New</button>
+          </div>
+          <section id="taskingOrdersPanel">
           <h2>Tasking Orders</h2>
           <div class="actions single">
             <button id="taskingRefreshBtn" type="button">Refresh Taskings</button>
           </div>
           <p id="taskingOrdersMeta" class="meta">No tasking orders loaded.</p>
           <div id="taskingOrdersList" class="tasking-orders-list"></div>
+          </section>
         </section>
       </div>
 
-      <div id="leftGridView" class="left-view">
+      <div id="leftGridView" class="left-view nested-workspace-view" data-workspace="tasking">
         <section class="panel-block">
           <p class="kicker">Read-only planning first</p>
           <h2>Grid Tasking Planner</h2>
@@ -167,6 +178,13 @@
 
       <div id="leftAnalyticsView" class="left-view">
         <section class="panel-block">
+          <div class="workspace-secondary-tabs" id="analyzeSecondaryTabs" role="tablist" aria-label="Analyze views">
+            <button type="button" class="secondary-tab active" data-secondary-workspace="analyze" data-secondary-tab="run_analysis">Run Analysis</button>
+            <button type="button" class="secondary-tab" data-secondary-workspace="analyze" data-secondary-tab="results">Results</button>
+            <button type="button" class="secondary-tab" data-secondary-workspace="analyze" data-secondary-tab="recipes">Recipes</button>
+            <button type="button" class="secondary-tab" data-secondary-workspace="analyze" data-secondary-tab="model_lab">Model Lab</button>
+          </div>
+          <section id="analyzeRunPanel">
           <p class="kicker">Delivered intelligence</p>
           <h2>Satellogic Analytics</h2>
           <p class="meta">Inspect analytics assets attached to a delivered Satellogic deliverable. Model detections remain evidence, not ground truth.</p>
@@ -189,10 +207,16 @@
             <button id="aircraftDetectorClearBtn" type="button" class="ghost">Clear Results</button>
           </div>
           <pre id="aircraftDetectorResult" class="report compact">No local detection run yet.</pre>
+          </section>
+        </section>
+        <section id="analysisRecipesPanel" class="panel-block secondary-content-panel">
+          <div class="workflow-builder-head"><h2>Analysis Recipes</h2><button id="analysisRecipesRefreshBtn" type="button" class="ghost tiny">Refresh</button></div>
+          <p class="meta">Versioned bundles define models, compatible sources, thresholds, classes, and alert actions.</p>
+          <div id="analysisRecipesList" class="monitoring-list"><p class="meta">No recipes loaded.</p></div>
         </section>
       </div>
 
-      <div id="leftLabView" class="left-view">
+      <div id="leftLabView" class="left-view nested-workspace-view" data-workspace="analyze">
         <section class="panel-block lab-hero">
           <p class="kicker">Human-in-the-loop aircraft workbench</p>
           <h2>Aircraft Model Lab</h2>
@@ -204,10 +228,10 @@
           </div>
           <div class="actions">
             <button id="labCatalogRefreshBtn" type="button">Refresh Catalog</button>
-            <button id="labHostTrainingBtn" type="button" class="ghost">Show Host Command</button>
+            <button id="labActivateModelBtn" type="button" class="ghost">Activate Selected Model</button>
           </div>
           <p id="labCatalogMeta" class="meta">Loading local models and prepared datasets...</p>
-          <pre id="labTrainingCommand" class="report compact" hidden>Host-side training is intentionally explicit. The Hermes Docker runtime does not claim access to the Mac GPU.</pre>
+          <pre id="labTrainingCommand" class="report compact" hidden>Training and evaluation run in the configured host Python environment.</pre>
         </section>
 
         <section class="panel-block">
@@ -232,6 +256,34 @@
         </section>
 
         <section class="panel-block">
+          <div class="workflow-builder-head">
+            <div>
+              <p class="kicker">Train from confirmed labels</p>
+              <h2>Dataset &amp; Fine-tune</h2>
+            </div>
+          </div>
+          <p class="meta">Choose complete scenes for training and keep at least one separate scene for validation. The bundle is built from the labels saved above.</p>
+          <div class="grid two">
+            <label>Dataset name<input id="labDatasetName" type="text" value="aircraft-l1d-finetune" maxlength="80" /></label>
+            <label>Validation scene<select id="labValidationScene"><option value="">Select a held-out scene</option></select></label>
+          </div>
+          <label>Training scenes<select id="labTrainScenes" multiple size="4"></select></label>
+          <label class="toggle-inline"><input id="labAllowSingleScene" type="checkbox" /> Allow experimental single-scene training</label>
+          <div class="grid three">
+            <label>Epochs<input id="labEpochs" type="number" min="1" max="500" value="10" /></label>
+            <label>Image size<input id="labImgSize" type="number" min="128" max="4096" step="32" value="1024" /></label>
+            <label>Device<select id="labTrainingDevice"><option value="mps">MPS</option><option value="cuda">CUDA</option><option value="cpu">CPU</option></select></label>
+          </div>
+          <div class="actions">
+            <button id="labBuildDatasetBtn" type="button">Build Training Dataset</button>
+            <button id="labTrainBtn" type="button" class="secondary">Start Fine-tune</button>
+            <button id="labEvaluateBtn" type="button" class="ghost">Evaluate Selected</button>
+          </div>
+          <p id="labDatasetMeta" class="meta">No annotation dataset selected.</p>
+          <p id="labJobMeta" class="meta">No training or evaluation job running.</p>
+        </section>
+
+        <section class="panel-block">
           <p class="kicker">Luna few-shot lane</p>
           <h2>Calibrate the reviewer</h2>
           <p class="meta">Use the CLI or Telegram flow to prime Luna from confirmed examples, then evaluate pending chips. Luna's suggestions remain review evidence until you confirm them.</p>
@@ -243,6 +295,41 @@
 aircraft_review.py luna-evaluate \
   --manifest /path/to/target/review_manifest.json \
   --prime-manifest /path/to/luna-prime/luna_examples.json</pre>
+        </section>
+      </div>
+
+      <div id="leftMosaicView" class="left-view">
+        <section class="panel-block mosaic-workbench-hero">
+          <div class="workspace-secondary-tabs" id="mosaicSecondaryTabs" role="tablist" aria-label="Mosaic views">
+            <button type="button" class="secondary-tab active" data-secondary-workspace="mosaic" data-secondary-tab="projects">Projects</button>
+            <button type="button" class="secondary-tab" data-secondary-workspace="mosaic" data-secondary-tab="processing">Processing</button>
+            <button type="button" class="secondary-tab" data-secondary-workspace="mosaic" data-secondary-tab="qc_required">QC Required<span id="mosaicQcBadge" class="nav-badge" hidden>0</span></button>
+            <button type="button" class="secondary-tab" data-secondary-workspace="mosaic" data-secondary-tab="finalized">Finalized</button>
+          </div>
+          <p class="kicker">Derived product workbench</p>
+          <h2>Mosaic Workbench</h2>
+          <p class="meta">Select NewSat captures using QuickView or L1D-SR footprints. Processing always waits for complete L1D-SR Visual coverage before building the color-balanced mosaic.</p>
+          <div id="mosaicStatusCards" class="monitoring-status-cards"></div>
+          <p id="mosaicWorkbenchMeta" class="meta">Select two or more overlapping images in the carousel, then choose Mosaic.</p>
+          <div class="actions">
+            <button id="mosaicClearBtn" type="button" class="ghost">Clear Mosaic Session</button>
+            <button id="mosaicRefreshBtn" type="button" class="ghost">Refresh Job</button>
+            <button id="mosaicStartWorkerBtn" type="button" class="ghost" disabled>Start Processing</button>
+          </div>
+        </section>
+        <section class="panel-block">
+          <div class="workflow-builder-head"><h2>Source Stack</h2><span id="mosaicSourceCount" class="chip">0</span></div>
+          <div id="mosaicSourceList" class="tasking-orders-list"><p class="meta">No mosaic sources selected.</p></div>
+        </section>
+        <section class="panel-block">
+          <h2>Quality Control</h2>
+          <p class="meta">Cloud editing draws a repair AOI. The host worker will select a covering clear observation, color-match it against the surrounding mosaic, and create a reversible repair operation.</p>
+          <div class="actions">
+            <button id="mosaicCloudEditBtn" type="button" class="ghost" disabled>Cloud Edit</button>
+            <button id="mosaicFinalizeBtn" type="button" disabled>Finalize Mosaic</button>
+          </div>
+          <p id="mosaicRepairMeta" class="meta">No cloud repair queued.</p>
+          <pre id="mosaicQualityResult" class="report compact">No mosaic output yet.</pre>
         </section>
       </div>
 
@@ -372,6 +459,13 @@ aircraft_review.py luna-evaluate \
 
       <div id="leftMonitoringView" class="left-view">
         <section class="panel-block monitoring-hero">
+          <div class="workspace-secondary-tabs" id="monitoringSecondaryTabs" role="tablist" aria-label="Monitor views">
+            <button type="button" class="secondary-tab active" data-secondary-workspace="monitoring" data-secondary-tab="overview">Overview</button>
+            <button type="button" class="secondary-tab" data-secondary-workspace="monitoring" data-secondary-tab="alerts">Alerts<span id="monitoringNewAlertBadge" class="nav-badge" hidden>0</span></button>
+            <button type="button" class="secondary-tab" data-secondary-workspace="monitoring" data-secondary-tab="evidence">Evidence</button>
+            <button type="button" class="secondary-tab" data-secondary-workspace="monitoring" data-secondary-tab="automation">Automation</button>
+            <button type="button" class="secondary-tab" data-secondary-workspace="monitoring" data-secondary-tab="activity">Activity</button>
+          </div>
           <p class="kicker">Capture assurance</p>
           <h2>AOI Recollection Monitoring</h2>
           <p class="meta">Track archive-observed captures around the world. Monitoring is read-only: it never creates tasking orders.</p>
@@ -390,6 +484,45 @@ aircraft_review.py luna-evaluate \
           </div>
           <p id="monitoringMeta" class="meta">Draw or pan the map to the AOI you want to monitor, then create a target.</p>
         </section>
+        <section class="panel-block monitoring-project-panel">
+          <p class="kicker">Durable analyst object</p>
+          <h2>Monitoring Projects</h2>
+          <p class="meta">A project combines archive watching, analysis, alerts, and approval-gated follow-on actions for one AOI.</p>
+          <label>Project Name<input id="monitoringProjectName" type="text" placeholder="e.g. Eastern border airbase watch" /></label>
+          <div class="grid two">
+            <label>Source<select id="monitoringProjectSource"><option value="satellogic">NewSat</option><option value="merlin-s2">Sentinel-2</option></select></label>
+            <label>Collection<input id="monitoringProjectCollection" type="text" value="quickview-visual-thumb" /></label>
+          </div>
+          <label>Analysis Recipe<select id="monitoringProjectRecipe"><option value="">No recipe selected</option></select></label>
+          <label class="toggle-inline"><input id="monitoringProjectEmailAction" type="checkbox" checked /> Email new imagery/alerts</label>
+          <label>Workflow ID (optional)<input id="monitoringProjectWorkflowId" type="text" placeholder="Run a workflow automatically" /></label>
+          <label class="toggle-inline"><input id="monitoringProjectTaskingAction" type="checkbox" /> Propose NewSat tasking when an alert is created</label>
+          <div class="actions"><button id="monitoringProjectCreateBtn" type="button">Create from current AOI</button><button id="monitoringProjectCheckBtn" type="button" class="ghost">Check selected</button></div>
+          <p id="monitoringProjectMeta" class="meta">Projects are single-user in v1 and retain audit timestamps for future collaboration.</p>
+          <div id="monitoringProjectList" class="monitoring-list"><p class="meta">No projects yet.</p></div>
+        </section>
+        <section class="panel-block archive-watch-panel">
+          <p class="kicker">Archive alerts</p>
+          <h2>Watch for New Imagery</h2>
+          <p class="meta">Draw a polygon and Image-Mate will check the selected archive collection on a repeating interval. New captures remain pending until email delivery is configured and succeeds.</p>
+          <div class="grid two">
+            <label>Watch Name<input id="archiveWatchName" type="text" placeholder="e.g. Eastern border airbase" /></label>
+            <label>Poll Interval (seconds)<input id="archiveWatchInterval" type="number" min="15" max="86400" value="300" /></label>
+          </div>
+          <div class="grid two">
+            <label>Source<select id="archiveWatchSource"><option value="satellogic">Satellogic</option><option value="merlin-s2">Sentinel-2</option></select></label>
+            <label>Collection<select id="archiveWatchCollection"><option value="quickview-visual-thumb">QuickView Visual Thumbnail</option><option value="quickview-visual">QuickView Visual</option><option value="l1d-sr">L1D-SR Visual</option><option value="sentinel-2-l2a">Sentinel-2 L2A</option><option value="sentinel-2-l1c">Sentinel-2 L1C</option></select></label>
+          </div>
+          <div class="grid two">
+            <label>Cloud Cover ≤<input id="archiveWatchMaxCloud" type="number" min="0" max="100" value="60" /></label>
+            <label>Email override (optional)<input id="archiveWatchEmail" type="text" placeholder="Uses IMAGE_MATE_ALERT_EMAIL_TO" /></label>
+          </div>
+          <div class="actions">
+            <button id="archiveWatchDrawBtn" type="button">Draw Watch Polygon</button>
+            <button id="archiveWatchCreateBtn" type="button">Create Archive Watch</button>
+          </div>
+          <p id="archiveWatchMeta" class="meta">Tip: you can also right-click the map and choose “Watch this area for new imagery.”</p>
+        </section>
         <section class="panel-block">
           <div class="monitoring-section-head"><h2>Monitored AOIs</h2><span id="monitoringCount" class="chip">0</span></div>
           <div id="monitoringList" class="monitoring-list"><p class="meta">No recollection monitors yet.</p></div>
@@ -399,6 +532,11 @@ aircraft_review.py luna-evaluate \
           <div id="monitoringStatusCards" class="monitoring-status-cards"></div>
           <pre id="monitoringDetail" class="report compact">Select a monitored AOI.</pre>
           <p class="meta">Archive status means a thumbnail footprint was observed. Tasking and deliverable status remain unverified until linked order/capture evidence is checked.</p>
+        </section>
+        <section class="panel-block">
+          <div class="monitoring-section-head"><h2>Archive watches</h2><span id="archiveWatchCount" class="chip">0</span></div>
+          <div id="archiveWatchList" class="monitoring-list"><p class="meta">No archive watches yet.</p></div>
+          <pre id="archiveWatchDetail" class="report compact">Select an archive watch to inspect it.</pre>
         </section>
       </div>
 
@@ -414,10 +552,32 @@ aircraft_review.py luna-evaluate \
           <pre id="runEventsOut" class="report compact">No events.</pre>
         </section>
       </div>
+
+      <div id="leftSettingsView" class="left-view tool-view">
+        <section class="panel-block">
+          <p class="kicker">Runtime configuration</p>
+          <h2>System Settings</h2>
+          <p class="meta">Connection and provider settings remain environment-managed. Use this view to confirm the active Image-Mate runtime without exposing secrets in the browser.</p>
+          <div id="settingsSummary" class="monitoring-status-cards"><p class="meta">Loading runtime status...</p></div>
+          <div class="actions"><button id="settingsRefreshBtn" type="button">Refresh status</button></div>
+        </section>
+      </div>
     </aside>
 
     <main class="map-stage">
       <div id="map"></div>
+      <div class="global-tools" id="globalTools">
+        <button id="toolsMenuBtn" type="button" class="ghost tools-menu-btn" aria-expanded="false" aria-controls="toolsDrawer">Tools</button>
+        <div id="toolsDrawer" class="tools-drawer" role="dialog" aria-label="Image-Mate tools" hidden>
+          <div class="tools-drawer-head"><strong>Tools</strong><button id="toolsDrawerCloseBtn" type="button" class="ghost tiny">Close</button></div>
+          <p class="meta">Technical and system utilities are kept here so the analyst workspaces stay focused.</p>
+          <button type="button" class="tool-drawer-item" data-tool-view="workflows">Workflow Designer</button>
+          <button type="button" class="tool-drawer-item" data-tool-view="schedules">Schedules &amp; subscriptions</button>
+          <button type="button" class="tool-drawer-item" data-tool-view="runs">Runs &amp; logs</button>
+          <button type="button" class="tool-drawer-item" data-tool-view="settings">System settings</button>
+          <a class="tool-drawer-item" href="/manual.html" target="_blank" rel="noopener">Help &amp; user manual</a>
+        </div>
+      </div>
       <div id="mapLocate" class="map-locate">
         <form id="mapLocateForm" class="map-locate-form" autocomplete="off">
           <input
@@ -426,6 +586,7 @@ aircraft_review.py luna-evaluate \
             placeholder="Search place or lat/lon (DD or DMS)"
             aria-label="Search location"
           />
+          <button id="mapLocateSaveBtn" type="button" class="map-locate-save-btn" aria-label="Set current map view as default" title="Set current map view as default">⌖</button>
           <button id="mapLocateHistoryBtn" type="button" class="map-locate-history-btn" aria-label="Open location history" aria-expanded="false" title="Search history">
             <span class="caret-icon" aria-hidden="true"></span>
           </button>
@@ -470,12 +631,30 @@ aircraft_review.py luna-evaluate \
               <button id="lockSelectionBtn" class="ghost tiny icon-only" type="button" title="Lock View" aria-label="Lock View">
                 <span class="lock-icon unlocked" aria-hidden="true"></span>
               </button>
+              <div id="carouselSelectionBar" class="carousel-selection-bar" hidden>
+                <span id="carouselSelectionCount" class="selection-count">0 selected</span>
               <button id="compareModeBtn" class="ghost tiny icon-only" type="button" title="Compare" aria-label="Compare">
                 <span class="clock-icon" aria-hidden="true"></span>
               </button>
               <button id="animateSeriesBtn" class="ghost tiny icon-only" type="button" title="Animate Selected" aria-label="Animate Selected">
                 <span class="movie-icon" aria-hidden="true"></span>
               </button>
+              <button id="mosaicBtn" class="ghost tiny" type="button" title="Create mosaic from selected images" aria-label="Create mosaic from selected images">Mosaic</button>
+              <div id="mosaicPopover" class="mosaic-popover" role="dialog" aria-label="Create mosaic">
+                <h4>Create Mosaic</h4>
+                <p id="mosaicSelectionSummary" class="meta">Select at least two images.</p>
+                <label class="mosaic-mode-option"><input type="radio" name="mosaicMode" value="whole_strip" checked /> Mosaic whole strips</label>
+                <label class="mosaic-mode-option"><input type="radio" name="mosaicMode" value="polygon" /> Draw polygon for mosaic</label>
+                <label>Sensor generation<select id="mosaicSensorGeneration"><option value="">Use selected imagery</option><option value="mark-iv">NewSat Mark IV</option><option value="mark-v">NewSat Mark V</option></select></label>
+                <label>Output bands<select id="mosaicOutputBands"><option value="rgb">RGB</option><option value="rgb_nir">RGB-NIR (requires NIR on every input)</option></select></label>
+                <label>Output resolution (m/px)<input id="mosaicResolution" type="number" min="0.1" max="20" step="0.01" placeholder="Automatic" /></label>
+                <label>Processing accelerator<select id="mosaicAccelerator"><option value="auto">Automatic (MPS / CUDA / OpenCL / CPU)</option><option value="mps">Apple Metal (MPS)</option><option value="cuda">CUDA</option><option value="opencl">OpenCL</option><option value="cpu">CPU</option></select></label>
+                <p id="mosaicPopoverStatus" class="meta">The selected images must form one connected overlap group.</p>
+                <div class="mosaic-popover-actions">
+                  <button id="mosaicGenerateBtn" type="button">Generate</button>
+                  <button id="mosaicCloseBtn" type="button" class="ghost tiny">Cancel</button>
+                </div>
+              </div>
               <button id="generateSeriesReportBtn" class="ghost tiny icon-only" type="button" title="Generate Report" aria-label="Generate Report">
                 <span class="report-icon" aria-hidden="true"></span>
               </button>
@@ -512,6 +691,13 @@ aircraft_review.py luna-evaluate \
                 <button id="downloadVisibleL1dBtn" type="button" class="download-menu-item" role="menuitem">Download visible tiles (L1D-SR Visual)</button>
               </div>
               <div id="downloadCopiedTip" class="download-copied-tip" role="status" aria-live="polite">Copied To Clipboard</div>
+              <button id="carouselAnalyzeBtn" type="button" class="ghost tiny">Analyze</button>
+              <button id="carouselMoreBtn" type="button" class="ghost tiny">More</button>
+              <div id="carouselMorePopover" class="selection-more-popover" hidden>
+                <button id="carouselReportBtn" type="button" class="download-menu-item">Generate report</button>
+                <span class="meta">Additional actions use the selected imagery.</span>
+              </div>
+              </div>
             </div>
           </div>
           <p id="searchResultsCount">0 Products Found</p>
@@ -534,6 +720,8 @@ aircraft_review.py luna-evaluate \
       <div id="mapContextMenu" class="map-context-menu">
         <button id="ctxCopyLatLon" class="ctx-coord-btn">Lat/Lon: --, --</button>
         <button id="ctxCreateAnimation">Create Animation</button>
+        <button id="ctxCreateMonitoringProject">Start Monitoring Project</button>
+        <button id="ctxCreateMosaic">Create Mosaic from Selection</button>
         <button id="ctxTaskImage">Task New Image</button>
       </div>
 
@@ -550,6 +738,8 @@ aircraft_review.py luna-evaluate \
           <label>Project<input id="taskingProjectName" type="text" list="taskingProjectSuggestions" required /></label>
           <datalist id="taskingProjectSuggestions"></datalist>
           <label>Product<select id="taskingProduct" required></select></label>
+          <label>Analysis Recipe (optional)<select id="taskingAnalysisRecipe"><option value="">Run manually later</option></select></label>
+          <label>Monitoring Project (optional)<select id="taskingMonitoringProject"><option value="">No linked project</option></select></label>
           <div class="grid two">
             <label>Start<input id="taskingStart" type="datetime-local" required /></label>
             <label>End<input id="taskingEnd" type="datetime-local" required /></label>

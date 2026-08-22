@@ -9,6 +9,7 @@ import re
 import requests
 
 from .config import settings
+from .satellogic_metadata import infer_sensor_generation
 
 logger = logging.getLogger(__name__)
 
@@ -449,13 +450,19 @@ class SatellogicClient:
         satellite_name: str | None = None,
         min_gsd: float | None = None,
         max_gsd: float | None = None,
+        sensor_generation: str | None = None,
     ) -> list[dict[str, Any]]:
         url = f"{self.stac_url}/search"
         normalized_geometry = _normalize_geometry_longitudes(geometry)
+        def stac_datetime(value: str, *, end: bool = False) -> str:
+            raw = str(value or "").strip()
+            if "T" in raw or "t" in raw or " " in raw:
+                return raw
+            return f"{raw}T{'23:59:59' if end else '00:00:00'}Z"
         body: dict[str, Any] = {
             "collections": [collection_id],
             "intersects": normalized_geometry,
-            "datetime": f"{start_date}/{end_date}",
+            "datetime": f"{stac_datetime(start_date)}/{stac_datetime(end_date, end=True)}",
             "limit": limit,
             "sortby": [{"field": "datetime", "direction": "desc"}],
         }
@@ -474,6 +481,13 @@ class SatellogicClient:
                 json=next_body,
                 timeout=60,
             )
+            if not response.ok:
+                logger.warning(
+                    "Satellogic STAC search failed status=%s collection=%s detail=%s",
+                    response.status_code,
+                    collection_id,
+                    response.text[:1000],
+                )
             response.raise_for_status()
             payload = response.json()
             page_features = payload.get("features", []) if isinstance(payload, dict) else []
@@ -496,6 +510,7 @@ class SatellogicClient:
             satellite_name=satellite_name,
             min_gsd=min_gsd,
             max_gsd=max_gsd,
+            sensor_generation=sensor_generation,
         )
 
     def item_by_id(
@@ -530,6 +545,7 @@ class SatellogicClient:
         satellite_name: str | None = None,
         min_gsd: float | None = None,
         max_gsd: float | None = None,
+        sensor_generation: str | None = None,
     ) -> list[dict[str, Any]]:
         if not features:
             return []
@@ -548,12 +564,21 @@ class SatellogicClient:
                     continue
             
             sat_name = _extract_satellite_name(props, item_id) or ""
+            generation, _generation_source = infer_sensor_generation(
+                props,
+                item_id=item_id,
+                satellite_name=sat_name,
+                configured_map=settings.satellogic_satellite_generation_map,
+            )
             gsd = _extract_gsd(props)
             if sat_filter and sat_filter not in sat_name.lower() and sat_filter not in item_id.lower():
                 continue
             if min_gsd is not None and (gsd is None or gsd < min_gsd):
                 continue
             if max_gsd is not None and (gsd is None or gsd > max_gsd):
+                continue
+            requested_generation = str(sensor_generation or "").strip().lower()
+            if requested_generation and requested_generation not in {"any", "all"} and generation != requested_generation:
                 continue
             out.append(feature)
 
@@ -605,6 +630,12 @@ def normalize_item(feature: dict[str, Any]) -> dict[str, Any]:
     outcome = props.get("satl:outcome_id") or props.get("outcome_id") or feature.get("id")
     gsd = _extract_gsd(props)
     satellite_name = _extract_satellite_name(props, feature.get("id", ""))
+    sensor_generation, sensor_generation_source = infer_sensor_generation(
+        props,
+        item_id=feature.get("id"),
+        satellite_name=satellite_name,
+        configured_map=settings.satellogic_satellite_generation_map,
+    )
 
     return {
         "id": feature.get("id"),
@@ -612,6 +643,8 @@ def normalize_item(feature: dict[str, Any]) -> dict[str, Any]:
         "datetime": props.get("datetime"),
         "outcome_id": outcome,
         "satellite_name": satellite_name,
+        "sensor_generation": sensor_generation,
+        "sensor_generation_source": sensor_generation_source,
         "gsd": gsd,
         "cloud_cover": props.get("eo:cloud_cover"),
         "valid_pixel_percent": props.get("satl:valid_pixel") or props.get("satl:valid_pixel_percent"),
@@ -622,8 +655,8 @@ def normalize_item(feature: dict[str, Any]) -> dict[str, Any]:
             "preview": asset_url("preview", "thumbnail", "visual", "analytic") or "",
             "thumbnail": asset_url("thumbnail", "preview", "visual", "analytic") or "",
             "cloud_mask": (
-                asset_url("cloud_mask", "cloudmask", "cloud-mask", "cmask", "clm")
-                or asset_url_by_key_regex(r"(cloud.*mask|mask.*cloud|cmask|cloudmask|clm)")
+                asset_url("cloud", "cloud_mask", "cloudmask", "cloud-mask", "cmask", "clm")
+                or asset_url_by_key_regex(r"(^cloud$|cloud.*mask|mask.*cloud|cmask|cloudmask|clm)")
                 or ""
             ),
         },

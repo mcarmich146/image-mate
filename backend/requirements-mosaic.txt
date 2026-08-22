@@ -1,0 +1,5 @@
+-r requirements.txt
+rasterio>=1.4,<2
+scipy>=1.13,<2
+opencv-python-headless>=4.10,<5
+affine>=2.4,<3

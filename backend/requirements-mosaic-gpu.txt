@@ -1,0 +1,4 @@
+# Optional host-side acceleration for the Image-Mate mosaicker.
+# PyTorch uses Apple's MPS backend on Apple Silicon and CUDA on supported hosts.
+-r requirements-mosaic.txt
+torch>=2.3,<3

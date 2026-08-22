@@ -129,6 +129,7 @@ class SourceManager:
         satellite_name: str | None = None,
         min_gsd: float | None = None,
         max_gsd: float | None = None,
+        sensor_generation: str | None = None,
     ) -> list[dict[str, Any]]:
         src = self.normalize_source_id(source_id)
         if src == SOURCE_SATELLOGIC:
@@ -143,6 +144,7 @@ class SourceManager:
                 satellite_name=satellite_name,
                 min_gsd=min_gsd,
                 max_gsd=max_gsd,
+                sensor_generation=sensor_generation,
             )
             items = [normalize_item(feature) for feature in features]
             for item in items:

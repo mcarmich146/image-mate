@@ -14,6 +14,7 @@ class SearchRequest(BaseModel):
     limit: int = 300
     max_cloud_cover: float | None = Field(default=40, ge=0, le=100)
     satellite_name: str | None = None
+    sensor_generation: str | None = Field(default=None, max_length=32)
     min_gsd: float | None = Field(default=None, ge=0)
     max_gsd: float | None = Field(default=None, ge=0)
 
@@ -25,6 +26,7 @@ class SearchResultItem(BaseModel):
     datetime: str | None = None
     outcome_id: str | None = None
     satellite_name: str | None = None
+    sensor_generation: str | None = None
     gsd: float | None = None
     cloud_cover: float | None = None
     valid_pixel_percent: float | None = None
@@ -54,6 +56,7 @@ class GeoAgentRequest(BaseModel):
     collection_id: str = "l1d-sr"
     contract_id: str | None = None
     satellite_name: str | None = None
+    sensor_generation: str | None = None
     min_gsd: float | None = Field(default=None, ge=0)
     max_gsd: float | None = Field(default=None, ge=0)
     max_frames: int = Field(default=12, ge=3, le=24)
@@ -83,6 +86,7 @@ class AircraftDetectorRequest(BaseModel):
     bounds: list[float] | None = Field(default=None, min_length=4, max_length=4)
     crs: str = Field(default="EPSG:4326", max_length=64)
     contract_id: str | None = Field(default=None, max_length=240)
+    model_id: str = Field(default="active", max_length=300)
     confidence: float | None = Field(default=None, ge=0.01, le=1.0)
     iou: float | None = Field(default=None, ge=0.01, le=1.0)
     max_detections: int | None = Field(default=None, ge=1, le=500)
@@ -111,6 +115,7 @@ class AircraftLabAnnotationRequest(BaseModel):
     x: int = Field(ge=0)
     y: int = Field(ge=0)
     scale: int = Field(default=4, ge=1, le=4)
+    contract_id: str | None = Field(default=None, max_length=240)
     bounds_wgs84: list[float] = Field(min_length=4, max_length=4)
     source_width_px: int = Field(gt=0, le=8192)
     source_height_px: int = Field(gt=0, le=8192)
@@ -119,6 +124,7 @@ class AircraftLabAnnotationRequest(BaseModel):
     detection_id: str | None = Field(default=None, max_length=120)
     confidence: float | None = Field(default=None, ge=0, le=1)
     note: str | None = Field(default=None, max_length=1000)
+    model_id: str = Field(default="active", max_length=300)
 
     @model_validator(mode="after")
     def validate_aircraft_annotation(self):
@@ -139,6 +145,49 @@ class AircraftLabAnnotationRequest(BaseModel):
             if not (0 <= x <= self.source_width_px and 0 <= y <= self.source_height_px):
                 raise ValueError("geometry_px points must stay within the source tile")
         return self
+
+
+class AircraftDatasetBuildRequest(BaseModel):
+    """Build a scene-separated training bundle from Model Lab annotations."""
+
+    name: str = Field(min_length=1, max_length=80)
+    train_item_ids: list[str] = Field(min_length=1, max_length=100)
+    validation_item_ids: list[str] = Field(default_factory=list, max_length=100)
+    allow_single_scene: bool = False
+
+    @model_validator(mode="after")
+    def validate_scene_split(self):
+        train = {str(value).strip() for value in self.train_item_ids if str(value).strip()}
+        validation = {str(value).strip() for value in self.validation_item_ids if str(value).strip()}
+        if not train:
+            raise ValueError("Select at least one training scene")
+        if train.intersection(validation):
+            raise ValueError("A scene cannot be both training and validation data")
+        self.train_item_ids = sorted(train)
+        self.validation_item_ids = sorted(validation)
+        return self
+
+
+class AircraftTrainingJobRequest(BaseModel):
+    dataset_id: str = Field(min_length=1, max_length=300)
+    model_id: str = Field(default="active", max_length=300)
+    device: Literal["mps", "cuda", "cpu"] = "mps"
+    epochs: int = Field(default=10, ge=1, le=500)
+    imgsz: int = Field(default=1024, ge=128, le=4096)
+    batch: int = Field(default=1, ge=1, le=64)
+    workers: int = Field(default=0, ge=0, le=32)
+    allow_single_scene: bool = False
+    export_onnx: bool = True
+
+
+class AircraftEvaluationJobRequest(BaseModel):
+    dataset_id: str = Field(min_length=1, max_length=300)
+    model_id: str = Field(default="active", max_length=300)
+    device: Literal["mps", "cuda", "cpu"] = "mps"
+
+
+class AircraftModelActivateRequest(BaseModel):
+    model_id: str = Field(min_length=1, max_length=300)
 
 
 class HealthResponse(BaseModel):
@@ -191,6 +240,53 @@ class DownloadBundleRequest(BaseModel):
     assets: list[DownloadAssetEntry] = Field(default_factory=list)
     contract_id: str | None = None
     bundle_name: str = "tiles_download"
+
+
+class MosaicInputRequest(BaseModel):
+    item_id: str = Field(min_length=1, max_length=240)
+    source_id: str = Field(default="satellogic", max_length=64)
+    collection_id: str = Field(default="l1d-sr", max_length=120)
+    asset_key: str = Field(default="visual", max_length=64)
+    sensor_generation: str | None = Field(default=None, max_length=32)
+
+
+class MosaicPreflightRequest(BaseModel):
+    inputs: list[MosaicInputRequest] = Field(min_length=2, max_length=200)
+    mode: Literal["whole_strip", "polygon"] = "whole_strip"
+    aoi: dict[str, Any] | None = None
+    sensor_generation: str | None = Field(default=None, max_length=32)
+    output_resolution_m: float | None = Field(default=None, gt=0, le=100)
+    output_bands: Literal["rgb", "rgb_nir"] = "rgb"
+    accelerator: Literal["auto", "cpu", "mps", "cuda", "opencl"] = "auto"
+    contract_id: str | None = Field(default=None, max_length=240)
+
+
+class MosaicJobRequest(MosaicPreflightRequest):
+    overwrite: bool = False
+    project_id: str | None = Field(default=None, max_length=120)
+
+
+class MosaicJobProgressRequest(BaseModel):
+    status: Literal[
+        "awaiting_product_request", "awaiting_products", "queued", "downloading", "running", "processing", "color_balancing",
+        "seam_optimization", "qc_required", "repairing", "succeeded", "finalized",
+        "failed", "canceled"
+    ] = "running"
+    progress: float = Field(default=0, ge=0, le=100)
+    message: str = Field(default="", max_length=2000)
+    error: str = Field(default="", max_length=4000)
+    result: dict[str, Any] | None = None
+
+
+class MosaicCloudRepairRequest(BaseModel):
+    job_id: str = Field(min_length=1, max_length=120)
+    geometry: dict[str, Any]
+    preferred_item_id: str | None = Field(default=None, max_length=240)
+    contract_id: str | None = Field(default=None, max_length=240)
+
+
+class MosaicProductRequestConfirmation(BaseModel):
+    confirmation: str = Field(min_length=1, max_length=120)
 
 
 class WorkflowDefinitionPayload(BaseModel):
@@ -259,6 +355,8 @@ class TaskingOrderCreateRequest(BaseModel):
     remapping_period: str | None = Field(default=None, max_length=64)
     contract_id: str | None = None
     additional_parameters: dict[str, Any] = Field(default_factory=dict)
+    analysis_recipe_id: str | None = Field(default=None, max_length=120)
+    monitoring_project_id: str | None = Field(default=None, max_length=120)
     confirmation: str | None = Field(default=None, max_length=120)
 
 
@@ -329,6 +427,32 @@ class RecollectionRefreshRequest(BaseModel):
     limit: int = Field(default=300, ge=1, le=1000)
 
 
+class ArchiveWatchCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    geometry: dict[str, Any]
+    source_id: str = "satellogic"
+    collection_id: str = "quickview-visual-thumb"
+    contract_id: str | None = None
+    filters: dict[str, Any] = Field(default_factory=dict)
+    email_to: str | None = Field(default=None, max_length=1000)
+    poll_interval_seconds: int | None = Field(default=None, ge=15, le=86400)
+    enabled: bool = True
+
+
+class ArchiveWatchPatchRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    filters: dict[str, Any] | None = None
+    email_to: str | None = Field(default=None, max_length=1000)
+    poll_interval_seconds: int | None = Field(default=None, ge=15, le=86400)
+    enabled: bool | None = None
+
+
+class ArchiveWatchCheckRequest(BaseModel):
+    start_date: str | None = None
+    end_date: str | None = None
+    limit: int = Field(default=300, ge=1, le=1000)
+
+
 class MonitoringEventCreateRequest(BaseModel):
     subscription_id: str
     source_id: str = "merlin-s2"
@@ -349,3 +473,79 @@ class CueCreateRequest(BaseModel):
     priority: Literal["low", "medium", "high", "urgent"] = "medium"
     geometry: dict[str, Any]
     payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class AnalysisRecipeCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=160)
+    version: str = Field(default="1.0.0", min_length=1, max_length=40)
+    description: str = Field(default="", max_length=2000)
+    models: list[dict[str, Any]] = Field(default_factory=list)
+    compatibility: dict[str, Any] = Field(default_factory=dict)
+    thresholds: dict[str, Any] = Field(default_factory=dict)
+    classes: list[str] = Field(default_factory=list)
+    alert_rules: dict[str, Any] = Field(default_factory=dict)
+    actions: dict[str, Any] = Field(default_factory=dict)
+    enabled: bool = True
+
+
+class AnalysisRecipePatchRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=160)
+    version: str | None = Field(default=None, min_length=1, max_length=40)
+    description: str | None = Field(default=None, max_length=2000)
+    models: list[dict[str, Any]] | None = None
+    compatibility: dict[str, Any] | None = None
+    thresholds: dict[str, Any] | None = None
+    classes: list[str] | None = None
+    alert_rules: dict[str, Any] | None = None
+    actions: dict[str, Any] | None = None
+    enabled: bool | None = None
+
+
+class MonitoringProjectCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=160)
+    geometry: dict[str, Any]
+    sources: list[dict[str, Any]] = Field(default_factory=list)
+    cadence_seconds: int = Field(default=3600, ge=60, le=31_536_000)
+    quality_filters: dict[str, Any] = Field(default_factory=dict)
+    analysis_recipe_id: str | None = Field(default=None, max_length=120)
+    alert_policy: dict[str, Any] = Field(default_factory=dict)
+    actions: dict[str, Any] = Field(default_factory=dict)
+    enabled: bool = True
+
+
+class MonitoringProjectPatchRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=160)
+    sources: list[dict[str, Any]] | None = None
+    cadence_seconds: int | None = Field(default=None, ge=60, le=31_536_000)
+    quality_filters: dict[str, Any] | None = None
+    analysis_recipe_id: str | None = Field(default=None, max_length=120)
+    alert_policy: dict[str, Any] | None = None
+    actions: dict[str, Any] | None = None
+    enabled: bool | None = None
+
+
+class AlertDispositionRequest(BaseModel):
+    status: Literal["New", "Acknowledged", "Dismissed", "Escalated", "Actioned"]
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class ProposedActionDecisionRequest(BaseModel):
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class MosaicProjectCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=160)
+    source_item_ids: list[str] = Field(default_factory=list, min_length=0, max_length=200)
+    output_bands: Literal["rgb", "rgb_nir"] = "rgb"
+    output_resolution_m: float | None = Field(default=None, gt=0, le=100)
+    sensor_generation: Literal["mark-iv", "mark-v", "mixed", "unknown"] = "unknown"
+    geometry: dict[str, Any] | None = None
+    status: str = Field(default="Draft", max_length=40)
+
+
+class MosaicProjectPatchRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=160)
+    output_bands: Literal["rgb", "rgb_nir"] | None = None
+    output_resolution_m: float | None = Field(default=None, gt=0, le=100)
+    status: str | None = Field(default=None, max_length=40)
+    geometry: dict[str, Any] | None = None

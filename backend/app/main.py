@@ -8,11 +8,17 @@ from dataclasses import replace
 import ipaddress
 import json
 import logging
+import math
+import mimetypes
 import socket
 import time
 import base64
+import hashlib
+import os
 import re
 import struct
+import subprocess
+import sys
 import threading
 import uuid
 import zipfile
@@ -22,7 +28,7 @@ from urllib.parse import parse_qs, quote, urlparse
 from io import BytesIO
 
 import requests
-from PIL import Image
+from PIL import Image, ImageOps
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -40,16 +46,36 @@ from .geoagent import generate_geo_report
 from .models import (
     AnimationSearchRequest,
     AnimationRequest,
+    ArchiveWatchCheckRequest,
+    ArchiveWatchCreateRequest,
+    ArchiveWatchPatchRequest,
     AircraftDetectorRequest,
+    AircraftDatasetBuildRequest,
+    AircraftEvaluationJobRequest,
     AircraftLabAnnotationRequest,
+    AircraftModelActivateRequest,
+    AircraftTrainingJobRequest,
+    AnalysisRecipeCreateRequest,
+    AnalysisRecipePatchRequest,
+    AlertDispositionRequest,
     CueCreateRequest,
     DownloadBundleRequest,
+    MosaicCloudRepairRequest,
+    MosaicJobRequest,
+    MosaicJobProgressRequest,
+    MosaicProductRequestConfirmation,
+    MosaicPreflightRequest,
     GeoAgentRequest,
     GeoAgentResponse,
     HealthResponse,
     MonitoringEventAckRequest,
     MonitoringEventCreateRequest,
     MonitoringSubscriptionCreateRequest,
+    MonitoringProjectCreateRequest,
+    MonitoringProjectPatchRequest,
+    MosaicProjectCreateRequest,
+    MosaicProjectPatchRequest,
+    ProposedActionDecisionRequest,
     GridPlanRequest,
     GridSubmitRequest,
     RecollectionMonitorPatchRequest,
@@ -70,6 +96,17 @@ from .models import (
     WorkflowDefinitionPayload,
 )
 from .monitoring_store import MonitoringStore
+from .analysis_store import AnalysisRecipeStore
+from .archive_watch import ArchiveWatchPoller, ArchiveWatchService, _item_summary, validate_watch_geometry
+from .notifications import send_archive_watch_email
+from .mosaic_store import MosaicStore
+from .mosaic_products import MosaicProductPoller
+from .aircraft_training import (
+    _safe_name,
+    build_training_bundle_from_annotations,
+)
+from .aircraft_training_jobs import AircraftTrainingJobStore, run_job_command
+from .satellogic_metadata import nominal_resolution_m, normalize_sensor_generation
 from .grid_plan_store import GridPlanStore
 from .recollection_monitor import refresh_recollection_monitor
 from .merlin_sentinel2_client import MerlinSentinel2Client
@@ -87,9 +124,12 @@ from .grid_tasking.services.planning import build_grid, build_order_feature
 from .grid_tasking.domain.status import remote_rollup
 
 try:
-    from shapely.geometry import shape
+    from shapely.geometry import mapping, shape
+    from shapely.ops import unary_union
 except Exception:  # pragma: no cover - dependency is pinned in requirements
     shape = None
+    mapping = None
+    unary_union = None
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("image_mate")
@@ -109,10 +149,37 @@ merlin_client = MerlinSentinel2Client()
 sources = SourceManager(client, merlin_client)
 
 
+def _project_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def _resolve_aircraft_model_path(value: str | Path) -> Path:
+    model_path = Path(str(value or "")).expanduser()
+    if not model_path.is_absolute():
+        model_path = (_project_root() / model_path).resolve()
+    return model_path.resolve()
+
+
+def _configured_aircraft_model_path() -> Path:
+    return _resolve_aircraft_model_path(settings.aircraft_detector_model or "yolo11n-obb.onnx")
+
+
+def _active_aircraft_model_path() -> Path:
+    marker = Path(settings.aircraft_training_dir).expanduser() / "active_model.json"
+    if marker.is_file():
+        try:
+            payload = json.loads(marker.read_text(encoding="utf-8"))
+            candidate = _resolve_aircraft_model_path(payload.get("path"))
+            root = Path(settings.aircraft_training_dir).expanduser().resolve()
+            if candidate.is_file() and (candidate == root or root in candidate.parents):
+                return candidate
+        except (OSError, ValueError):
+            pass
+    return _configured_aircraft_model_path()
+
+
 def _aircraft_detector_config() -> AircraftDetectorConfig:
-    model_value = Path(str(settings.aircraft_detector_model or "yolo11n-obb.onnx")).expanduser()
-    if not model_value.is_absolute():
-        model_value = (Path(__file__).resolve().parents[2] / model_value).resolve()
+    model_value = _active_aircraft_model_path()
     return AircraftDetectorConfig(
         model_path=model_value,
         provider_mode=str(settings.aircraft_detector_provider or "auto"),
@@ -193,7 +260,21 @@ app.state.mp4_jobs_lock = threading.Lock()
 app.state.workbench = None
 app.state.workbench_lock = threading.Lock()
 app.state.monitoring_store = MonitoringStore(settings.monitoring_db_path)
+app.state.analysis_store = AnalysisRecipeStore(settings.output_dir / "analysis.sqlite3")
+app.state.archive_watch_service = ArchiveWatchService(app.state.monitoring_store, sources, settings)
+app.state.archive_watch_poller = ArchiveWatchPoller(
+    app.state.archive_watch_service,
+    interval_seconds=settings.archive_watch_interval_seconds,
+)
 app.state.grid_plan_store = GridPlanStore(settings.output_dir / "grid-plans.sqlite3")
+app.state.mosaic_store = MosaicStore(settings.output_dir / "mosaic.sqlite3")
+app.state.mosaic_worker_processes = {}
+app.state.mosaic_worker_lock = threading.Lock()
+app.state.mosaic_product_poller = MosaicProductPoller(
+    lambda: _check_waiting_mosaic_jobs(),
+    interval_seconds=settings.mosaic_product_poll_seconds,
+)
+app.state.aircraft_training_jobs = None
 
 
 def startup_event():
@@ -230,9 +311,31 @@ def startup_event():
         _ensure_workbench()
     except Exception as exc:
         logger.warning("workbench startup failed: %s", exc)
+    if settings.archive_watch_enabled:
+        try:
+            app.state.archive_watch_poller.start()
+        except Exception as exc:
+            logger.warning("archive watch poller startup failed: %s", exc)
+    if settings.mosaic_product_poll_enabled:
+        try:
+            app.state.mosaic_product_poller.start()
+        except Exception as exc:
+            logger.warning("mosaic product poller startup failed: %s", exc)
 
 
 def shutdown_event():
+    mosaic_poller = getattr(app.state, "mosaic_product_poller", None)
+    if mosaic_poller:
+        try:
+            mosaic_poller.stop()
+        except Exception:
+            pass
+    poller = getattr(app.state, "archive_watch_poller", None)
+    if poller:
+        try:
+            poller.stop()
+        except Exception:
+            pass
     wb = app.state.workbench
     if wb:
         try:
@@ -849,6 +952,12 @@ def _build_tasking_feature(request: TaskingOrderCreateRequest) -> dict[str, Any]
         parameters["revisit_period"] = request.revisit_period
     if target_type == "area" and request.remapping_period:
         parameters["remapping_period"] = request.remapping_period
+    if request.analysis_recipe_id:
+        if not app.state.analysis_store.get(request.analysis_recipe_id):
+            raise HTTPException(status_code=400, detail=f"Unknown analysis_recipe_id: {request.analysis_recipe_id}")
+        parameters["analysis_recipe_id"] = request.analysis_recipe_id
+    if request.monitoring_project_id:
+        parameters["monitoring_project_id"] = request.monitoring_project_id
     for key, value in (request.additional_parameters or {}).items():
         if value is not None:
             parameters[str(key)] = value
@@ -1053,6 +1162,14 @@ def root():
     if index.exists():
         return FileResponse(index)
     return JSONResponse({"status": "ok", "message": "frontend not found"})
+
+
+@app.get("/manual.html", include_in_schema=False)
+def user_manual():
+    manual = settings.frontend_dir / "manual.html"
+    if manual.exists():
+        return FileResponse(manual)
+    raise HTTPException(status_code=404, detail="User manual not found")
 
 
 @app.get("/favicon.ico", include_in_schema=False)
@@ -1557,6 +1674,45 @@ def sentinel_wmts_tile_proxy(
 @app.get("/api/tasking/products")
 def tasking_products():
     return {"count": len(TASKING_PRODUCTS), "products": TASKING_PRODUCTS}
+
+
+@app.get("/api/analysis/recipes")
+def analysis_recipes_list(enabled_only: bool = Query(default=False)):
+    rows = app.state.analysis_store.list(enabled_only=enabled_only)
+    return {"count": len(rows), "recipes": rows}
+
+
+@app.post("/api/analysis/recipes")
+def analysis_recipes_create(payload: AnalysisRecipeCreateRequest):
+    try:
+        return app.state.analysis_store.create(payload.model_dump(mode="json"))
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Analysis recipe create failed: {exc}") from exc
+
+
+@app.patch("/api/analysis/recipes/{recipe_id}")
+def analysis_recipes_patch(recipe_id: str, payload: AnalysisRecipePatchRequest):
+    row = app.state.analysis_store.update(recipe_id, payload.model_dump(exclude_unset=True))
+    if not row:
+        raise HTTPException(status_code=404, detail="Analysis recipe not found")
+    return row
+
+
+@app.get("/api/analysis/recipes/{recipe_id}")
+def analysis_recipes_get(recipe_id: str):
+    row = app.state.analysis_store.get(recipe_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Analysis recipe not found")
+    return row
+
+
+@app.post("/api/analysis/recipes/{recipe_id}/validate")
+def analysis_recipes_validate(recipe_id: str, item: SearchResultItem):
+    recipe = app.state.analysis_store.get(recipe_id)
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Analysis recipe not found")
+    compatible, reason = app.state.analysis_store.compatibility(recipe, item.model_dump(mode="json"))
+    return {"recipe_id": recipe_id, "item_id": item.id, "compatible": compatible, "reason": reason}
 
 
 @app.get("/api/tasking/projects")
@@ -2773,6 +2929,63 @@ def _aircraft_lab_annotation_path() -> Path:
     return root / "annotations.jsonl"
 
 
+def _aircraft_training_job_store() -> AircraftTrainingJobStore:
+    root = Path(settings.aircraft_training_dir).expanduser().resolve()
+    store = getattr(app.state, "aircraft_training_jobs", None)
+    if not isinstance(store, AircraftTrainingJobStore) or store.root != root:
+        store = AircraftTrainingJobStore(root)
+        app.state.aircraft_training_jobs = store
+    return store
+
+
+def _aircraft_annotation_key(request: AircraftLabAnnotationRequest) -> str:
+    geometry = [[round(float(point[0]), 3), round(float(point[1]), 3)] for point in request.geometry_px]
+    payload = {
+        "item_id": request.item_id,
+        "z": request.z,
+        "x": request.x,
+        "y": request.y,
+        "scale": request.scale,
+        "detection_id": request.detection_id,
+        "geometry_px": geometry if not request.detection_id else [],
+    }
+    return hashlib.sha1(json.dumps(payload, sort_keys=True).encode("utf-8"), usedforsecurity=False).hexdigest()
+
+
+def _aircraft_annotation_tile_path(request: AircraftLabAnnotationRequest) -> Path:
+    root = Path(settings.aircraft_lab_dir).expanduser() / "tiles"
+    payload = f"{request.item_id}:{request.z}:{request.x}:{request.y}:{request.scale}"
+    digest = hashlib.sha1(payload.encode("utf-8"), usedforsecurity=False).hexdigest()[:20]
+    return root / f"{_safe_name(request.item_id)}-{digest}.png"
+
+
+def _ensure_aircraft_annotation_source_image(request: AircraftLabAnnotationRequest) -> tuple[Path, tuple[int, int]]:
+    path = _aircraft_annotation_tile_path(request)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.is_file():
+        with Image.open(path) as opened:
+            return path, opened.size
+    detector_request = AircraftDetectorRequest(
+        item_id=request.item_id,
+        source_id=request.source_id,
+        collection_id=request.collection_id,
+        asset_key=request.asset_key,
+        z=request.z,
+        x=request.x,
+        y=request.y,
+        scale=request.scale,
+        contract_id=request.contract_id,
+    )
+    raw, _provenance = _decode_aircraft_image(detector_request)
+    try:
+        with Image.open(BytesIO(raw)) as opened:
+            image = ImageOps.exif_transpose(opened).convert("RGB")
+            image.save(path, format="PNG", optimize=False)
+            return path, image.size
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Could not persist the detector tile for training: {exc}") from exc
+
+
 def _annotation_polygon_wgs84(request: AircraftLabAnnotationRequest) -> dict[str, Any]:
     west, south, east, north = [float(value) for value in request.bounds_wgs84]
     width = float(request.source_width_px)
@@ -2789,13 +3002,190 @@ def _annotation_polygon_wgs84(request: AircraftLabAnnotationRequest) -> dict[str
     return {"type": "Polygon", "coordinates": [ring]}
 
 
-def _aircraft_lab_annotation_count(path: Path) -> int:
+def _aircraft_lab_annotation_count(path: Path | None = None) -> int:
+    return len(_read_aircraft_lab_annotations(path))
+
+
+def _read_aircraft_lab_annotations(path: Path | None = None) -> list[dict[str, Any]]:
+    path = path or _aircraft_lab_annotation_path()
     if not path.is_file():
-        return 0
+        return []
+    latest: dict[str, dict[str, Any]] = {}
     try:
-        return sum(1 for line in path.read_text(encoding="utf-8").splitlines() if line.strip())
+        lines = path.read_text(encoding="utf-8").splitlines()
     except OSError:
-        return 0
+        return []
+    for line in lines:
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(row, dict):
+            continue
+        key = str(row.get("annotation_key") or row.get("annotation_id") or "").strip()
+        if key:
+            latest[key] = row
+    return list(latest.values())
+
+
+def _aircraft_annotation_scenes() -> list[dict[str, Any]]:
+    grouped: dict[str, dict[str, Any]] = {}
+    for row in _read_aircraft_lab_annotations():
+        item_id = str(row.get("item_id") or "").strip()
+        if not item_id:
+            continue
+        scene = grouped.setdefault(
+            item_id,
+            {
+                "item_id": item_id,
+                "annotation_count": 0,
+                "counts": {"plane": 0, "helicopter": 0, "background": 0},
+                "ready_count": 0,
+                "missing_image_count": 0,
+            },
+        )
+        scene["annotation_count"] += 1
+        label = str(row.get("label") or "")
+        if label in scene["counts"]:
+            scene["counts"][label] += 1
+        if str(row.get("source_image_path") or "").strip() and Path(str(row.get("source_image_path"))).is_file():
+            scene["ready_count"] += 1
+        else:
+            scene["missing_image_count"] += 1
+    return sorted(grouped.values(), key=lambda row: row["item_id"])
+
+
+def _aircraft_model_entries() -> list[dict[str, Any]]:
+    active_path = _active_aircraft_model_path()
+    configured_path = _configured_aircraft_model_path()
+    capability = aircraft_detector.capability()
+    models: list[dict[str, Any]] = [
+        {
+            "id": "configured",
+            "name": configured_path.name or "configured-aircraft-model",
+            "path": str(configured_path),
+            "format": "onnx",
+            "active": active_path == configured_path,
+            "ready": bool(configured_path.is_file() and capability.get("runtime_available")),
+        }
+    ]
+    root = Path(settings.aircraft_training_dir).expanduser().resolve()
+    if root.is_dir():
+        for model_path in sorted(root.rglob("*.onnx")):
+            if not model_path.is_file():
+                continue
+            resolved = model_path.resolve()
+            if resolved == configured_path:
+                continue
+            relative = resolved.relative_to(root)
+            models.append(
+                {
+                    "id": f"onnx:{relative.as_posix()}",
+                    "name": model_path.name,
+                    "path": str(resolved),
+                    "format": "onnx",
+                    "active": resolved == active_path,
+                    "ready": bool(capability.get("runtime_available")),
+                }
+            )
+    return models
+
+
+def _aircraft_model_path_for_id(model_id: str) -> Path:
+    normalized = str(model_id or "active").strip()
+    if normalized in {"", "active"}:
+        return _active_aircraft_model_path()
+    if normalized == "configured":
+        return _configured_aircraft_model_path()
+    if not normalized.startswith("onnx:"):
+        raise HTTPException(status_code=400, detail="Unknown aircraft model selection")
+    relative = normalized[5:]
+    root = Path(settings.aircraft_training_dir).expanduser().resolve()
+    candidate = (root / relative).resolve()
+    if candidate.suffix.lower() != ".onnx" or (candidate != root and root not in candidate.parents):
+        raise HTTPException(status_code=400, detail="Aircraft model selection is outside the training artifact directory")
+    if not candidate.is_file():
+        raise HTTPException(status_code=404, detail="Selected aircraft model is not available")
+    return candidate
+
+
+def _aircraft_training_base_model_path(model_id: str) -> Path:
+    selected = _aircraft_model_path_for_id(model_id)
+    if selected.suffix.lower() == ".pt" and selected.is_file():
+        return selected
+    candidates = []
+    if selected.is_file():
+        candidates.extend(
+            [
+                selected.parent / "runs" / "l1d-aircraft" / "weights" / "best.pt",
+                selected.with_suffix(".pt"),
+            ]
+        )
+    candidates.append((_project_root() / "yolo11n-obb.pt").resolve())
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate.resolve()
+    return candidates[-1]
+
+
+def _aircraft_evaluation_model_path(model_id: str) -> Path:
+    selected = _aircraft_model_path_for_id(model_id)
+    if selected.suffix.lower() == ".pt":
+        return selected
+    candidate = selected.parent / "runs" / "l1d-aircraft" / "weights" / "best.pt"
+    if candidate.is_file():
+        return candidate.resolve()
+    baseline = (_project_root() / "yolo11n-obb.pt").resolve()
+    if model_id in {"configured", "active"} or selected == _configured_aircraft_model_path():
+        return baseline
+    raise HTTPException(status_code=400, detail="The selected model has no host-side best.pt checkpoint for evaluation yet")
+
+
+def _aircraft_dataset_payload(manifest_path: Path, payload: dict[str, Any]) -> dict[str, Any]:
+    training_root = Path(settings.aircraft_training_dir).expanduser().resolve()
+    relative_id = str(manifest_path.parent.relative_to(training_root))
+    return {
+        "id": relative_id,
+        "name": manifest_path.parent.name,
+        "path": str(manifest_path.parent),
+        "data_yaml": str(manifest_path.parent / "data.yaml"),
+        "scene_count": payload.get("scene_count", 0),
+        "scene_ids": payload.get("scene_ids", []),
+        "train_scene_ids": payload.get("train_scene_ids", []),
+        "validation_scene_ids": payload.get("validation_scene_ids", []),
+        "counts": payload.get("counts", {}),
+        "validation_counts": payload.get("validation_counts", {}),
+        "validation_ready": bool(payload.get("validation_ready")),
+        "warnings": payload.get("warnings", []),
+        "manifests": payload.get("review_manifests", payload.get("manifests", [])),
+        "validation_manifests": payload.get("validation_review_manifests", payload.get("validation_manifests", [])),
+        "annotation_count": payload.get("annotation_count", 0),
+    }
+
+
+def _aircraft_dataset_by_id(dataset_id: str) -> dict[str, Any]:
+    root = Path(settings.aircraft_training_dir).expanduser().resolve()
+    relative = Path(str(dataset_id or ""))
+    if relative.is_absolute() or ".." in relative.parts:
+        raise HTTPException(status_code=400, detail="Invalid aircraft dataset selection")
+    manifest_path = (root / relative / "training_manifest.json").resolve()
+    if manifest_path.parent != root and root not in manifest_path.parents:
+        raise HTTPException(status_code=400, detail="Aircraft dataset selection is outside the training directory")
+    if not manifest_path.is_file():
+        raise HTTPException(status_code=404, detail="Selected aircraft dataset is not available")
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=500, detail="Selected aircraft dataset manifest is invalid") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=500, detail="Selected aircraft dataset manifest is invalid")
+    return _aircraft_dataset_payload(manifest_path, payload)
+
+
+def _aircraft_job_public(job: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in job.items() if key not in {"command", "payload"}}
 
 
 @app.get("/api/aircraft-lab/catalog")
@@ -2803,29 +3193,8 @@ def aircraft_lab_catalog():
     """Return safe local models, prepared datasets, and annotation counts."""
 
     capability = aircraft_detector.capability()
-    models = [
-        {
-            "id": "configured",
-            "name": capability.get("model_name") or "configured-aircraft-model",
-            "format": "onnx",
-            "active": True,
-            "ready": bool(capability.get("model_exists") and capability.get("runtime_available")),
-        }
-    ]
+    models = _aircraft_model_entries()
     training_root = Path(settings.aircraft_training_dir).expanduser()
-    if training_root.is_dir():
-        for model_path in sorted(training_root.rglob("*.onnx")):
-            if not model_path.is_file():
-                continue
-            models.append(
-                {
-                    "id": f"onnx:{model_path.name}",
-                    "name": model_path.name,
-                    "format": "onnx",
-                    "active": False,
-                    "ready": True,
-                }
-            )
     datasets: list[dict[str, Any]] = []
     if training_root.is_dir():
         for manifest_path in sorted(training_root.rglob("training_manifest.json")):
@@ -2833,53 +3202,227 @@ def aircraft_lab_catalog():
                 payload = json.loads(manifest_path.read_text(encoding="utf-8"))
             except (OSError, ValueError):
                 continue
-            datasets.append(
-                {
-                    "id": str(manifest_path.parent.relative_to(training_root)),
-                    "name": manifest_path.parent.name,
-                    "scene_count": payload.get("scene_count", 0),
-                    "counts": payload.get("counts", {}),
-                    "validation_ready": bool(payload.get("validation_ready")),
-                    "warnings": payload.get("warnings", []),
-                }
-            )
+            datasets.append(_aircraft_dataset_payload(manifest_path, payload))
     annotation_path = _aircraft_lab_annotation_path()
+    jobs = [_aircraft_job_public(job) for job in _aircraft_training_job_store().list(20)]
     return {
         "models": models,
         "datasets": datasets,
         "annotation_count": _aircraft_lab_annotation_count(annotation_path),
+        "annotation_scenes": _aircraft_annotation_scenes(),
+        "active_model_id": next((row["id"] for row in models if row.get("active")), "configured"),
+        "jobs": jobs,
         "detector": capability,
-        "host_training_note": "Run PyTorch/MPS fine-tuning from the Mac host, not the Hermes Docker runtime.",
+        "host_training_note": "Training and evaluation run in the configured host Python: set IMAGE_MATE_AIRCRAFT_TRAINING_PYTHON if the backend venv does not include Ultralytics/PyTorch.",
     }
+
+
+@app.get("/api/aircraft-lab/datasets/preview")
+def aircraft_lab_dataset_preview():
+    return {"scenes": _aircraft_annotation_scenes(), "annotation_count": _aircraft_lab_annotation_count()}
+
+
+@app.post("/api/aircraft-lab/datasets/build")
+def build_aircraft_lab_dataset(request: AircraftDatasetBuildRequest):
+    rows = _read_aircraft_lab_annotations()
+    available = {str(row.get("item_id") or "").strip() for row in rows}
+    selected = set(request.train_item_ids).union(request.validation_item_ids)
+    missing = sorted(selected - available)
+    if missing:
+        raise HTTPException(status_code=400, detail=f"No saved annotations exist for scene(s): {', '.join(missing)}")
+    if not request.validation_item_ids and not request.allow_single_scene:
+        raise HTTPException(status_code=400, detail="Select at least one held-out scene, or explicitly allow an experimental single-scene bundle")
+    if request.validation_item_ids and not any(str(row.get("item_id") or "") in set(request.validation_item_ids) for row in rows):
+        raise HTTPException(status_code=400, detail="The selected validation scene has no saved annotations")
+    dataset_name = f"{_safe_name(request.name)}-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:6]}"
+    training_root = Path(settings.aircraft_training_dir).expanduser().resolve()
+    dataset_dir = training_root / "datasets" / dataset_name
+    review_root = Path(settings.aircraft_lab_dir).expanduser().resolve() / "reviews" / dataset_name
+    try:
+        result = build_training_bundle_from_annotations(
+            rows,
+            dataset_dir,
+            review_root,
+            train_item_ids=request.train_item_ids,
+            validation_item_ids=request.validation_item_ids,
+        )
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    manifest_path = dataset_dir / "training_manifest.json"
+    return {"dataset": _aircraft_dataset_payload(manifest_path, result), "bundle": result}
+
+
+def _start_aircraft_host_job(
+    *,
+    kind: str,
+    payload: dict[str, Any],
+    command: list[str],
+    output_dir: Path,
+    summary_path: Path,
+) -> dict[str, Any]:
+    store = _aircraft_training_job_store()
+    job = store.create(kind=kind, payload=payload, output_dir=output_dir)
+    worker = threading.Thread(
+        target=run_job_command,
+        args=(store, job["job_id"], command),
+        kwargs={"cwd": _project_root(), "summary_path": summary_path},
+        name=f"image-mate-aircraft-{kind}-{job['job_id'][:8]}",
+        daemon=True,
+    )
+    worker.start()
+    return _aircraft_job_public(job)
+
+
+@app.post("/api/aircraft-lab/train")
+def start_aircraft_training(request: AircraftTrainingJobRequest):
+    dataset = _aircraft_dataset_by_id(request.dataset_id)
+    if not dataset["validation_ready"] and not request.allow_single_scene:
+        raise HTTPException(status_code=400, detail="Training requires an independent held-out scene; explicitly enable experimental single-scene training to override")
+    manifests = list(dataset.get("manifests") or [])
+    validation_manifests = list(dataset.get("validation_manifests") or [])
+    if not manifests:
+        raise HTTPException(status_code=400, detail="The selected dataset has no source review manifests")
+    base_model = _aircraft_training_base_model_path(request.model_id)
+    if not base_model.is_file():
+        raise HTTPException(status_code=400, detail=f"Base training model is missing: {base_model}")
+    training_root = Path(settings.aircraft_training_dir).expanduser().resolve()
+    output_dir = training_root / "jobs" / f"train-{uuid.uuid4().hex}"
+    command = [
+        str(settings.aircraft_training_python or sys.executable),
+        str(_project_root() / "backend" / "scripts" / "train_aircraft.py"),
+    ]
+    for manifest in manifests:
+        command.extend(["--manifest", str(manifest)])
+    for manifest in validation_manifests:
+        command.extend(["--validation-manifest", str(manifest)])
+    command.extend(
+        [
+            "--outdir", str(output_dir),
+            "--model", str(base_model),
+            "--device", request.device,
+            "--epochs", str(request.epochs),
+            "--imgsz", str(request.imgsz),
+            "--batch", str(request.batch),
+            "--workers", str(request.workers),
+        ]
+    )
+    if request.allow_single_scene:
+        command.append("--allow-single-scene")
+    if request.export_onnx:
+        command.append("--export-onnx")
+    return _start_aircraft_host_job(
+        kind="training",
+        payload={"dataset_id": request.dataset_id, "model_id": request.model_id, "device": request.device},
+        command=command,
+        output_dir=output_dir,
+        summary_path=output_dir / "training_summary.json",
+    )
+
+
+@app.post("/api/aircraft-lab/evaluate")
+def start_aircraft_evaluation(request: AircraftEvaluationJobRequest):
+    dataset = _aircraft_dataset_by_id(request.dataset_id)
+    if not dataset["validation_ready"]:
+        raise HTTPException(status_code=400, detail="Evaluation requires a scene-separated validation split")
+    model_path = _aircraft_evaluation_model_path(request.model_id)
+    data_yaml = Path(str(dataset["data_yaml"])).expanduser().resolve()
+    if not data_yaml.is_file():
+        raise HTTPException(status_code=400, detail="The selected dataset has no data.yaml")
+    training_root = Path(settings.aircraft_training_dir).expanduser().resolve()
+    output_dir = training_root / "evaluations" / f"eval-{uuid.uuid4().hex}"
+    command = [
+        str(settings.aircraft_training_python or sys.executable),
+        str(_project_root() / "backend" / "scripts" / "evaluate_aircraft.py"),
+        "--model", str(model_path),
+        "--data", str(data_yaml),
+        "--outdir", str(output_dir),
+        "--device", request.device,
+        "--split", "val",
+    ]
+    return _start_aircraft_host_job(
+        kind="evaluation",
+        payload={"dataset_id": request.dataset_id, "model_id": request.model_id, "device": request.device},
+        command=command,
+        output_dir=output_dir,
+        summary_path=output_dir / "evaluation_summary.json",
+    )
+
+
+@app.get("/api/aircraft-lab/jobs")
+def aircraft_lab_jobs(limit: int = Query(default=50, ge=1, le=200)):
+    return {"jobs": [_aircraft_job_public(job) for job in _aircraft_training_job_store().list(limit)]}
+
+
+@app.get("/api/aircraft-lab/jobs/{job_id}")
+def aircraft_lab_job(job_id: str):
+    job = _aircraft_training_job_store().get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Aircraft lab job not found")
+    return _aircraft_job_public(job)
+
+
+@app.post("/api/aircraft-lab/models/activate")
+def activate_aircraft_model(request: AircraftModelActivateRequest):
+    global aircraft_detector
+    selected_path = _aircraft_model_path_for_id(request.model_id)
+    if request.model_id == "configured":
+        marker = Path(settings.aircraft_training_dir).expanduser() / "active_model.json"
+        try:
+            marker.unlink(missing_ok=True)
+        except OSError as exc:
+            raise HTTPException(status_code=500, detail="Could not clear the active aircraft model marker") from exc
+        aircraft_detector = AircraftDetector(_aircraft_detector_config())
+    else:
+        evaluation_evidence = any(
+            job.get("kind") == "evaluation"
+            and job.get("status") == "succeeded"
+            and (job.get("payload") or {}).get("model_id") == request.model_id
+            for job in _aircraft_training_job_store().list(200)
+        )
+        if not evaluation_evidence:
+            raise HTTPException(status_code=400, detail="Evaluate the selected model on a held-out scene before activating it")
+        candidate = AircraftDetector(replace(aircraft_detector.config, model_path=selected_path))
+        capability = candidate.capability()
+        if not capability.get("model_exists") or not capability.get("runtime_available"):
+            raise HTTPException(status_code=400, detail="The selected aircraft model is not ready in the current runtime")
+        marker = Path(settings.aircraft_training_dir).expanduser() / "active_model.json"
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text(
+            json.dumps({"model_id": request.model_id, "path": str(selected_path), "activated_at": _utc_now_iso()}, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        aircraft_detector = candidate
+    return {"active_model_id": request.model_id, "model": aircraft_detector.capability()}
 
 
 @app.get("/api/aircraft-lab/annotations")
 def aircraft_lab_annotations(item_id: str | None = Query(default=None, max_length=240)):
-    path = _aircraft_lab_annotation_path()
-    rows: list[dict[str, Any]] = []
-    if path.is_file():
-        for line in path.read_text(encoding="utf-8").splitlines():
-            if not line.strip():
-                continue
-            try:
-                row = json.loads(line)
-            except ValueError:
-                continue
-            if item_id and row.get("item_id") != item_id:
-                continue
-            rows.append(row)
+    rows = _read_aircraft_lab_annotations()
+    if item_id:
+        rows = [row for row in rows if row.get("item_id") == item_id]
     return {"count": len(rows), "annotations": rows}
 
 
 @app.post("/api/aircraft-lab/annotations")
 def create_aircraft_lab_annotation(request: AircraftLabAnnotationRequest):
     path = _aircraft_lab_annotation_path()
+    try:
+        source_image_path, source_size = _ensure_aircraft_annotation_source_image(request)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    annotation_key = _aircraft_annotation_key(request)
     annotation = request.model_dump()
     annotation.update(
         {
             "annotation_id": f"ann-{uuid.uuid4().hex[:12]}",
+            "annotation_key": annotation_key,
             "recorded_at": datetime.now(timezone.utc).isoformat(),
             "geometry_wgs84": _annotation_polygon_wgs84(request),
+            "source_image_path": str(source_image_path),
+            "source_image_width_px": int(source_size[0]),
+            "source_image_height_px": int(source_size[1]),
             "source": "analyst_review",
         }
     )
@@ -2898,7 +3441,9 @@ def aircraft_detector_info():
 def detect_aircraft(request: AircraftDetectorRequest):
     """Run local aircraft inference on one supplied L1D-SR visual tile."""
     raw, provenance = _decode_aircraft_image(request)
-    config = aircraft_detector.config
+    selected_path = _aircraft_model_path_for_id(request.model_id)
+    base_detector = aircraft_detector if selected_path == aircraft_detector.config.model_path.expanduser().resolve() else AircraftDetector(replace(aircraft_detector.config, model_path=selected_path))
+    config = base_detector.config
     if request.confidence is not None or request.iou is not None or request.max_detections is not None:
         config = replace(
             config,
@@ -2908,9 +3453,11 @@ def detect_aircraft(request: AircraftDetectorRequest):
         )
         detector = AircraftDetector(config)
     else:
-        detector = aircraft_detector
+        detector = base_detector
     try:
-        return detector.detect_bytes(raw, provenance=provenance)
+        result = detector.detect_bytes(raw, provenance=provenance)
+        result.setdefault("model", {})["id"] = request.model_id or "active"
+        return result
     except AircraftDetectorUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except AircraftDetectorError as exc:
@@ -2988,6 +3535,7 @@ def _search_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
         satellite_name=payload.get("satellite_name"),
         min_gsd=payload.get("min_gsd"),
         max_gsd=payload.get("max_gsd"),
+        sensor_generation=payload.get("sensor_generation"),
     )
     _cache_items(items)
     return items
@@ -3035,6 +3583,7 @@ def archive_search(request: SearchRequest):
                 "limit": request.limit,
                 "max_cloud_cover": request.max_cloud_cover,
                 "satellite_name": request.satellite_name,
+                "sensor_generation": request.sensor_generation,
                 "min_gsd": request.min_gsd,
                 "max_gsd": request.max_gsd,
             }
@@ -3048,6 +3597,7 @@ def archive_search(request: SearchRequest):
                 datetime=item.get("datetime"),
                 outcome_id=item.get("outcome_id"),
                 satellite_name=item.get("satellite_name"),
+                sensor_generation=item.get("sensor_generation"),
                 gsd=item.get("gsd"),
                 cloud_cover=item.get("cloud_cover"),
                 valid_pixel_percent=item.get("valid_pixel_percent"),
@@ -3157,6 +3707,1113 @@ def archive_item_assets(
         raise
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Item asset inspection failed: {exc}") from exc
+
+
+def _select_archive_asset(item: dict[str, Any], requested_key: str) -> tuple[str, str, str]:
+    """Select an asset href from normalized/raw STAC metadata without exposing it to the UI."""
+
+    fallback_keys = {
+        "thumbnail": ("thumbnail", "preview", "visual"),
+        "preview": ("preview", "thumbnail", "visual"),
+        "visual": ("visual", "preview", "thumbnail"),
+        "cloud_mask": ("cloud_mask", "cloud", "cloudmask", "cloud-mask", "cmask", "clm"),
+    }.get(requested_key, (requested_key,))
+    raw = item.get("raw") if isinstance(item.get("raw"), dict) else {}
+    raw_assets = raw.get("assets") if isinstance(raw.get("assets"), dict) else {}
+    normalized_assets = item.get("assets") if isinstance(item.get("assets"), dict) else {}
+
+    # For a requested visual, prefer the normalized visual fallback before a
+    # raw preview/thumbnail. Some QuickView STAC records expose only a raw
+    # preview while the normalized visual points to the georeferenced analytic
+    # raster needed by polygon clipping and mosaicking.
+    preferred_keys = (requested_key,)
+    for candidate_key in preferred_keys:
+        candidate = raw_assets.get(candidate_key)
+        if isinstance(candidate, dict):
+            href = str(candidate.get("href") or "").strip()
+            if href:
+                return href, str(candidate.get("type") or "").strip(), candidate_key
+        href = str(normalized_assets.get(candidate_key) or "").strip()
+        if href:
+            return href, "", candidate_key
+
+    for candidate_key in fallback_keys:
+        if candidate_key == requested_key:
+            continue
+        candidate = raw_assets.get(candidate_key)
+        if isinstance(candidate, dict):
+            href = str(candidate.get("href") or "").strip()
+            if href:
+                return href, str(candidate.get("type") or "").strip(), candidate_key
+        href = str(normalized_assets.get(candidate_key) or "").strip()
+        if href:
+            return href, "", candidate_key
+    return "", "", requested_key
+
+
+@app.get("/api/archive/preview")
+def archive_preview(
+    item_id: str = Query(..., min_length=1, max_length=240),
+    asset_key: str = Query(default="thumbnail", min_length=1, max_length=32),
+    source_id: str | None = Query(default=None, max_length=64),
+    collection_id: str | None = Query(default=None, max_length=120),
+    contract_id: str | None = Query(default=None, max_length=240),
+):
+    """Stream an archive preview by item identity, never by browser-supplied URL.
+
+    This keeps provider signatures out of browser URLs and local access logs while
+    allowing the provider-specific client to handle authentication server-side.
+    """
+
+    allowed_asset_keys = {"thumbnail", "preview", "visual"}
+    requested_key = str(asset_key or "thumbnail").strip().lower()
+    if requested_key not in allowed_asset_keys:
+        raise HTTPException(status_code=400, detail="Preview asset_key must be thumbnail, preview, or visual")
+    item = _resolve_item(
+        item_id=item_id,
+        source_id=source_id,
+        contract_id=contract_id,
+        collection_id=collection_id,
+    )
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    href, media_type, selected_key = _select_archive_asset(item, requested_key)
+    if not href:
+        raise HTTPException(status_code=404, detail="Item has no preview asset")
+
+    parsed = urlparse(href)
+    if parsed.scheme in {"http", "https"}:
+        _validate_proxy_url(href)
+    elif parsed.scheme != "s3":
+        raise HTTPException(status_code=400, detail="Provider preview asset has an unsupported URL scheme")
+
+    source_key = str(item.get("source_id") or source_id or "unknown")
+    cache_key = f"archive-preview:{source_key}:{item.get('id') or item_id}:{selected_key}"
+    now = time.time()
+    cache_entry = app.state.asset_cache.get(cache_key)
+    if cache_entry and cache_entry["expires_at"] > now:
+        return Response(
+            content=cache_entry["content"],
+            media_type=cache_entry["media_type"],
+            headers={"Cache-Control": f"public, max-age={int(settings.proxy_cache_ttl_seconds)}", "X-Proxy-Cache": "hit"},
+        )
+
+    try:
+        content = _download_bytes_for_url(
+            href,
+            contract_id=contract_id,
+            source_hint=source_key,
+        )
+    except requests.HTTPError as exc:
+        status_code = int(getattr(getattr(exc, "response", None), "status_code", 502) or 502)
+        raise HTTPException(status_code=status_code, detail="Archive preview fetch failed") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="Archive preview fetch failed") from exc
+    if len(content) > settings.proxy_max_asset_bytes:
+        raise HTTPException(status_code=413, detail="Archive preview exceeds the configured size limit")
+
+    media_type = media_type or mimetypes.guess_type(parsed.path)[0] or "image/png"
+    if len(content) <= 8_000_000:
+        app.state.asset_cache[cache_key] = {
+            "content": content,
+            "media_type": media_type,
+            "expires_at": now + int(settings.proxy_cache_ttl_seconds),
+        }
+        _prune_asset_cache()
+    logger.info(
+        "archive_preview item=%s source=%s asset=%s bytes=%s cache=miss",
+        str(item.get("id") or item_id)[:160],
+        source_key,
+        selected_key,
+        len(content),
+    )
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Cache-Control": f"public, max-age={int(settings.proxy_cache_ttl_seconds)}", "X-Proxy-Cache": "miss"},
+    )
+
+
+def _mosaic_geometry_area_m2(geometry: dict[str, Any]) -> float:
+    if shape is None:
+        return 0.0
+    try:
+        polygon = shape(geometry)
+        latitude = float(polygon.centroid.y)
+        meters_per_degree_lat = 111_320.0
+        meters_per_degree_lon = max(1.0, 111_320.0 * abs(math.cos(math.radians(latitude))))
+        return max(0.0, float(polygon.area) * meters_per_degree_lat * meters_per_degree_lon)
+    except Exception:
+        return 0.0
+
+
+def _mosaic_overlap_groups(geometries: list[Any]) -> list[list[int]]:
+    parent = list(range(len(geometries)))
+
+    def find(value: int) -> int:
+        while parent[value] != value:
+            parent[value] = parent[parent[value]]
+            value = parent[value]
+        return value
+
+    def union(left: int, right: int) -> None:
+        left_root, right_root = find(left), find(right)
+        if left_root != right_root:
+            parent[right_root] = left_root
+
+    for left, left_geometry in enumerate(geometries):
+        for right in range(left + 1, len(geometries)):
+            try:
+                overlap = left_geometry.intersection(geometries[right])
+                if not overlap.is_empty and float(overlap.area) > 1e-12:
+                    union(left, right)
+            except Exception:
+                continue
+    groups: dict[int, list[int]] = {}
+    for index in range(len(geometries)):
+        groups.setdefault(find(index), []).append(index)
+    return list(groups.values())
+
+
+def _normalized_collection(value: Any) -> str:
+    return str(value or "").strip().lower().replace("_", "-")
+
+
+def _mosaic_outcome_id(item: dict[str, Any]) -> str:
+    raw = item.get("raw") if isinstance(item.get("raw"), dict) else {}
+    properties = raw.get("properties") if isinstance(raw.get("properties"), dict) else {}
+    return str(
+        properties.get("satl:outcome_id")
+        or properties.get("outcome_id")
+        or item.get("outcome_id")
+        or ""
+    ).strip()
+
+
+def _mosaic_capture_window(value: Any) -> tuple[str, str]:
+    raw = str(value or "").strip()
+    try:
+        captured = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if captured.tzinfo is None:
+            captured = captured.replace(tzinfo=timezone.utc)
+    except ValueError:
+        captured = datetime.now(timezone.utc)
+    return (
+        (captured - timedelta(days=1)).date().isoformat(),
+        (captured + timedelta(days=1)).date().isoformat(),
+    )
+
+
+def _mosaic_processing_input(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "item_id": str(item.get("id") or ""),
+        "source_id": SOURCE_SATELLOGIC,
+        "collection_id": "l1d-sr",
+        "asset_key": "visual",
+        "sensor_generation": normalize_sensor_generation(item.get("sensor_generation")),
+    }
+
+
+def _find_l1d_sr_products(
+    source: dict[str, Any],
+    required_geometry: dict[str, Any],
+    contract_id: str | None,
+) -> dict[str, Any]:
+    """Resolve all L1D-SR visual tiles covering one selected capture/AOI."""
+
+    outcome_id = str(source.get("outcome_id") or "").strip()
+    if not outcome_id:
+        return {"ready": False, "coverage_fraction": 0.0, "items": [], "error": "Capture outcome ID is unavailable"}
+    start_date, end_date = _mosaic_capture_window(source.get("datetime"))
+    try:
+        candidates = sources.search(
+            source_id=SOURCE_SATELLOGIC,
+            geometry=required_geometry,
+            start_date=start_date,
+            end_date=end_date,
+            collection_id="l1d-sr",
+            contract_id=contract_id,
+            limit=500,
+            max_cloud_cover=None,
+            satellite_name=None,
+            min_gsd=None,
+            max_gsd=None,
+            sensor_generation=None,
+        )
+    except Exception as exc:
+        logger.warning("L1D-SR dependency lookup failed outcome=%s error=%s", outcome_id, exc)
+        return {"ready": False, "coverage_fraction": 0.0, "items": [], "error": str(exc)}
+
+    matching = [
+        item for item in candidates
+        if _normalized_collection(item.get("collection")) == "l1d-sr"
+        and _mosaic_outcome_id(item) == outcome_id
+        and bool(str((item.get("assets") or {}).get("visual") or "").strip())
+    ]
+    if not matching or shape is None or unary_union is None:
+        return {"ready": False, "coverage_fraction": 0.0, "items": [], "error": ""}
+    try:
+        required = shape(required_geometry)
+        tile_geometries = [shape(item.get("geometry")) for item in matching if item.get("geometry")]
+        coverage = unary_union(tile_geometries).intersection(required)
+        coverage_fraction = min(1.0, float(coverage.area) / max(float(required.area), 1e-15))
+    except Exception:
+        coverage_fraction = 0.0
+    matching.sort(key=lambda item: str(item.get("id") or ""))
+    _cache_items(matching)
+    return {
+        "ready": coverage_fraction >= 0.995,
+        "coverage_fraction": round(coverage_fraction, 6),
+        "items": matching,
+        "error": "",
+    }
+
+
+def _mosaic_preflight(payload: MosaicPreflightRequest) -> dict[str, Any]:
+    if shape is None or mapping is None or unary_union is None:
+        raise HTTPException(status_code=503, detail="Mosaic preflight requires Shapely")
+
+    resolved: list[dict[str, Any]] = []
+    geometries: list[Any] = []
+    messages: list[str] = []
+    warnings: list[str] = []
+    for input_row in payload.inputs:
+        item = _resolve_item(
+            input_row.item_id,
+            contract_id=payload.contract_id,
+            source_id=input_row.source_id,
+            collection_id=input_row.collection_id,
+        )
+        if not item:
+            messages.append(f"Item not found: {input_row.item_id}")
+            continue
+        source_id = _normalize_source_id(item.get("source_id") or input_row.source_id)
+        collection_id = str(item.get("collection") or input_row.collection_id).strip().lower().replace("_", "-")
+        asset_key = str(input_row.asset_key or "visual").strip().lower()
+        if source_id != SOURCE_SATELLOGIC:
+            messages.append("The first Mosaic Workbench release supports NewSat imagery only.")
+        if asset_key not in {"visual", "visual_fullres", "visual-fullres"}:
+            messages.append(f"Unsupported mosaic asset: {asset_key}")
+        raw_geometry = item.get("geometry")
+        try:
+            item_geometry = shape(raw_geometry)
+        except Exception:
+            item_geometry = None
+        if item_geometry is None or item_geometry.is_empty:
+            messages.append(f"Item has no usable footprint: {input_row.item_id}")
+            continue
+        generation = normalize_sensor_generation(item.get("sensor_generation") or input_row.sensor_generation)
+        requested_generation = normalize_sensor_generation(payload.sensor_generation)
+        if requested_generation != "unknown" and generation != "unknown" and generation != requested_generation:
+            messages.append(f"Sensor mismatch for {input_row.item_id}: expected {requested_generation}, found {generation}.")
+        if generation == "unknown":
+            warnings.append(f"Sensor generation is unknown for {input_row.item_id}; inspect before finalizing.")
+        geometries.append(item_geometry)
+        resolved.append(
+            {
+                "item_id": str(item.get("id") or input_row.item_id),
+                "source_id": source_id,
+                "collection_id": collection_id,
+                "asset_key": asset_key,
+                "datetime": item.get("datetime"),
+                "outcome_id": _mosaic_outcome_id(item),
+                "satellite_name": item.get("satellite_name"),
+                "sensor_generation": generation,
+                "sensor_generation_source": item.get("sensor_generation_source") or "unresolved",
+                "gsd": item.get("gsd"),
+                "cloud_cover": item.get("cloud_cover"),
+                "assets": item.get("assets") if isinstance(item.get("assets"), dict) else {},
+                "geometry": raw_geometry,
+            }
+        )
+
+    if len(resolved) < 2:
+        messages.append("Select at least two valid imagery items.")
+    overlap_groups = _mosaic_overlap_groups(geometries)
+    if len(overlap_groups) > 1:
+        messages.append("The selected imagery is disconnected. Every selected image must overlap another image in one connected group.")
+
+    try:
+        union_geometry = unary_union(geometries)
+    except Exception:
+        union_geometry = None
+    if union_geometry is None or union_geometry.is_empty:
+        messages.append("The selected footprints could not be combined.")
+        output_geometry: dict[str, Any] | None = None
+    else:
+        if payload.mode == "polygon":
+            if not payload.aoi:
+                messages.append("Draw a polygon before generating a polygon mosaic.")
+                output_geometry = None
+            else:
+                try:
+                    requested_aoi = shape(payload.aoi)
+                    clipped = requested_aoi.intersection(union_geometry)
+                    if clipped.is_empty:
+                        messages.append("The mosaic polygon does not intersect the selected imagery.")
+                        output_geometry = None
+                    else:
+                        output_geometry = mapping(clipped)
+                except Exception:
+                    messages.append("The mosaic polygon is not valid GeoJSON.")
+                    output_geometry = None
+        else:
+            output_geometry = mapping(union_geometry)
+
+    generations = sorted({row["sensor_generation"] for row in resolved})
+    if len(generations) > 1:
+        warnings.append("The selection mixes NewSat sensor generations; use a single generation for the most consistent radiometry.")
+    requested_resolution = float(payload.output_resolution_m) if payload.output_resolution_m else None
+    dependencies: list[dict[str, Any]] = []
+    processing_inputs: list[dict[str, Any]] = []
+    product_gsds: list[float] = []
+    product_generations: set[str] = set()
+    output_shape = shape(output_geometry) if output_geometry else None
+    seen_processing_ids: set[str] = set()
+    for row in resolved:
+        try:
+            required_shape = shape(row["geometry"]).intersection(output_shape) if output_shape is not None else None
+        except Exception:
+            required_shape = None
+        if required_shape is None or required_shape.is_empty:
+            continue
+        required_geometry = mapping(required_shape)
+        collection_id = _normalized_collection(row.get("collection_id"))
+        if collection_id == "l1d-sr":
+            product_items = [row]
+            resolution = {"ready": True, "coverage_fraction": 1.0, "items": product_items, "error": ""}
+        else:
+            resolution = _find_l1d_sr_products(row, required_geometry, payload.contract_id)
+            product_items = resolution["items"]
+        dependency = {
+            "source_item_id": row["item_id"],
+            "source_collection_id": collection_id,
+            "outcome_id": row.get("outcome_id") or "",
+            "datetime": row.get("datetime"),
+            "satellite_name": row.get("satellite_name"),
+            "sensor_generation": row.get("sensor_generation"),
+            "required_geometry": required_geometry,
+            "ready": bool(resolution["ready"]),
+            "coverage_fraction": float(resolution["coverage_fraction"]),
+            "product_item_ids": [str(item.get("item_id") or item.get("id") or "") for item in product_items],
+            "error": str(resolution.get("error") or ""),
+        }
+        dependencies.append(dependency)
+        for product in product_items:
+            product_gsd = product.get("gsd")
+            if isinstance(product_gsd, (int, float)) and float(product_gsd) > 0:
+                product_gsds.append(float(product_gsd))
+            product_generation = normalize_sensor_generation(product.get("sensor_generation"))
+            if product_generation != "unknown":
+                product_generations.add(product_generation)
+            normalized_product = product if "item_id" in product else _mosaic_processing_input(product)
+            item_id = str(normalized_product.get("item_id") or "")
+            if item_id and item_id not in seen_processing_ids:
+                seen_processing_ids.add(item_id)
+                processing_inputs.append(normalized_product)
+
+    ready = bool(dependencies) and all(row["ready"] for row in dependencies)
+    missing_products = [row for row in dependencies if not row["ready"]]
+    requested_generation = normalize_sensor_generation(payload.sensor_generation)
+    if requested_generation != "unknown" and product_generations and product_generations != {requested_generation}:
+        messages.append(
+            f"Resolved L1D-SR products do not match requested sensor generation {requested_generation}."
+        )
+    if missing_products:
+        warnings.append(
+            f"{len(missing_products)} selected capture(s) require L1D-SR Visual generation before mosaicking can begin."
+        )
+    measured_gsds = product_gsds or [
+        float(row["gsd"])
+        for row in resolved
+        if _normalized_collection(row.get("collection_id")) == "l1d-sr"
+        and isinstance(row.get("gsd"), (int, float))
+        and float(row["gsd"]) > 0
+    ]
+    nominal = [nominal_resolution_m("l1d-sr", row.get("sensor_generation")) for row in resolved]
+    native_resolutions = measured_gsds or [value for value in nominal if value is not None]
+    native_resolution = max(native_resolutions) if native_resolutions else 1.0
+    output_resolution = requested_resolution or native_resolution
+    if requested_resolution is not None and requested_resolution < native_resolution - 1e-6:
+        messages.append(f"Output resolution {requested_resolution:g} m is finer than the coarsest native input resolution {native_resolution:g} m.")
+    if payload.output_bands == "rgb_nir":
+        missing_nir = [row["item_id"] for row in resolved if not any("analytic" in str(key).lower() or "nir" in str(key).lower() for key in (row.get("assets") or {}).keys())]
+        if missing_nir:
+            messages.append("RGB-NIR output requires compatible NIR assets on every selected input.")
+    output_resolution = max(0.01, float(output_resolution or 1.0))
+    area_m2 = _mosaic_geometry_area_m2(output_geometry) if output_geometry else 0.0
+    estimated_pixels = int(max(0.0, area_m2 / (output_resolution * output_resolution)))
+    max_pixels = int(getattr(settings, "mosaic_max_output_pixels", 50_000_000))
+    if estimated_pixels > max_pixels:
+        messages.append(f"Estimated output is {estimated_pixels:,} pixels; reduce the AOI below the {max_pixels:,}-pixel limit.")
+    if payload.mode == "whole_strip" and estimated_pixels > 10_000_000:
+        warnings.append("Whole-strip mode is large; polygon mode is recommended for the first pass.")
+    return {
+        "valid": not messages,
+        "mode": payload.mode,
+        "messages": messages,
+        "warnings": sorted(set(warnings)),
+        "inputs": resolved,
+        "required_collection_id": "l1d-sr",
+        "required_asset_key": "visual",
+        "ready": ready,
+        "dependencies": dependencies,
+        "missing_products": missing_products,
+        "processing_inputs": processing_inputs if ready else [],
+        "overlap_groups": overlap_groups,
+        "sensor_generations": generations,
+        "processing_sensor_generations": sorted(product_generations),
+        "output_geometry": output_geometry,
+        "output_resolution_m": output_resolution,
+        "native_resolution_m": native_resolution,
+        "output_bands": payload.output_bands,
+        "accelerator": payload.accelerator,
+        "estimated_area_m2": round(area_m2, 2),
+        "estimated_pixels": estimated_pixels,
+        "estimated_storage_bytes": estimated_pixels * 4,
+        "max_output_pixels": max_pixels,
+    }
+
+
+@app.get("/api/mosaics/projects")
+def mosaic_projects_list(status: str | None = Query(default=None), limit: int = Query(default=100, ge=1, le=500)):
+    rows = app.state.mosaic_store.list_projects(status=status, limit=limit)
+    return {"count": len(rows), "projects": rows}
+
+
+@app.post("/api/mosaics/projects")
+def mosaic_projects_create(payload: MosaicProjectCreateRequest):
+    if payload.output_bands == "rgb_nir" and not payload.source_item_ids:
+        raise HTTPException(status_code=400, detail="RGB-NIR projects require source items so NIR availability can be validated")
+    return app.state.mosaic_store.create_project(payload.model_dump(mode="json"))
+
+
+@app.get("/api/mosaics/projects/{project_id}")
+def mosaic_projects_get(project_id: str):
+    row = app.state.mosaic_store.get_project(project_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Mosaic project not found")
+    return row
+
+
+@app.patch("/api/mosaics/projects/{project_id}")
+def mosaic_projects_patch(project_id: str, payload: MosaicProjectPatchRequest):
+    row = app.state.mosaic_store.update_project(project_id, payload.model_dump(exclude_unset=True))
+    if not row:
+        raise HTTPException(status_code=404, detail="Mosaic project not found")
+    return row
+
+
+@app.get("/api/mosaics/projects/{project_id}/jobs")
+def mosaic_project_jobs(project_id: str, limit: int = Query(default=100, ge=1, le=500)):
+    if not app.state.mosaic_store.get_project(project_id):
+        raise HTTPException(status_code=404, detail="Mosaic project not found")
+    rows = [row for row in app.state.mosaic_store.list_jobs(limit=limit) if str((row.get("payload") or {}).get("project_id") or "") == str(project_id)]
+    return {"count": len(rows), "jobs": rows}
+
+
+@app.get("/api/mosaics/sensor-profiles")
+def mosaic_sensor_profiles():
+    return {
+        "generations": [
+            {"id": "mark-iv", "label": "NewSat Mark IV", "l1b_gsd_m": 1.0, "l1d_gsd_m": 1.0, "l1d_sr_gsd_m": 0.7},
+            {"id": "mark-v", "label": "NewSat Mark V", "l1b_gsd_m": 0.7, "l1d_gsd_m": 0.7, "l1d_sr_gsd_m": 0.5},
+            {"id": "unknown", "label": "Unknown / unclassified"},
+        ],
+        "configured_mapping_count": len(settings.satellogic_satellite_generation_map or {}),
+    }
+
+
+@app.post("/api/mosaics/preflight")
+def mosaic_preflight(request: MosaicPreflightRequest):
+    return _mosaic_preflight(request)
+
+
+@app.post("/api/mosaics/jobs")
+def mosaic_job_create(request: MosaicJobRequest):
+    if request.project_id and not app.state.mosaic_store.get_project(request.project_id):
+        raise HTTPException(status_code=404, detail="Mosaic project not found")
+    preflight = _mosaic_preflight(request)
+    if not preflight["valid"]:
+        raise HTTPException(status_code=400, detail={"message": "Mosaic preflight failed", "preflight": preflight})
+    payload = request.model_dump(mode="json")
+    payload["source_inputs"] = list(payload.get("inputs") or [])
+    ready = bool(preflight.get("ready"))
+    if ready:
+        payload["inputs"] = list(preflight.get("processing_inputs") or [])
+    status = "queued" if ready else "awaiting_product_request"
+    message = (
+        "L1D-SR inputs resolved; mosaic queued for host processing."
+        if ready
+        else "L1D-SR Visual products are unavailable. Confirm provider processing requests to continue."
+    )
+    dependency = {
+        "required_collection_id": "l1d-sr",
+        "required_asset_key": "visual",
+        "captures": preflight.get("dependencies") or [],
+        "orders": [],
+    }
+    job = app.state.mosaic_store.create_job(
+        mode=request.mode,
+        payload=payload,
+        preflight=preflight,
+        status=status,
+        message=message,
+        dependency=dependency,
+    )
+    if request.project_id:
+        project_status = "Queued" if ready else "Awaiting L1D-SR Request"
+        app.state.mosaic_store.update_project(request.project_id, {"active_job_id": job["job_id"], "status": project_status, "output_bands": request.output_bands, "output_resolution_m": preflight.get("output_resolution_m")})
+    return {
+        "job": job,
+        "worker_required": ready,
+        "product_request_required": not ready,
+        "message": message,
+    }
+
+
+def _archive_order_feature(job: dict[str, Any], capture: dict[str, Any]) -> dict[str, Any]:
+    job_id = str(job.get("job_id") or "")
+    outcome_id = str(capture.get("outcome_id") or "").strip()
+    if not outcome_id:
+        raise HTTPException(status_code=400, detail=f"Selected source {capture.get('source_item_id')} has no capture outcome ID")
+    order_name = f"Image-Mate Mosaic {job_id[:8]} L1D-SR {outcome_id[:12]}"
+    return {
+        "type": "Feature",
+        "geometry": capture.get("required_geometry"),
+        "properties": {
+            "order_name": order_name,
+            "sku": "ARCIMG-M.NN.NN",
+            "parameters": {"processing_level": "L1D_SR", "outcome_id": outcome_id},
+        },
+    }
+
+
+def _find_archive_order(feature: dict[str, Any], contract_id: str | None) -> dict[str, Any] | None:
+    expected = feature.get("properties") if isinstance(feature.get("properties"), dict) else {}
+    expected_parameters = expected.get("parameters") if isinstance(expected.get("parameters"), dict) else {}
+    order_name = str(expected.get("order_name") or "")
+    try:
+        payload = client.list_orders(contract_id=contract_id, limit=100, query=order_name)
+    except Exception:
+        return None
+    matches: list[dict[str, Any]] = []
+    for row in _tasking_rows_from_payload(payload):
+        properties = row.get("properties") if isinstance(row.get("properties"), dict) else {}
+        parameters = properties.get("parameters") if isinstance(properties.get("parameters"), dict) else {}
+        if (
+            str(properties.get("order_name") or "") == order_name
+            and str(properties.get("sku") or "").upper() == "ARCIMG-M.NN.NN"
+            and str(parameters.get("processing_level") or "").upper().replace("-", "_") == "L1D_SR"
+            and str(parameters.get("outcome_id") or "") == str(expected_parameters.get("outcome_id") or "")
+        ):
+            matches.append(row)
+    if len(matches) > 1:
+        raise HTTPException(status_code=409, detail=f"Multiple provider archive orders match {order_name!r}")
+    return matches[0] if matches else None
+
+
+def _mosaic_project_status(job: dict[str, Any], status: str, qc_state: str) -> None:
+    project_id = str((job.get("payload") or {}).get("project_id") or "")
+    if project_id:
+        app.state.mosaic_store.update_project(project_id, {"status": status, "qc_state": qc_state})
+
+
+def _refresh_mosaic_product_dependencies(job: dict[str, Any], *, start_worker: bool = True) -> dict[str, Any]:
+    payload = dict(job.get("payload") or {})
+    source_inputs = list(payload.get("source_inputs") or payload.get("inputs") or [])
+    request_payload = {**payload, "inputs": source_inputs}
+    try:
+        request = MosaicPreflightRequest.model_validate(request_payload)
+        preflight = _mosaic_preflight(request)
+    except Exception as exc:
+        checked_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+        return app.state.mosaic_store.update_job(
+            job["job_id"],
+            last_checked_at=checked_at,
+            next_check_at=(datetime.now(timezone.utc) + timedelta(seconds=settings.mosaic_product_poll_seconds)).replace(microsecond=0).isoformat(),
+            attempt_count=int(job.get("attempt_count") or 0) + 1,
+            message=f"L1D-SR availability check failed; will retry: {exc}",
+        ) or job
+
+    existing_dependency = dict(job.get("dependency") or {})
+    dependency = {
+        "required_collection_id": "l1d-sr",
+        "required_asset_key": "visual",
+        "captures": preflight.get("dependencies") or [],
+        "orders": existing_dependency.get("orders") or [],
+    }
+    now = datetime.now(timezone.utc)
+    common_updates: dict[str, Any] = {
+        "preflight_json": json.dumps(preflight, sort_keys=True),
+        "dependency_json": json.dumps(dependency, sort_keys=True),
+        "last_checked_at": now.replace(microsecond=0).isoformat(),
+        "next_check_at": (now + timedelta(seconds=settings.mosaic_product_poll_seconds)).replace(microsecond=0).isoformat(),
+        "attempt_count": int(job.get("attempt_count") or 0) + 1,
+    }
+    if not preflight.get("ready"):
+        missing = len(preflight.get("missing_products") or [])
+        requests_submitted = bool(dependency.get("orders"))
+        waiting_status = "awaiting_products" if requests_submitted else "awaiting_product_request"
+        waiting_message = (
+            f"Waiting for {missing} L1D-SR capture product(s); checking every {settings.mosaic_product_poll_seconds} seconds."
+            if requests_submitted
+            else f"{missing} L1D-SR capture product(s) remain unavailable; confirm provider processing requests to continue."
+        )
+        updated = app.state.mosaic_store.update_job(
+            job["job_id"],
+            **common_updates,
+            status=waiting_status,
+            message=waiting_message,
+        ) or job
+        _mosaic_project_status(
+            updated,
+            "Awaiting L1D-SR" if requests_submitted else "Awaiting L1D-SR Request",
+            waiting_status,
+        )
+        return updated
+    if not preflight.get("valid"):
+        reasons = " ".join(str(value) for value in preflight.get("messages") or [])
+        updated = app.state.mosaic_store.update_job(
+            job["job_id"],
+            **common_updates,
+            status="failed",
+            error=reasons,
+            message="L1D-SR products arrived, but final mosaic validation failed.",
+        ) or job
+        _mosaic_project_status(updated, "Failed", "failed")
+        return updated
+
+    payload["source_inputs"] = source_inputs
+    payload["inputs"] = list(preflight.get("processing_inputs") or [])
+    ready_updates = {**common_updates, "next_check_at": None}
+    updated = app.state.mosaic_store.update_job(
+        job["job_id"],
+        **ready_updates,
+        payload_json=json.dumps(payload, sort_keys=True),
+        status="queued",
+        progress=0.0,
+        error="",
+        message="All L1D-SR Visual inputs are available; mosaic queued.",
+    ) or job
+    _mosaic_project_status(updated, "Queued", "not_started")
+    if start_worker and settings.mosaic_worker_enabled:
+        try:
+            _start_mosaic_worker(updated)
+        except Exception as exc:
+            updated = app.state.mosaic_store.update_job(
+                job["job_id"],
+                message=f"L1D-SR inputs are ready, but the host worker could not start: {exc}",
+            ) or updated
+    return updated
+
+
+def _check_waiting_mosaic_jobs() -> None:
+    for job in app.state.mosaic_store.list_jobs_by_status(["awaiting_products"]):
+        try:
+            _refresh_mosaic_product_dependencies(job, start_worker=True)
+        except Exception as exc:
+            logger.warning("mosaic dependency refresh failed job=%s error=%s", job.get("job_id"), exc)
+
+
+@app.post("/api/mosaics/jobs/{job_id}/request-products")
+def mosaic_job_request_products(job_id: str, request: MosaicProductRequestConfirmation):
+    job = app.state.mosaic_store.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Mosaic job not found")
+    if request.confirmation.strip().upper() != "REQUEST L1D-SR":
+        raise HTTPException(status_code=400, detail="Type REQUEST L1D-SR to confirm provider product generation")
+    if job["status"] not in {"awaiting_product_request", "awaiting_products"}:
+        raise HTTPException(status_code=409, detail="This mosaic is not waiting for L1D-SR products")
+    dependency = dict(job.get("dependency") or {})
+    captures = list(dependency.get("captures") or [])
+    orders = list(dependency.get("orders") or [])
+    ordered_outcomes = {str(row.get("outcome_id") or "") for row in orders if row.get("order_id")}
+    contract_id = (job.get("payload") or {}).get("contract_id")
+    for capture in captures:
+        if capture.get("ready"):
+            continue
+        outcome_id = str(capture.get("outcome_id") or "").strip()
+        if outcome_id in ordered_outcomes:
+            continue
+        feature = _archive_order_feature(job, capture)
+        try:
+            remote = _find_archive_order(feature, contract_id) or client.create_order(feature, contract_id=contract_id)
+        except Exception as exc:
+            remote = _find_archive_order(feature, contract_id)
+            if remote:
+                pass
+            else:
+                dependency["orders"] = orders
+                app.state.mosaic_store.update_job(job_id, dependency_json=json.dumps(dependency, sort_keys=True))
+                raise HTTPException(status_code=502, detail=f"L1D-SR processing request failed for {outcome_id}: {exc}") from exc
+        order_id = _remote_order_id(remote)
+        if not order_id:
+            raise HTTPException(status_code=502, detail=f"Provider accepted no identifiable L1D-SR order for {outcome_id}")
+        orders.append({
+            "outcome_id": outcome_id,
+            "order_id": order_id,
+            "order_name": feature["properties"]["order_name"],
+            "status": "submitted",
+            "submitted_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+        })
+        ordered_outcomes.add(outcome_id)
+        dependency["orders"] = orders
+        app.state.mosaic_store.update_job(job_id, dependency_json=json.dumps(dependency, sort_keys=True))
+    updated = app.state.mosaic_store.update_job(
+        job_id,
+        status="awaiting_products",
+        dependency_json=json.dumps(dependency, sort_keys=True),
+        message=f"L1D-SR processing requested for {len(orders)} capture(s); waiting for archive availability.",
+        next_check_at=(datetime.now(timezone.utc) + timedelta(seconds=settings.mosaic_product_poll_seconds)).replace(microsecond=0).isoformat(),
+    ) or job
+    _mosaic_project_status(updated, "Awaiting L1D-SR", "awaiting_products")
+    return {"job": updated, "orders": orders}
+
+
+@app.post("/api/mosaics/jobs/{job_id}/check-products")
+def mosaic_job_check_products(job_id: str):
+    job = app.state.mosaic_store.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Mosaic job not found")
+    if job["status"] not in {"awaiting_products", "awaiting_product_request"}:
+        return {"job": job, "checked": False}
+    updated = _refresh_mosaic_product_dependencies(job, start_worker=True)
+    return {"job": updated, "checked": True}
+
+
+def _mosaic_worker_command(job: dict[str, Any]) -> tuple[list[str], str]:
+    payload = job.get("payload") if isinstance(job.get("payload"), dict) else {}
+    requested = str(payload.get("accelerator") or "auto").strip().lower()
+    if requested == "auto" and settings.mosaic_worker_accelerator != "auto":
+        requested = settings.mosaic_worker_accelerator
+    if requested not in {"auto", "cpu", "mps", "cuda", "opencl"}:
+        requested = "auto"
+    python_bin = str(settings.mosaic_worker_python or "").strip()
+    executable = python_bin or sys.executable
+    worker_script = Path(__file__).resolve().parents[1] / "scripts" / "mosaic_worker.py"
+    command = [
+        executable,
+        str(worker_script),
+        "--api",
+        str(settings.mosaic_worker_api_base_url),
+        "--job-id",
+        str(job["job_id"]),
+        "--accelerator",
+        requested,
+    ]
+    return command, requested
+
+
+def _start_mosaic_worker(job: dict[str, Any]) -> dict[str, Any]:
+    job_id = str(job.get("job_id") or "")
+    if not job_id:
+        raise HTTPException(status_code=400, detail="Mosaic job id is missing")
+    if not settings.mosaic_worker_enabled:
+        raise HTTPException(status_code=503, detail="The local mosaic worker is disabled by IMAGE_MATE_MOSAIC_WORKER_ENABLED")
+
+    with app.state.mosaic_worker_lock:
+        existing = app.state.mosaic_worker_processes.get(job_id)
+        if existing is not None and existing.poll() is None:
+            return {
+                "started": False,
+                "already_running": True,
+                "pid": existing.pid,
+                "accelerator": existing._image_mate_accelerator,
+                "log_path": existing._image_mate_log_path,
+            }
+
+        command, accelerator = _mosaic_worker_command(job)
+        log_dir = settings.output_dir / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_path = log_dir / f"mosaic_worker_{job_id}.log"
+        environment = dict(os.environ)
+        environment["PYTHONUNBUFFERED"] = "1"
+        try:
+            with log_path.open("ab") as log_handle:
+                process = subprocess.Popen(
+                    command,
+                    cwd=str(Path(__file__).resolve().parents[2]),
+                    env=environment,
+                    stdin=subprocess.DEVNULL,
+                    stdout=log_handle,
+                    stderr=subprocess.STDOUT,
+                    start_new_session=True,
+                )
+        except OSError as exc:
+            app.state.mosaic_store.update_job(
+                job_id,
+                message=f"Host worker could not start: {exc}",
+            )
+            raise HTTPException(status_code=503, detail=f"Could not start the host mosaic worker: {exc}") from exc
+
+        process._image_mate_accelerator = accelerator  # type: ignore[attr-defined]
+        process._image_mate_log_path = str(log_path)  # type: ignore[attr-defined]
+        app.state.mosaic_worker_processes[job_id] = process
+        app.state.mosaic_store.update_job(
+            job_id,
+            message=f"Starting host mosaic worker ({accelerator})",
+        )
+        return {
+            "started": True,
+            "already_running": False,
+            "pid": process.pid,
+            "accelerator": accelerator,
+            "log_path": str(log_path),
+        }
+
+
+@app.post("/api/mosaics/jobs/{job_id}/start")
+def mosaic_job_start(job_id: str):
+    job = app.state.mosaic_store.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Mosaic job not found")
+    if job["status"] in {"succeeded", "finalized", "failed", "canceled"}:
+        return {"started": False, "already_complete": True, "job": job}
+    if job["status"] in {"awaiting_product_request", "awaiting_products"}:
+        raise HTTPException(
+            status_code=409,
+            detail={"message": "Mosaic processing cannot start until every L1D-SR Visual dependency is available", "job": job},
+        )
+    if job["status"] != "queued":
+        return {"started": False, "already_running": True, "job": job}
+    worker = _start_mosaic_worker(job)
+    return {"worker": worker, "job": app.state.mosaic_store.get_job(job_id)}
+
+
+@app.get("/api/mosaics/worker/status")
+def mosaic_worker_status():
+    workers = []
+    with app.state.mosaic_worker_lock:
+        for job_id, process in list(app.state.mosaic_worker_processes.items()):
+            return_code = process.poll()
+            workers.append({
+                "job_id": job_id,
+                "pid": process.pid,
+                "running": return_code is None,
+                "return_code": return_code,
+                "accelerator": getattr(process, "_image_mate_accelerator", "auto"),
+                "log_path": getattr(process, "_image_mate_log_path", ""),
+            })
+    return {
+        "enabled": bool(settings.mosaic_worker_enabled),
+        "default_accelerator": settings.mosaic_worker_accelerator,
+        "workers": workers,
+    }
+
+
+@app.get("/api/mosaics/jobs")
+def mosaic_jobs_list(limit: int = Query(default=50, ge=1, le=200)):
+    return {"jobs": app.state.mosaic_store.list_jobs(limit)}
+
+
+@app.get("/api/mosaics/jobs/{job_id}")
+def mosaic_job_get(job_id: str):
+    job = app.state.mosaic_store.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Mosaic job not found")
+    return {"job": job}
+
+
+@app.post("/api/mosaics/jobs/{job_id}/claim")
+def mosaic_job_claim(job_id: str):
+    job = app.state.mosaic_store.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Mosaic job not found")
+    if job["status"] != "queued":
+        raise HTTPException(status_code=409, detail={"message": "Mosaic job is not queued", "job": job})
+    claimed = app.state.mosaic_store.claim_job(job_id)
+    if not claimed or claimed["status"] != "running":
+        raise HTTPException(status_code=409, detail={"message": "Mosaic job was claimed by another worker", "job": claimed})
+    return {"job": claimed}
+
+
+@app.post("/api/mosaics/jobs/{job_id}/progress")
+def mosaic_job_progress(job_id: str, request: MosaicJobProgressRequest):
+    job = app.state.mosaic_store.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Mosaic job not found")
+    if job["status"] == "canceled" and request.status != "canceled":
+        return {"job": job}
+    updates: dict[str, Any] = {
+        "status": request.status,
+        "progress": float(request.progress),
+        "message": request.message,
+        "error": request.error,
+    }
+    if request.result is not None:
+        updates["result_json"] = json.dumps(request.result, sort_keys=True)
+    updated = app.state.mosaic_store.update_job(job_id, **updates)
+    project_id = (job.get("payload") or {}).get("project_id")
+    if project_id:
+        project_status = {
+            "awaiting_product_request": "Awaiting L1D-SR Request", "awaiting_products": "Awaiting L1D-SR",
+            "queued": "Queued", "downloading": "Downloading", "running": "Processing", "processing": "Processing",
+            "color_balancing": "Color balancing", "seam_optimization": "Seam optimization", "qc_required": "QC Required",
+            "repairing": "Repairing", "succeeded": "QC Required", "finalized": "Finalized", "failed": "Failed", "canceled": "Canceled",
+        }.get(request.status, request.status)
+        app.state.mosaic_store.update_project(project_id, {"status": project_status, "qc_state": "required" if project_status == "QC Required" else "complete" if project_status == "Finalized" else project_status.lower().replace(" ", "_")})
+    return {"job": updated}
+
+
+@app.get("/api/mosaics/jobs/{job_id}/input")
+def mosaic_job_input(
+    job_id: str,
+    item_id: str = Query(..., min_length=1, max_length=240),
+    asset_key: str = Query(default="visual", min_length=1, max_length=32),
+):
+    """Serve one queued mosaic input to the trusted host worker by item identity.
+
+    The worker never needs a signed provider URL.  The browser cannot request an
+    arbitrary URL through this route because the item must belong to the job.
+    """
+
+    job = app.state.mosaic_store.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Mosaic job not found")
+    requested_key = str(asset_key or "visual").strip().lower()
+    if requested_key not in {"visual", "cloud_mask"}:
+        raise HTTPException(status_code=400, detail="Mosaic inputs support visual or cloud_mask assets")
+    payload = job.get("payload") if isinstance(job.get("payload"), dict) else {}
+    input_row = next(
+        (row for row in (payload.get("inputs") or []) if isinstance(row, dict) and str(row.get("item_id")) == str(item_id)),
+        None,
+    )
+    if input_row is None:
+        raise HTTPException(status_code=404, detail="Item is not part of this mosaic job")
+    item = _resolve_item(
+        item_id=item_id,
+        source_id=input_row.get("source_id"),
+        collection_id=input_row.get("collection_id"),
+        contract_id=payload.get("contract_id"),
+    )
+    if not item:
+        raise HTTPException(status_code=404, detail="Mosaic input item not found")
+    resolved_collection = _normalized_collection(item.get("collection") or input_row.get("collection_id"))
+    if resolved_collection != "l1d-sr":
+        raise HTTPException(status_code=409, detail="Mosaic workers may download only L1D-SR inputs")
+    href, media_type, selected_key = _select_archive_asset(item, requested_key)
+    if not href:
+        raise HTTPException(status_code=404, detail=f"Item has no {requested_key} asset")
+    if requested_key == "visual" and selected_key != "visual":
+        raise HTTPException(status_code=409, detail="L1D-SR Visual asset is not yet available")
+    parsed = urlparse(href)
+    if parsed.scheme in {"http", "https"}:
+        _validate_proxy_url(href)
+    elif parsed.scheme != "s3":
+        raise HTTPException(status_code=400, detail="Provider mosaic asset has an unsupported URL scheme")
+    try:
+        content = _download_bytes_for_url(
+            href,
+            contract_id=payload.get("contract_id"),
+            source_hint=str(item.get("source_id") or input_row.get("source_id") or "satellogic"),
+        )
+    except requests.HTTPError as exc:
+        status_code = int(getattr(getattr(exc, "response", None), "status_code", 502) or 502)
+        raise HTTPException(status_code=status_code, detail="Mosaic input fetch failed") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="Mosaic input fetch failed") from exc
+    if len(content) > int(settings.mosaic_max_input_bytes):
+        raise HTTPException(status_code=413, detail="Mosaic input exceeds the configured host-worker size limit")
+    resolved_media_type = media_type or mimetypes.guess_type(parsed.path)[0] or "application/octet-stream"
+    logger.info(
+        "mosaic_worker_input job=%s item=%s asset=%s bytes=%s",
+        str(job_id)[:80],
+        str(item_id)[:160],
+        selected_key,
+        len(content),
+    )
+    return Response(
+        content=content,
+        media_type=resolved_media_type,
+        headers={"Cache-Control": "no-store", "Content-Disposition": f'attachment; filename="{selected_key}"'},
+    )
+
+
+@app.get("/api/mosaics/jobs/{job_id}/artifact")
+def mosaic_job_artifact(
+    job_id: str,
+    artifact: str = Query(default="mosaic", min_length=1, max_length=32),
+):
+    job = app.state.mosaic_store.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Mosaic job not found")
+    if job["status"] not in {"succeeded", "finalized"}:
+        raise HTTPException(status_code=409, detail="Mosaic output is not ready")
+    result = job.get("result") if isinstance(job.get("result"), dict) else {}
+    key_map = {"mosaic": "output_path", "report": "report_path"}
+    path_value = result.get(key_map.get(str(artifact).strip().lower(), ""))
+    if not path_value:
+        raise HTTPException(status_code=404, detail="Mosaic artifact not found")
+    artifact_path = Path(str(path_value)).expanduser().resolve()
+    output_root = settings.output_dir.expanduser().resolve()
+    try:
+        artifact_path.relative_to(output_root)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Mosaic artifact path is outside the output directory") from exc
+    if not artifact_path.is_file():
+        raise HTTPException(status_code=404, detail="Mosaic artifact is not available on this host")
+    media_type = "application/json" if str(artifact).lower() == "report" else "image/tiff"
+    return FileResponse(artifact_path, media_type=media_type, filename=artifact_path.name)
+
+
+@app.post("/api/mosaics/jobs/{job_id}/finalize")
+def mosaic_job_finalize(job_id: str):
+    job = app.state.mosaic_store.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Mosaic job not found")
+    if job["status"] not in {"succeeded", "finalized"}:
+        raise HTTPException(status_code=409, detail="Only a completed mosaic can be finalized")
+    finalized = app.state.mosaic_store.update_job(job_id, status="finalized", message="Finalized by operator")
+    project_id = (job.get("payload") or {}).get("project_id")
+    if project_id:
+        app.state.mosaic_store.update_project(project_id, {"status": "Finalized", "qc_state": "complete"})
+    return {"job": finalized}
+
+
+@app.post("/api/mosaics/jobs/{job_id}/cancel")
+def mosaic_job_cancel(job_id: str):
+    job = app.state.mosaic_store.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Mosaic job not found")
+    if job["status"] in {"succeeded", "failed", "canceled"}:
+        return {"job": job}
+    updated = app.state.mosaic_store.update_job(job_id, status="canceled", message="Canceled by operator")
+    return {"job": updated}
+
+
+@app.post("/api/mosaics/jobs/{job_id}/retry")
+def mosaic_job_retry(job_id: str):
+    job = app.state.mosaic_store.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Mosaic job not found")
+    if job["status"] not in {"failed", "canceled"}:
+        raise HTTPException(status_code=409, detail="Only failed or canceled mosaic jobs can be retried")
+    source_inputs = list((job.get("payload") or {}).get("source_inputs") or [])
+    ready = bool((job.get("preflight") or {}).get("ready")) and bool(source_inputs)
+    retried = app.state.mosaic_store.update_job(
+        job_id,
+        status="queued" if ready else "awaiting_product_request",
+        progress=0.0,
+        message="Queued for retry" if ready else "Retry requires L1D-SR dependency resolution",
+        error="",
+    )
+    project_id = (job.get("payload") or {}).get("project_id")
+    if project_id:
+        app.state.mosaic_store.update_project(project_id, {"status": "Queued" if ready else "Awaiting L1D-SR Request", "qc_state": "not_started"})
+    return {"job": retried}
+
+
+@app.post("/api/mosaics/repairs")
+def mosaic_cloud_repair_create(request: MosaicCloudRepairRequest):
+    job = app.state.mosaic_store.get_job(request.job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Mosaic job not found")
+    if job["status"] != "succeeded":
+        raise HTTPException(status_code=400, detail="Cloud repair requires a completed mosaic")
+    repair = app.state.mosaic_store.create_repair(job_id=request.job_id, payload=request.model_dump(mode="json"))
+    return {"repair": repair, "worker_required": True, "message": "Cloud repair queued for a host worker."}
 
 
 @app.post("/api/archive/animate")
@@ -3350,6 +5007,7 @@ def geoagent_report(request: GeoAgentRequest):
                 "limit": 300,
                 "max_cloud_cover": 80,
                 "satellite_name": request.satellite_name,
+                "sensor_generation": request.sensor_generation,
                 "min_gsd": request.min_gsd,
                 "max_gsd": request.max_gsd,
             }
@@ -3589,6 +5247,178 @@ def events_feed(limit: int = Query(default=100, ge=1, le=1000)):
     return {"count": len(rows), "events": rows}
 
 
+@app.get("/api/monitoring/projects")
+def monitoring_projects_list(enabled_only: bool = Query(default=False)):
+    rows = app.state.monitoring_store.list_projects(enabled_only=enabled_only)
+    return {"count": len(rows), "projects": rows}
+
+
+@app.post("/api/monitoring/projects")
+def monitoring_projects_create(payload: MonitoringProjectCreateRequest):
+    try:
+        validate_watch_geometry(payload.geometry)
+        if payload.analysis_recipe_id and not app.state.analysis_store.get(payload.analysis_recipe_id):
+            raise HTTPException(status_code=400, detail="Unknown analysis_recipe_id")
+        sources_payload = payload.sources or [{"source_id": "satellogic", "collection_id": "quickview-visual-thumb"}]
+        normalized_sources: list[dict[str, Any]] = []
+        for source in sources_payload:
+            source_id = _normalize_source_id(source.get("source_id"))
+            if not sources.has_source(source_id):
+                raise HTTPException(status_code=400, detail=f"Unknown source_id '{source.get('source_id')}'")
+            normalized_sources.append({**source, "source_id": source_id, "collection_id": source.get("collection_id") or sources.source_info(source_id).default_collection_id})
+        return app.state.monitoring_store.create_project({**payload.model_dump(mode="json"), "sources": normalized_sources})
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Monitoring project create failed: {exc}") from exc
+
+
+@app.get("/api/monitoring/projects/{project_id}")
+def monitoring_projects_get(project_id: str):
+    row = app.state.monitoring_store.get_project(project_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Monitoring project not found")
+    return row
+
+
+@app.patch("/api/monitoring/projects/{project_id}")
+def monitoring_projects_patch(project_id: str, payload: MonitoringProjectPatchRequest):
+    updates = payload.model_dump(exclude_unset=True)
+    if payload.analysis_recipe_id and not app.state.analysis_store.get(payload.analysis_recipe_id):
+        raise HTTPException(status_code=400, detail="Unknown analysis_recipe_id")
+    row = app.state.monitoring_store.update_project(project_id, updates)
+    if not row:
+        raise HTTPException(status_code=404, detail="Monitoring project not found")
+    return row
+
+
+@app.post("/api/monitoring/projects/{project_id}/check")
+def monitoring_projects_check(project_id: str, limit: int = Query(default=100, ge=1, le=500)):
+    project = app.state.monitoring_store.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Monitoring project not found")
+    end = datetime.now(timezone.utc)
+    start = end - timedelta(days=30)
+    discovered: list[dict[str, Any]] = []
+    try:
+        for source in project.get("sources") or []:
+            source_id = _normalize_source_id(source.get("source_id"))
+            rows = sources.search(
+                source_id=source_id, geometry=project["geometry"], start_date=start.date().isoformat(),
+                end_date=end.date().isoformat(), collection_id=source.get("collection_id") or sources.source_info(source_id).default_collection_id,
+                contract_id=source.get("contract_id"), limit=limit, max_cloud_cover=(project.get("quality_filters") or {}).get("max_cloud_cover"),
+                satellite_name=source.get("satellite_name"), min_gsd=source.get("min_gsd"), max_gsd=source.get("max_gsd"), sensor_generation=source.get("sensor_generation"),
+            )
+            discovered.extend(rows or [])
+    except Exception as exc:
+        app.state.monitoring_store.update_project(project_id, {"health": "error"})
+        raise HTTPException(status_code=502, detail=f"Monitoring project check failed: {exc}") from exc
+    new_items = app.state.monitoring_store.record_project_items(project_id, discovered)
+    recipe = app.state.analysis_store.get(project.get("analysis_recipe_id")) if project.get("analysis_recipe_id") else None
+    alerts = []
+    actions = []
+    automatic_actions: list[dict[str, Any]] = []
+    for item in new_items:
+        item_id = str(item.get("id") or item.get("item_id") or item.get("item_key") or "")
+        if not item_id or app.state.monitoring_store.get_open_alert_for_item(project_id, item_id):
+            continue
+        severity = str((recipe or {}).get("alert_rules", {}).get("default_severity") or "low")
+        alert = app.state.monitoring_store.create_alert({
+            "project_id": project_id, "status": "New", "severity": severity,
+            "title": f"New imagery available: {item_id}", "geometry": item.get("geometry") or project["geometry"],
+            "evidence": {"source_item": item}, "recipe_id": project.get("analysis_recipe_id"),
+            "source_item_id": item_id, "confidence": None,
+        })
+        alerts.append(alert)
+        configured_actions = project.get("actions") or {}
+        if configured_actions.get("new_sat_tasking") or configured_actions.get("product_generation"):
+            action_type = "tasking" if configured_actions.get("new_sat_tasking") else "product_generation"
+            actions.append(app.state.monitoring_store.create_proposed_action({
+                "project_id": project_id, "alert_id": alert["alert_id"], "action_type": action_type,
+                "payload": {"source_item_id": item_id, "geometry": item.get("geometry") or project["geometry"], "project_id": project_id},
+                "status": "pending_approval",
+            }))
+    configured_actions = project.get("actions") or {}
+    if new_items and configured_actions.get("email"):
+        source = (project.get("sources") or [{}])[0]
+        watch_payload = {
+            "name": project.get("name"), "email_to": configured_actions.get("email_to"),
+            "source_id": source.get("source_id"), "collection_id": source.get("collection_id"), "contract_id": source.get("contract_id"),
+        }
+        summaries = [_item_summary(item, watch_payload, settings.public_base_url) for item in new_items]
+        try:
+            automatic_actions.append({"type": "email", "result": send_archive_watch_email(watch_payload, summaries, settings)})
+        except Exception as exc:
+            automatic_actions.append({"type": "email", "result": {"status": "failed", "error": str(exc)}})
+    if new_items and configured_actions.get("workflow_id"):
+        try:
+            run = _ensure_workbench().create_run(
+                workflow_id=str(configured_actions.get("workflow_id")),
+                workflow_version=configured_actions.get("workflow_version"),
+                inputs_payload={"monitoring_project_id": project_id, "items": new_items, "geometry": project["geometry"]},
+                trigger_id=project_id,
+                idempotency_key=f"monitoring:{project_id}:{','.join(sorted(str(item.get('id') or item.get('item_id') or '') for item in new_items))}",
+            )
+            automatic_actions.append({"type": "workflow", "run_id": run.get("run_id"), "status": run.get("status")})
+        except Exception as exc:
+            automatic_actions.append({"type": "workflow", "status": "failed", "error": str(exc)})
+    app.state.monitoring_store.update_project(project_id, {"health": "healthy", "last_analysis_at": datetime.now(timezone.utc).isoformat()})
+    app.state.monitoring_store.add_project_activity(project_id, "project.checked", {"new_items": len(new_items), "new_alerts": len(alerts), "automatic_actions": automatic_actions})
+    return {"project": app.state.monitoring_store.get_project(project_id), "new_items": new_items, "alerts": alerts, "proposed_actions": actions, "automatic_actions": automatic_actions}
+
+
+@app.get("/api/monitoring/projects/{project_id}/alerts")
+def monitoring_project_alerts(project_id: str, limit: int = Query(default=100, ge=1, le=1000), status: str | None = Query(default=None)):
+    if not app.state.monitoring_store.get_project(project_id):
+        raise HTTPException(status_code=404, detail="Monitoring project not found")
+    rows = app.state.monitoring_store.list_alerts(project_id=project_id, limit=limit, status=status)
+    return {"count": len(rows), "alerts": rows}
+
+
+@app.get("/api/monitoring/projects/{project_id}/activity")
+def monitoring_project_activity(project_id: str, limit: int = Query(default=100, ge=1, le=1000)):
+    if not app.state.monitoring_store.get_project(project_id):
+        raise HTTPException(status_code=404, detail="Monitoring project not found")
+    rows = app.state.monitoring_store.list_project_activity(project_id, limit=limit)
+    return {"count": len(rows), "activity": rows}
+
+
+@app.post("/api/alerts/{alert_id}/disposition")
+def monitoring_alert_disposition(alert_id: str, payload: AlertDispositionRequest):
+    row = app.state.monitoring_store.dispose_alert(alert_id, payload.status, payload.note)
+    if not row:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    return row
+
+
+@app.get("/api/proposed-actions")
+def proposed_actions_list(status: str | None = Query(default=None), limit: int = Query(default=100, ge=1, le=1000)):
+    rows = app.state.monitoring_store.list_proposed_actions(status=status, limit=limit)
+    return {"count": len(rows), "actions": rows}
+
+
+@app.post("/api/proposed-actions/{action_id}/approve")
+def proposed_action_approve(action_id: str, payload: ProposedActionDecisionRequest):
+    action = app.state.monitoring_store.get_proposed_action(action_id)
+    if not action:
+        raise HTTPException(status_code=404, detail="Proposed action not found")
+    if action["status"] != "pending_approval":
+        raise HTTPException(status_code=409, detail="Proposed action is no longer awaiting approval")
+    return app.state.monitoring_store.decide_proposed_action(action_id, "approved", payload.note)
+
+
+@app.post("/api/proposed-actions/{action_id}/reject")
+def proposed_action_reject(action_id: str, payload: ProposedActionDecisionRequest):
+    action = app.state.monitoring_store.get_proposed_action(action_id)
+    if not action:
+        raise HTTPException(status_code=404, detail="Proposed action not found")
+    if action["status"] != "pending_approval":
+        raise HTTPException(status_code=409, detail="Proposed action is no longer awaiting approval")
+    return app.state.monitoring_store.decide_proposed_action(action_id, "rejected", payload.note)
+
+
 @app.post("/api/monitoring/subscriptions")
 def monitoring_subscriptions_create(payload: MonitoringSubscriptionCreateRequest):
     source_id = _normalize_source_id(payload.source_id)
@@ -3677,6 +5507,108 @@ def recollection_monitors_refresh(monitor_id: str, payload: RecollectionRefreshR
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Recollection monitor refresh failed: {exc}") from exc
+
+
+def _archive_watch_service() -> ArchiveWatchService:
+    """Return a service bound to the current store (tests may swap the store)."""
+    service = getattr(app.state, "archive_watch_service", None)
+    if service is None or service.store is not app.state.monitoring_store:
+        service = ArchiveWatchService(app.state.monitoring_store, sources, settings)
+        app.state.archive_watch_service = service
+    return service
+
+
+@app.post("/api/archive-watches")
+def archive_watches_create(payload: ArchiveWatchCreateRequest):
+    source_id = _normalize_source_id(payload.source_id)
+    if not sources.has_source(source_id):
+        raise HTTPException(status_code=400, detail=f"Unknown source_id '{payload.source_id}'")
+    if source_id == SOURCE_MERLIN_S2 and not settings.merlin_s2_enabled:
+        raise HTTPException(status_code=400, detail="Merlin Sentinel-2 source is disabled")
+    try:
+        validate_watch_geometry(payload.geometry)
+        collection_id = str(payload.collection_id or "").strip()
+        if source_id == SOURCE_MERLIN_S2 and collection_id == settings.satellogic_collection_id:
+            collection_id = settings.cdse_sentinel2_collections[0] if settings.cdse_sentinel2_collections else "sentinel-2-l2a"
+        if not collection_id:
+            collection_id = sources.source_info(source_id).default_collection_id
+        return app.state.monitoring_store.create_archive_watch(
+            {
+                **payload.model_dump(),
+                "source_id": source_id,
+                "collection_id": collection_id,
+            },
+            default_interval_seconds=settings.archive_watch_interval_seconds,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Archive watch create failed: {exc}") from exc
+
+
+@app.get("/api/archive-watches/status")
+def archive_watches_status():
+    watches = app.state.monitoring_store.list_archive_watches()
+    return {
+        "enabled": bool(settings.archive_watch_enabled),
+        "poll_interval_seconds": settings.archive_watch_interval_seconds,
+        "default_lookback_hours": settings.archive_watch_default_lookback_hours,
+        "email_configured": bool(settings.alert_email_to and settings.smtp_host),
+        "count": len(watches),
+    }
+
+
+@app.get("/api/archive-watches")
+def archive_watches_list():
+    rows = app.state.monitoring_store.list_archive_watches()
+    return {"count": len(rows), "watches": rows}
+
+
+@app.get("/api/archive-watches/{watch_id}")
+def archive_watches_get(watch_id: str):
+    row = app.state.monitoring_store.get_archive_watch(watch_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Archive watch not found")
+    return row
+
+
+@app.patch("/api/archive-watches/{watch_id}")
+def archive_watches_patch(watch_id: str, payload: ArchiveWatchPatchRequest):
+    updates = payload.model_dump(exclude_unset=True)
+    row = app.state.monitoring_store.update_archive_watch(watch_id, updates)
+    if not row:
+        raise HTTPException(status_code=404, detail="Archive watch not found")
+    return row
+
+
+@app.delete("/api/archive-watches/{watch_id}")
+def archive_watches_delete(watch_id: str):
+    if not app.state.monitoring_store.delete_archive_watch(watch_id):
+        raise HTTPException(status_code=404, detail="Archive watch not found")
+    return {"deleted": True, "watch_id": watch_id}
+
+
+@app.post("/api/archive-watches/{watch_id}/check")
+def archive_watches_check(watch_id: str, payload: ArchiveWatchCheckRequest):
+    try:
+        return _archive_watch_service().check_watch(
+            watch_id,
+            start_date=payload.start_date,
+            end_date=payload.end_date,
+            limit=payload.limit,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Archive watch check failed: {exc}") from exc
+
+
+@app.get("/api/archive-watches/{watch_id}/events")
+def archive_watches_events(watch_id: str, limit: int = Query(default=50, ge=1, le=500)):
+    if not app.state.monitoring_store.get_archive_watch(watch_id):
+        raise HTTPException(status_code=404, detail="Archive watch not found")
+    events = [event for event in app.state.monitoring_store.list_events(limit=1000) if event.get("subscription_id") == watch_id]
+    return {"count": min(len(events), limit), "events": events[:limit]}
 
 
 @app.get("/api/monitoring/subscriptions")

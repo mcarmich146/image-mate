@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Image-Mate User Manual</title>
+  <style>
+    :root { --ink:#e8eef8; --muted:#aabbd3; --panel:#101b2d; --line:#2a4162; --accent:#26c0a5; --accent2:#4e7bff; --bg:#070c16; }
+    * { box-sizing:border-box; }
+    body { margin:0; color:var(--ink); background:radial-gradient(circle at 10% 0%,rgba(78,123,255,.22),transparent 34%),linear-gradient(145deg,#04070e,#0b1729 55%,#071224); font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    main { max-width:1120px; margin:0 auto; padding:2.4rem 1.2rem 4rem; }
+    header { display:flex; justify-content:space-between; align-items:flex-start; gap:1.4rem; margin-bottom:2rem; }
+    h1 { margin:.15rem 0 .45rem; font-size:clamp(2rem,5vw,3.8rem); letter-spacing:-.05em; }
+    h2 { margin:0 0 .75rem; font-size:1.45rem; }
+    h3 { margin:1.25rem 0 .35rem; font-size:1.05rem; color:#d9e7fa; }
+    p { margin:.55rem 0; }
+    .eyebrow { margin:0; color:#9bb0ce; text-transform:uppercase; letter-spacing:.13em; font:700 .72rem/1.2 ui-monospace,SFMono-Regular,Menlo,monospace; }
+    .lede { max-width:760px; color:#c4d2e7; font-size:1.08rem; }
+    .back { display:inline-flex; padding:.55rem .8rem; border:1px solid #3a5780; border-radius:8px; color:#dceaff; text-decoration:none; background:rgba(17,34,58,.85); white-space:nowrap; }
+    .back:hover { border-color:var(--accent); }
+    nav { position:sticky; top:1rem; float:right; width:240px; margin:0 0 1rem 1.3rem; padding:1rem; border:1px solid var(--line); border-radius:12px; background:rgba(13,25,43,.9); }
+    nav strong { display:block; margin-bottom:.4rem; }
+    nav a { display:block; color:#bcd0ec; text-decoration:none; padding:.18rem 0; font-size:.9rem; }
+    nav a:hover { color:var(--accent); }
+    section { margin:1.1rem 0; padding:1.2rem 1.3rem; border:1px solid var(--line); border-radius:13px; background:linear-gradient(180deg,rgba(16,29,49,.94),rgba(12,22,38,.94)); box-shadow:0 8px 24px rgba(0,0,0,.18); }
+    .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.85rem; }
+    .callout { padding:.8rem .95rem; border-left:3px solid var(--accent); background:rgba(23,62,69,.27); color:#d4e6ed; }
+    .warning { border-left-color:#e8b55b; background:rgba(82,60,28,.25); }
+    code, pre { font: .88em/1.45 ui-monospace,SFMono-Regular,Menlo,monospace; }
+    code { color:#bfe5ff; }
+    pre { overflow:auto; margin:.7rem 0; padding:.8rem; border:1px solid #2a3d5c; border-radius:8px; background:#091321; color:#c8daf3; }
+    table { width:100%; border-collapse:collapse; margin:.7rem 0; }
+    th,td { padding:.55rem .6rem; border-bottom:1px solid #2a3d5c; text-align:left; vertical-align:top; }
+    th { color:#d9e7fa; font-size:.84rem; }
+    td { color:#bdcde2; }
+    li { margin:.28rem 0; }
+    .pill { display:inline-block; padding:.08rem .42rem; border:1px solid #3b5b7f; border-radius:999px; color:#bfe0f4; font-size:.8rem; }
+    footer { color:#8fa5c2; font-size:.85rem; margin-top:1.5rem; }
+    @media (max-width:760px) { header { display:block; } .back { margin-top:1rem; } nav { position:static; float:none; width:auto; margin:0 0 1rem; } .grid { grid-template-columns:1fr; } section { padding:1rem; } }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <p class="eyebrow">Image-Mate · User Manual</p>
+      <h1>Archive, analytics, and monitoring workbench</h1>
+      <p class="lede">Image-Mate is a local-first geospatial workbench for browsing Sentinel-2 and Satellogic imagery, reviewing image products, running local analytics, preparing mosaics, and monitoring regions for new archive captures.</p>
+    </div>
+    <a class="back" href="/">← Return to Image-Mate</a>
+  </header>
+
+  <nav aria-label="Manual contents">
+    <strong>Contents</strong>
+    <a href="#start">Start here</a>
+    <a href="#explore">Explore the archive</a>
+    <a href="#mosaic">Mosaic workspace</a>
+    <a href="#analytics">Analyze workspace</a>
+    <a href="#monitoring">Monitor projects</a>
+    <a href="#tasking">Tasking workspace</a>
+    <a href="#api">API and integrations</a>
+    <a href="#config">Configuration</a>
+    <a href="#troubleshooting">Troubleshooting</a>
+  </nav>
+
+  <section id="start">
+    <h2>Start here</h2>
+    <p>Run Image-Mate locally, open the displayed address in a browser, and use the five workspaces in the left panel. The map is the shared workspace: search areas, drawn polygons, selected imagery, detections, and mosaic regions are shown there. Technical utilities, schedules, run logs, settings, and this manual are in the top-right <strong>Tools</strong> drawer.</p>
+    <div class="callout"><strong>Local-first processing:</strong> archive search and provider downloads use the configured APIs, while aircraft inference and host-side mosaic processing run on the computer where Image-Mate is running. Keep the local service on a trusted network when credentials are configured.</div>
+    <h3>Basic navigation</h3>
+    <table>
+      <tr><th>Tab</th><th>Use it for</th></tr>
+      <tr><td><span class="pill">Explore</span></td><td>Search the archive by map viewport, date, collection, cloud cover, sensor, and resolution. The right carousel lists the results.</td></tr>
+      <tr><td><span class="pill">Tasking</span></td><td>Review proposed, upcoming, active, and historical acquisitions, or use Plan New for point, area, and grid tasking.</td></tr>
+      <tr><td><span class="pill">Monitor</span></td><td>Create durable Monitoring Projects that combine archive watches, recipes, alerts, evidence, and approval-gated actions.</td></tr>
+      <tr><td><span class="pill">Analyze</span></td><td>Run compatible analysis, inspect results and provenance, manage recipes, and open Model Lab for annotation and fine-tuning.</td></tr>
+      <tr><td><span class="pill">Mosaic</span></td><td>Manage durable mosaic projects, host-side processing, QC, cloud repairs, and finalized products.</td></tr>
+      <tr><td><span class="pill">Tools</span></td><td>Open Workflow Designer, Schedules, Runs/Logs, System Settings, and Help without adding more primary navigation.</td></tr>
+    </table>
+  </section>
+
+  <section id="explore">
+    <h2>Explore the archive</h2>
+    <ol>
+      <li>Pan or zoom the map to the area of interest, or draw a rectangle from the map drawing controls.</li>
+      <li>Choose the source and collection in <strong>Archive Search</strong>. Satellogic and Sentinel-2 may be enabled independently from Layer Controls.</li>
+      <li>Set the date range and optional cloud, GSD, satellite, and sensor-generation filters, then choose <strong>Search View Extent</strong>.</li>
+      <li>Use the carousel on the right to inspect results. Select the checkbox on each image to reveal the contextual selection bar for comparison, animation, analysis, mosaicking, download, and more.</li>
+      <li>Right-click the map to task a point or area, start a Monitoring Project, create a mosaic from selected imagery, or copy coordinates. Mosaic stays disabled until at least two images are selected.</li>
+      <li>Use the <strong>⌖</strong> button beside the location search to save the current map center and zoom as the default view for the next session.</li>
+    </ol>
+    <h3>NewSat sensor generations</h3>
+    <p>Satellogic imagery can be filtered and labeled as <strong>NewSat Mark IV</strong> or <strong>NewSat Mark V</strong>. These generations have different native and L1D-SR resolutions. Keep the generation filter consistent when comparing products or preparing a mosaic.</p>
+    <h3>Preview behavior</h3>
+    <p>Image-Mate uses server-side preview and tile proxies. This keeps provider credentials and signed URLs out of browser links. A preview may be unavailable when a product has no thumbnail asset, the provider token has expired, or the selected collection is not enabled.</p>
+  </section>
+
+  <section id="mosaic">
+    <h2>Mosaic Workbench</h2>
+    <p>Mosaicking is a durable project workbench because it needs source selection, processing status, completion monitoring, and quality control without crowding normal archive browsing.</p>
+    <h3>Create a mosaic</h3>
+    <ol>
+      <li>Filter the carousel to the captures and sensor generation you want to use. QuickView is suitable for discovery and selection, but never becomes a mosaic raster.</li>
+      <li>Select two or more overlapping images with the checkbox on each carousel card.</li>
+      <li>Choose <strong>Mosaic</strong> above the carousel. Select <strong>Mosaic whole strips</strong> for complete source footprints, or <strong>Draw polygon for mosaic</strong> to limit processing to a smaller region.</li>
+      <li>Choose Mark IV, Mark V, or mixed inputs. Select RGB, or RGB-NIR only when every source exposes compatible NIR data. Image-Mate defaults to the coarsest native input resolution; a finer upsampled output is rejected in v1.</li>
+      <li>Press <strong>Generate</strong>. Image-Mate resolves every selected capture to L1D-SR Visual tiles. If coverage is missing, confirm the provider processing request. The saved project remains in <strong>Awaiting L1D-SR</strong> while Image-Mate checks the archive periodically.</li>
+      <li>When every capture has complete L1D-SR coverage, Image-Mate replaces the discovery inputs with the high-resolution tile set and starts the local host worker automatically. Processing moves through queued, downloading, processing, color balancing, seam optimization, and QC Required before finalization.</li>
+      <li>Review progress in the Mosaic tab. Choose automatic acceleration, Apple MPS, CUDA, OpenCL, or CPU in the popup. If worker startup fails, press <strong>Start Processing</strong> in the Mosaic workbench.</li>
+    </ol>
+    <div class="callout"><strong>L1D-SR requirement:</strong> mosaics always use L1D-SR Visual products. Provider processing requests can consume contract entitlement and therefore require an explicit confirmation. The default listener checks every five minutes and survives application restarts.</div>
+    <div class="callout"><strong>Overlap requirement:</strong> selected scenes should form one connected overlap group. Separate groups cannot be aligned into one reliable mosaic.</div>
+    <h3>Cloud edit / repair</h3>
+    <p>After a mosaic is generated, select it in the Mosaic tab and choose <strong>Edit cloud area</strong>. Draw a polygon around the cloud. Image-Mate searches for the nearest recent covering image, inserts the replacement area, and rebalances the result. Use small repair polygons first; this reduces download and processing time.</p>
+    <p>The intended output is color balanced with softened seams. The worker records source boundaries, seam metadata, and repair history so the result can be reviewed or reproduced. If no compatible L1D-SR replacement exists, the repair becomes an approval-required product-generation action.</p>
+  </section>
+
+  <section id="analytics">
+    <h2>Aircraft analytics and Model Lab</h2>
+    <p>The Analyze workflow is designed for iterative analyst-in-the-loop refinement. It combines provider analytics, local inference, versioned Analysis Recipes, Results, and Model Lab. It can run on Satellogic L1B Visual and L1D-SR Visual imagery where the corresponding asset is available; compatibility is checked before execution.</p>
+    <h3>Run a detector</h3>
+    <ol>
+      <li>Search for a suitable area and choose an image from the carousel.</li>
+      <li>Open <strong>Analyze → Run Analysis</strong> or <strong>Analyze → Model Lab</strong>, choose the image/product and compatible model, and run detection.</li>
+      <li>Review detections on the map and inspect the image chips. Confidence is a review aid, not a final intelligence judgment.</li>
+    </ol>
+    <h3>Validate and add classes</h3>
+    <p>Use the validation controls to mark a detection as <strong>aircraft</strong>, <strong>helicopter</strong>, or <strong>none/background</strong>. Draw a polygon over a missed object to create a new annotation. Training metadata should record the source item, product, tile bounds, class, confidence, and analyst note.</p>
+    <p>New subclasses such as <strong>jet fighter</strong> should be introduced as an explicit dataset/model version rather than silently changing an existing class map. Keep a representative mix of positive, negative, and edge-case chips.</p>
+    <h3>LLM-assisted review</h3>
+    <p>When the Luna evaluator is configured, a refinement run can send selected chips, context, and confirmed examples for a second opinion. Treat the evaluator as an assistant: the analyst remains responsible for accepting, rejecting, or correcting labels before a dataset is used for training.</p>
+    <h3>Model artifacts</h3>
+    <p>Model Lab saves source tiles with analyst labels, builds scene-separated YOLO-OBB bundles, starts host-side fine-tuning/evaluation jobs, and lets you activate a model only after a held-out evaluation succeeds. Set <code>IMAGE_MATE_AIRCRAFT_TRAINING_PYTHON</code> to a host Python environment containing <code>ultralytics</code> and PyTorch/MPS or CUDA; the service never overwrites the active model automatically.</p>
+  </section>
+
+  <section id="monitoring">
+    <h2>Archive watches and email alerts</h2>
+    <p>A Monitoring Project is the durable analyst-facing object for a polygon, archive sources, cadence, quality filters, an Analysis Recipe, alert policy, and follow-on actions. Existing archive watches and recollection monitors remain compatible underneath it.</p>
+    <h3>Create a watch</h3>
+    <ol>
+      <li>Open <strong>Monitor</strong> and use the project setup controls. Choose the AOI, source/collection, and compatible recipe.</li>
+      <li>Enable automatic email/workflow actions if desired. NewSat tasking and product-generation actions are always placed in the Proposed Actions approval queue.</li>
+      <li>Press <strong>Create from current AOI</strong>, then use <strong>Check selected</strong> to run an immediate archive check.</li>
+    </ol>
+    <p>Each check uses a small overlap window to account for provider indexing delay. Seen item identities are deduplicated in SQLite, so the same capture is not repeatedly emailed. If email delivery fails, items remain pending and can be delivered after SMTP configuration is corrected.</p>
+    <h3>Email configuration</h3>
+    <p>Set these values in the project <code>.env</code> file:</p>
+    <pre>IMAGE_MATE_ALERT_EMAIL_TO=analyst@example.org
+IMAGE_MATE_PUBLIC_BASE_URL=http://your-host:8000
+IMAGE_MATE_SMTP_HOST=smtp.example.org
+IMAGE_MATE_SMTP_PORT=587
+IMAGE_MATE_SMTP_USERNAME=analyst@example.org
+IMAGE_MATE_SMTP_PASSWORD=use-a-secret-store-or-local-env
+IMAGE_MATE_SMTP_FROM=analyst@example.org
+IMAGE_MATE_SMTP_USE_TLS=true
+IMAGE_MATE_SMTP_USE_SSL=false
+IMAGE_MATE_ARCHIVE_WATCH_ENABLED=true
+IMAGE_MATE_ARCHIVE_WATCH_INTERVAL_SECONDS=300</pre>
+    <div class="callout warning"><strong>Important:</strong> <code>IMAGE_MATE_PUBLIC_BASE_URL</code> must be reachable by the person opening the email. A localhost URL works only on the same computer running Image-Mate.</div>
+    <p>Messages contain Image-Mate preview-proxy links based on item identity. They do not include provider-signed URLs or archive credentials.</p>
+  </section>
+
+  <section id="tasking">
+    <h2>Tasking, schedules, and subscriptions</h2>
+    <p>Tasking uses one composer for point, area, and grid planning. The secondary tabs separate Proposed, Upcoming, Active, History, and Plan New. A task can reference an Analysis Recipe and Monitoring Project; delivered imagery can then become project evidence or Analyze results.</p>
+    <p>Schedules, POI sets, subscriptions, technical workflow graphs, and run logs remain available from the Tools drawer. Task submission and product generation always retain explicit confirmation or approval protections.</p>
+  </section>
+
+  <section id="api">
+    <h2>API and integrations</h2>
+    <p>The local API is the integration boundary for Hermes, Telegram-driven workflows, scripts, and standalone users. Interactive API documentation is available at <code>/docs</code> while the service is running.</p>
+    <table>
+      <tr><th>Endpoint</th><th>Purpose</th></tr>
+      <tr><td><code>POST /api/archive/search</code></td><td>Search a source collection for a GeoJSON area and time range.</td></tr>
+      <tr><td><code>GET /api/archive/preview</code></td><td>Stream an image preview by item identity through the local proxy.</td></tr>
+      <tr><td><code>POST /api/archive-watches</code></td><td>Create a durable polygon watch.</td></tr>
+      <tr><td><code>GET /api/archive-watches</code></td><td>List configured watches and delivery state.</td></tr>
+      <tr><td><code>POST /api/archive-watches/{watch_id}/check</code></td><td>Run an immediate archive check and return new items and email status.</td></tr>
+      <tr><td><code>GET/POST/PATCH /api/analysis/recipes</code></td><td>Manage versioned model/compatibility/alert recipes.</td></tr>
+      <tr><td><code>GET/POST/PATCH /api/monitoring/projects</code></td><td>Create and manage durable Monitoring Projects.</td></tr>
+      <tr><td><code>GET /api/monitoring/projects/{id}/alerts</code></td><td>List deduplicated project alerts.</td></tr>
+      <tr><td><code>POST /api/alerts/{id}/disposition</code></td><td>Set New, Acknowledged, Dismissed, Escalated, or Actioned.</td></tr>
+      <tr><td><code>GET /api/proposed-actions</code></td><td>Review approval-required tasking and product-generation actions.</td></tr>
+      <tr><td><code>POST /api/proposed-actions/{id}/approve|reject</code></td><td>Approve or reject a proposed operational action.</td></tr>
+      <tr><td><code>GET/POST/PATCH /api/mosaics/projects</code></td><td>Manage durable mosaic projects and their QC lifecycle.</td></tr>
+      <tr><td><code>POST /api/mosaics/jobs/{id}/start</code></td><td>Start the local host worker for a queued mosaic job.</td></tr>
+      <tr><td><code>POST /api/mosaics/jobs/{id}/request-products</code></td><td>After explicit confirmation, request missing L1D-SR products for the selected captures.</td></tr>
+      <tr><td><code>POST /api/mosaics/jobs/{id}/check-products</code></td><td>Immediately check L1D-SR availability; the durable listener also checks automatically.</td></tr>
+      <tr><td><code>GET /api/mosaics/worker/status</code></td><td>Inspect active host workers and selected acceleration backend.</td></tr>
+      <tr><td><code>GET /api/archive-watches/{watch_id}/events</code></td><td>Review arrival and notification events for a watch.</td></tr>
+      <tr><td><code>POST /api/aircraft/detect</code></td><td>Run the local detector on an image tile.</td></tr>
+      <tr><td><code>POST /api/mosaics/jobs</code></td><td>Queue a mosaic for the host-side worker.</td></tr>
+    </table>
+    <p>Hermes can call these endpoints or invoke the project’s CLI wrappers. The UI, API, and CLI share the same local output and SQLite state, so a workflow can be started in one surface and reviewed in another.</p>
+  </section>
+
+  <section id="config">
+    <h2>Configuration checklist</h2>
+    <ul>
+      <li>Satellogic credentials and contract: <code>SATELLOGIC_*</code>.</li>
+      <li>Sentinel-2/CDSE access: <code>MERLIN_S2_ENABLED</code> and <code>CDSE_*</code>.</li>
+      <li>Aircraft model and provider: <code>IMAGE_MATE_AIRCRAFT_MODEL</code> and <code>IMAGE_MATE_AIRCRAFT_PROVIDER</code>.</li>
+      <li>Output, monitoring, and training directories: <code>IMAGE_MATE_AIRCRAFT_LAB_DIR</code>, <code>IMAGE_MATE_AIRCRAFT_TRAINING_DIR</code>, and the project output directory.</li>
+      <li>Mosaics: <code>IMAGE_MATE_MOSAIC_WORKER_ENABLED</code>, <code>IMAGE_MATE_MOSAIC_ACCELERATOR</code>, <code>IMAGE_MATE_MOSAIC_PRODUCT_POLL_SECONDS</code>, and optional <code>backend/requirements-mosaic-gpu.txt</code> for MPS/CUDA support.</li>
+      <li>Email and polling: the <a href="#monitoring">archive-watch variables</a> above.</li>
+    </ul>
+    <p>Never commit <code>.env</code>, provider tokens, SMTP passwords, downloaded imagery, model weights, or generated output databases. Use the project’s ignore rules and a secret manager for shared deployments.</p>
+  </section>
+
+  <section id="troubleshooting">
+    <h2>Troubleshooting</h2>
+    <table>
+      <tr><th>Symptom</th><th>Check</th></tr>
+      <tr><td>No archive results</td><td>Confirm the map viewport, date range, source credentials, collection, and cloud/GSD filters. Inspect <code>/docs</code> or the server log for the provider error.</td></tr>
+      <tr><td>Preview unavailable</td><td>Try the correct product collection and confirm the provider token/contract. Some products expose only a visual asset, not a thumbnail.</td></tr>
+      <tr><td>Aircraft detector unavailable</td><td>Confirm the model file exists, the local runtime is installed, and the configured provider is supported by the laptop.</td></tr>
+      <tr><td>Mosaic stays queued</td><td>Confirm the host worker is running, selected images overlap, and the AOI is small enough for the configured output limits.</td></tr>
+      <tr><td>Watch finds items but no email arrives</td><td>Check <code>IMAGE_MATE_ALERT_EMAIL_TO</code>, SMTP host/port/from settings, TLS mode, and whether <code>IMAGE_MATE_PUBLIC_BASE_URL</code> is reachable. Pending items are retained for a later successful delivery.</td></tr>
+      <tr><td>Manual link is missing</td><td>Restart the local service after updating the frontend, then open <code>/manual.html</code> directly.</td></tr>
+    </table>
+  </section>
+
+  <footer>Image-Mate is an analyst workbench. Validate detections, archive provenance, and model outputs before using them in operational reporting.</footer>
+</main>
+</body>
+</html>

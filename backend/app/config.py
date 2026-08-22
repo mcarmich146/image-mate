@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import json
 import os
+import sys
 from dotenv import load_dotenv
 
 
@@ -28,6 +30,16 @@ def _rooted_path(name: str, default: Path) -> Path:
     return value if value.is_absolute() else (ROOT_DIR / value).resolve()
 
 
+def _json_map(value: str) -> dict[str, str]:
+    try:
+        parsed = json.loads(value or "{}")
+    except (TypeError, ValueError):
+        return {}
+    if not isinstance(parsed, dict):
+        return {}
+    return {str(key).strip(): str(item).strip() for key, item in parsed.items() if str(key).strip()}
+
+
 @dataclass
 class Settings:
     satellogic_bearer_token: str = os.getenv("SATELLOGIC_BEARER_TOKEN", "")
@@ -41,6 +53,7 @@ class Settings:
     satellogic_stac_url: str = os.getenv("SATELLOGIC_STAC_URL", "https://api.satellogic.com/archive/stac")
     satellogic_token_url: str = os.getenv("SATELLOGIC_TOKEN_URL", "https://auth.platform.satellogic.com/oauth/token")
     satellogic_cog_timeout_seconds: int = int(os.getenv("SATELLOGIC_COG_TIMEOUT_SECONDS", "180"))
+    satellogic_satellite_generation_map: dict[str, str] = None  # type: ignore[assignment]
 
     merlin_s2_enabled: bool = _as_bool(os.getenv("MERLIN_S2_ENABLED", "false"), default=False)
     cdse_client_id: str = os.getenv("CDSE_CLIENT_ID", "")
@@ -79,6 +92,7 @@ class Settings:
     aircraft_detector_max_image_pixels: int = int(os.getenv("IMAGE_MATE_AIRCRAFT_MAX_IMAGE_PIXELS", str(4096 * 4096)))
     aircraft_lab_dir: Path = _rooted_path("IMAGE_MATE_AIRCRAFT_LAB_DIR", ROOT_DIR / "backend" / "output" / "aircraft-lab")
     aircraft_training_dir: Path = _rooted_path("IMAGE_MATE_AIRCRAFT_TRAINING_DIR", ROOT_DIR / "artifacts" / "aircraft-training")
+    aircraft_training_python: str = os.getenv("IMAGE_MATE_AIRCRAFT_TRAINING_PYTHON", sys.executable)
 
     host: str = os.getenv("IMAGE_MATE_HOST", "127.0.0.1")
     port: int = int(os.getenv("IMAGE_MATE_PORT", "8000"))
@@ -89,12 +103,42 @@ class Settings:
     proxy_max_asset_bytes: int = int(os.getenv("IMAGE_MATE_PROXY_MAX_ASSET_BYTES", str(64 * 1024 * 1024)))
     proxy_max_zip_bytes: int = int(os.getenv("IMAGE_MATE_PROXY_MAX_ZIP_BYTES", str(512 * 1024 * 1024)))
     proxy_allowed_hosts: list[str] = None  # type: ignore[assignment]
+    mosaic_max_output_pixels: int = int(os.getenv("IMAGE_MATE_MOSAIC_MAX_OUTPUT_PIXELS", "500000000"))
+    mosaic_max_input_bytes: int = int(os.getenv("IMAGE_MATE_MOSAIC_MAX_INPUT_BYTES", str(512 * 1024 * 1024)))
+    mosaic_worker_enabled: bool = _as_bool(os.getenv("IMAGE_MATE_MOSAIC_WORKER_ENABLED", "true"), default=True)
+    mosaic_worker_api_base_url: str = os.getenv("IMAGE_MATE_MOSAIC_WORKER_API_BASE_URL", "")
+    mosaic_worker_accelerator: str = os.getenv("IMAGE_MATE_MOSAIC_ACCELERATOR", "auto")
+    mosaic_worker_python: str = os.getenv("IMAGE_MATE_MOSAIC_WORKER_PYTHON", "")
+    mosaic_worker_poll_seconds: float = float(os.getenv("IMAGE_MATE_MOSAIC_WORKER_POLL_SECONDS", "5"))
+    mosaic_product_poll_enabled: bool = _as_bool(os.getenv("IMAGE_MATE_MOSAIC_PRODUCT_POLL_ENABLED", "true"), default=True)
+    mosaic_product_poll_seconds: int = int(os.getenv("IMAGE_MATE_MOSAIC_PRODUCT_POLL_SECONDS", "300"))
+
+    # Archive-watch delivery. The public base URL is used to build stable
+    # Image-Mate links for email; it should be reachable from the recipient's
+    # browser when the application is not running only on localhost.
+    public_base_url: str = os.getenv("IMAGE_MATE_PUBLIC_BASE_URL", "http://127.0.0.1:8000")
+    archive_watch_enabled: bool = _as_bool(os.getenv("IMAGE_MATE_ARCHIVE_WATCH_ENABLED", "true"), default=True)
+    archive_watch_interval_seconds: int = int(os.getenv("IMAGE_MATE_ARCHIVE_WATCH_INTERVAL_SECONDS", "300"))
+    archive_watch_default_lookback_hours: int = int(os.getenv("IMAGE_MATE_ARCHIVE_WATCH_DEFAULT_LOOKBACK_HOURS", "72"))
+    alert_email_to: list[str] = None  # type: ignore[assignment]
+    smtp_host: str = os.getenv("IMAGE_MATE_SMTP_HOST", "")
+    smtp_port: int = int(os.getenv("IMAGE_MATE_SMTP_PORT", "587"))
+    smtp_username: str = os.getenv("IMAGE_MATE_SMTP_USERNAME", "")
+    smtp_password: str = os.getenv("IMAGE_MATE_SMTP_PASSWORD", "")
+    smtp_from: str = os.getenv("IMAGE_MATE_SMTP_FROM", "")
+    smtp_use_tls: bool = _as_bool(os.getenv("IMAGE_MATE_SMTP_USE_TLS", "true"), default=True)
+    smtp_use_ssl: bool = _as_bool(os.getenv("IMAGE_MATE_SMTP_USE_SSL", "false"), default=False)
+    smtp_timeout_seconds: int = int(os.getenv("IMAGE_MATE_SMTP_TIMEOUT_SECONDS", "30"))
 
     output_dir: Path = ROOT_DIR / "backend" / "output"
     monitoring_db_path: Path = ROOT_DIR / "backend" / "output" / "monitoring.sqlite3"
     frontend_dir: Path = ROOT_DIR / "frontend"
 
     def __post_init__(self):
+        if self.satellogic_satellite_generation_map is None:
+            self.satellogic_satellite_generation_map = _json_map(
+                os.getenv("SATELLOGIC_SATELLITE_GENERATION_MAP", "{}")
+            )
         if self.cors_origins is None:
             self.cors_origins = _split_csv(os.getenv("IMAGE_MATE_CORS_ORIGINS", "http://localhost:5173,http://localhost:3000"))
         if self.cdse_sentinel2_collections is None:
@@ -106,10 +150,24 @@ class Settings:
                 os.getenv(
                     "IMAGE_MATE_PROXY_ALLOWED_HOSTS",
                     "api.satellogic.com,platform.satellogic.com,auth.platform.satellogic.com,"
+                    "satellogic-production-eo-backend-catalog.s3.amazonaws.com,"
                     "sh.dataspace.copernicus.eu,catalogue.dataspace.copernicus.eu,"
                     "identity.dataspace.copernicus.eu",
                 )
             )
+        if self.alert_email_to is None:
+            self.alert_email_to = _split_csv(os.getenv("IMAGE_MATE_ALERT_EMAIL_TO", ""))
+        self.public_base_url = str(self.public_base_url or "http://127.0.0.1:8000").rstrip("/")
+        self.archive_watch_interval_seconds = max(15, int(self.archive_watch_interval_seconds or 300))
+        self.archive_watch_default_lookback_hours = max(1, int(self.archive_watch_default_lookback_hours or 72))
+        self.mosaic_worker_accelerator = str(self.mosaic_worker_accelerator or "auto").strip().lower()
+        if self.mosaic_worker_accelerator not in {"auto", "cpu", "mps", "cuda", "opencl"}:
+            self.mosaic_worker_accelerator = "auto"
+        self.mosaic_worker_poll_seconds = max(0.5, float(self.mosaic_worker_poll_seconds or 5))
+        self.mosaic_product_poll_seconds = max(15, int(self.mosaic_product_poll_seconds or 300))
+        if not self.mosaic_worker_api_base_url:
+            worker_host = self.host if self.host not in {"0.0.0.0", "::", ""} else "127.0.0.1"
+            self.mosaic_worker_api_base_url = f"http://{worker_host}:{self.port}"
 
 
 settings = Settings()

@@ -196,6 +196,115 @@ class MosaicError(RuntimeError):
     """A user-facing mosaicking error."""
 
 
+def configure_accelerator(requested: str) -> dict[str, Any]:
+    """Select an optional local accelerator while preserving a CPU fallback.
+
+    RasterIO/GDAL still owns reprojection and GeoTIFF I/O.  The selected device
+    is used for the array-heavy radiometric correction and seam-image passes;
+    this keeps the worker useful on ordinary machines while allowing Apple
+    Silicon MPS, CUDA, or OpenCL builds to accelerate the numerical work.
+    """
+
+    normalized = str(requested or "auto").strip().lower()
+    if normalized not in {"auto", "cpu", "mps", "cuda", "opencl"}:
+        raise MosaicError(f"Unknown accelerator: {requested}")
+
+    def torch_available(kind: str) -> bool:
+        try:
+            import torch
+        except Exception:
+            return False
+        if kind == "mps":
+            backend = getattr(getattr(torch, "backends", None), "mps", None)
+            return bool(backend and backend.is_available())
+        if kind == "cuda":
+            return bool(torch.cuda.is_available())
+        return False
+
+    def opencl_available() -> bool:
+        try:
+            return bool(cv.ocl.haveOpenCL())
+        except Exception:
+            return False
+
+    selected = "cpu"
+    reason = "CPU array operations"
+    if normalized in {"mps", "cuda"}:
+        if not torch_available(normalized):
+            raise MosaicError(
+                f"{normalized.upper()} was requested but is unavailable. "
+                "Install the optional GPU dependencies or use --accelerator auto."
+            )
+        selected = normalized
+        reason = f"PyTorch {normalized.upper()}"
+    elif normalized == "opencl":
+        if not opencl_available():
+            raise MosaicError("OpenCL was requested but this OpenCV build has no OpenCL device")
+        cv.ocl.setUseOpenCL(True)
+        selected = "opencl"
+        reason = "OpenCV OpenCL"
+    elif normalized == "auto":
+        for candidate in ("mps", "cuda"):
+            if torch_available(candidate):
+                selected = candidate
+                reason = f"PyTorch {candidate.upper()}"
+                break
+        else:
+            if opencl_available():
+                cv.ocl.setUseOpenCL(True)
+                selected = "opencl"
+                reason = "OpenCV OpenCL"
+    if selected != "opencl":
+        try:
+            cv.ocl.setUseOpenCL(False)
+        except Exception:
+            pass
+    return {
+        "requested": normalized,
+        "selected": selected,
+        "reason": reason,
+        "torch_device": selected if selected in {"mps", "cuda"} else None,
+        "gpu_operations": 0,
+        "fallback_reason": None,
+    }
+
+
+def radiometric_correct(
+    data: np.ndarray,
+    gains: Sequence[float],
+    offsets: Sequence[float],
+    args: argparse.Namespace,
+) -> np.ndarray:
+    """Apply per-band radiometric correction, using the selected device when possible."""
+
+    runtime = getattr(args, "accelerator_runtime", {}) or {}
+    selected = str(runtime.get("selected") or "cpu")
+    if selected in {"mps", "cuda"}:
+        try:
+            import torch
+
+            source = np.ascontiguousarray(data, dtype=np.float32)
+            tensor = torch.from_numpy(source).to(runtime["torch_device"])
+            gain = torch.as_tensor(gains, dtype=torch.float32, device=runtime["torch_device"]).view(-1, 1, 1)
+            offset = torch.as_tensor(offsets, dtype=torch.float32, device=runtime["torch_device"]).view(-1, 1, 1)
+            corrected = (tensor * gain) + offset
+            result = corrected.detach().to("cpu").numpy()
+            runtime["gpu_operations"] = int(runtime.get("gpu_operations") or 0) + 1
+            return result.astype(data.dtype, copy=False)
+        except Exception as exc:
+            if str(runtime.get("requested")) != "auto":
+                raise MosaicError(f"{selected.upper()} radiometric pass failed: {exc}") from exc
+            runtime["fallback_reason"] = f"{selected.upper()} radiometric pass failed: {exc}"
+            runtime["selected"] = "cpu"
+            runtime["torch_device"] = None
+
+    scalar_type = np.float64 if data.dtype == np.float64 else np.float32
+    corrected = data.copy()
+    for band in range(data.shape[0]):
+        corrected[band] = corrected[band] * scalar_type(gains[band]) + scalar_type(offsets[band])
+    return corrected
+
+
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -1486,13 +1595,17 @@ def make_seam_image(
     plan: OutputPlan,
     display_low: np.ndarray,
     display_high: np.ndarray,
+    args: argparse.Namespace,
 ) -> np.ndarray:
     channels: list[np.ndarray] = []
+    corrected_data = radiometric_correct(
+        source.data,
+        source.info.gains,
+        source.info.offsets,
+        args,
+    )
     for channel, position in enumerate(plan.rgb_positions):
-        corrected = (
-            source.data[position].astype(np.float32) * np.float32(source.info.gains[position])
-            + np.float32(source.info.offsets[position])
-        )
+        corrected = corrected_data[position].astype(np.float32, copy=False)
         normalized = np.clip(
             (corrected - np.float32(display_low[channel]))
             / np.float32(max(display_high[channel] - display_low[channel], 1e-6)),
@@ -1526,7 +1639,7 @@ def generate_seam_labels(
     display_low, display_high = corrected_display_ranges(
         sources, plan, args.percentile_samples, args.seed + 7717
     )
-    images = [make_seam_image(s, plan, display_low, display_high) for s in sources]
+    images = [make_seam_image(s, plan, display_low, display_high, args) for s in sources]
     initial_masks: list[np.ndarray] = []
     for source in sources:
         if source.clear.any():
@@ -1938,13 +2051,12 @@ def blend_and_write(
                 cloud_probability, cloud_binary = apply_cloud_model_full_resolution(
                     data, valid, runtime, work_window, plan, args
                 )
-                corrected = data.copy()
-                scalar_type = np.float64 if plan.working_dtype == "float64" else np.float32
-                for band in range(len(plan.selected_bands)):
-                    corrected[band] = (
-                        corrected[band] * scalar_type(runtime.info.gains[band])
-                        + scalar_type(runtime.info.offsets[band])
-                    )
+                corrected = radiometric_correct(
+                    data,
+                    runtime.info.gains,
+                    runtime.info.offsets,
+                    args,
+                )
 
                 owner = label_window == (source_index + 1)
                 seam_weight = cosine_feather_weight(owner, args.feather)
@@ -2071,6 +2183,7 @@ def base_report(plan: OutputPlan, args: argparse.Namespace) -> dict[str, Any]:
             for info in plan.source_infos
         ],
         "settings": {
+            "accelerator": args.accelerator_runtime,
             "balance": args.balance,
             "seam_method": args.seam_method,
             "feather_pixels": args.feather,
@@ -2089,6 +2202,13 @@ def base_report(plan: OutputPlan, args: argparse.Namespace) -> dict[str, Any]:
 
 
 def run(args: argparse.Namespace) -> int:
+    args.accelerator_runtime = configure_accelerator(args.accelerator)
+    LOGGER.info(
+        "Array accelerator requested=%s selected=%s (%s)",
+        args.accelerator_runtime["requested"],
+        args.accelerator_runtime["selected"],
+        args.accelerator_runtime["reason"],
+    )
     validate_block_size(args.block_size)
     if args.tile_size <= 0:
         raise MosaicError("--tile-size must be positive")
@@ -2345,6 +2465,12 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("first", "finest", "coarsest"),
         default="first",
         help="Resolution selection when --resolution is omitted",
+    )
+    parser.add_argument(
+        "--accelerator",
+        choices=("auto", "cpu", "mps", "cuda", "opencl"),
+        default="auto",
+        help="Array accelerator for radiometric and seam-image passes",
     )
     parser.add_argument(
         "--bands",
