@@ -1,0 +1,751 @@
+{
+  "site_id": "site-2",
+  "site_name": "OpenAI Stargate Abilene",
+  "site_label": "Abilene \u00b7 Stargate",
+  "slug": "openai-stargate-abilene",
+  "collection": "l1d-sr",
+  "archive_window": [
+    "2024-09-09T00:00:00Z",
+    "2026-09-10T23:59:59Z"
+  ],
+  "active_cutoff": "2026-08-27T00:00:00Z",
+  "total_items": 56,
+  "total_outcomes": 14,
+  "frame_count": 4,
+  "rejected_count": 10,
+  "frames": [
+    {
+      "outcome_id": "2f362208-2f48-435a-a362-6938f816dc2f",
+      "datetime": "2026-01-25T23:20:38.812838+00:00",
+      "item_ids": [
+        "20260125_232038_812_SN31_L1D_SR_MS_14N_424_3596_2_0_1",
+        "20260125_232038_812_SN31_L1D_SR_MS_14N_426_3596_2_0_1",
+        "20260125_232039_827_SN31_L1D_SR_MS_14N_424_3594_2_0_1",
+        "20260125_232039_827_SN31_L1D_SR_MS_14N_426_3594_2_0_1"
+      ],
+      "tile_count": 4,
+      "decoded_tile_count": 4,
+      "tile_details": [
+        {
+          "item_id": "20260125_232038_812_SN31_L1D_SR_MS_14N_424_3596_2_0_1",
+          "datetime": "2026-01-25T23:20:38.812838+00:00",
+          "crs": "EPSG:32614",
+          "width": 2860,
+          "height": 2860,
+          "visual_bytes": 907857,
+          "cloud_bytes": 92112,
+          "asset_keys": [
+            "analytic",
+            "cloud",
+            "internal_metrics",
+            "preview",
+            "thumbnail",
+            "toa_factors",
+            "visual"
+          ]
+        },
+        {
+          "item_id": "20260125_232038_812_SN31_L1D_SR_MS_14N_426_3596_2_0_1",
+          "datetime": "2026-01-25T23:20:38.812838+00:00",
+          "crs": "EPSG:32614",
+          "width": 2860,
+          "height": 2860,
+          "visual_bytes": 1439123,
+          "cloud_bytes": 99913,
+          "asset_keys": [
+            "analytic",
+            "cloud",
+            "internal_metrics",
+            "preview",
+            "thumbnail",
+            "toa_factors",
+            "visual"
+          ]
+        },
+        {
+          "item_id": "20260125_232039_827_SN31_L1D_SR_MS_14N_424_3594_2_0_1",
+          "datetime": "2026-01-25T23:20:39.827615+00:00",
+          "crs": "EPSG:32614",
+          "width": 2860,
+          "height": 2860,
+          "visual_bytes": 1265865,
+          "cloud_bytes": 101767,
+          "asset_keys": [
+            "analytic",
+            "cloud",
+            "internal_metrics",
+            "preview",
+            "thumbnail",
+            "toa_factors",
+            "visual"
+          ]
+        },
+        {
+          "item_id": "20260125_232039_827_SN31_L1D_SR_MS_14N_426_3594_2_0_1",
+          "datetime": "2026-01-25T23:20:39.827615+00:00",
+          "crs": "EPSG:32614",
+          "width": 2860,
+          "height": 2860,
+          "visual_bytes": 1685878,
+          "cloud_bytes": 101052,
+          "asset_keys": [
+            "analytic",
+            "cloud",
+            "internal_metrics",
+            "preview",
+            "thumbnail",
+            "toa_factors",
+            "visual"
+          ]
+        }
+      ],
+      "errors": [],
+      "visual_coverage_fraction": 0.941242,
+      "cloud_mask_coverage_fraction": 0.934106,
+      "haze_fraction_over_focus": 0.002304,
+      "cloud_fraction_over_focus": 0.0,
+      "unknown_mask_fraction_over_focus": 0.0,
+      "cloud_mask_class_counts_over_focus": {
+        "1": 14911258,
+        "2": 34435
+      },
+      "decision": "keep",
+      "decision_reason": "haze_allowed_over_focus",
+      "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask",
+      "path": "openai-stargate-abilene/frames/20260125_0eda4c2a7a.png"
+    },
+    {
+      "outcome_id": "89dc7fe1-3c89-4b01-b5df-e4f71f6db4c7",
+      "datetime": "2026-01-29T23:27:22.761346+00:00",
+      "item_ids": [
+        "20260129_232722_761_SN31_L1D_SR_MS_14N_424_3596_2_0_1",
+        "20260129_232722_761_SN31_L1D_SR_MS_14N_426_3596_2_0_1",
+        "20260129_232723_268_SN31_L1D_SR_MS_14N_424_3594_2_0_1",
+        "20260129_232723_268_SN31_L1D_SR_MS_14N_426_3594_2_0_1"
+      ],
+      "tile_count": 4,
+      "decoded_tile_count": 4,
+      "tile_details": [
+        {
+          "item_id": "20260129_232722_761_SN31_L1D_SR_MS_14N_424_3596_2_0_1",
+          "datetime": "2026-01-29T23:27:22.761346+00:00",
+          "crs": "EPSG:32614",
+          "width": 2860,
+          "height": 2860,
+          "visual_bytes": 20538345,
+          "cloud_bytes": 73587,
+          "asset_keys": [
+            "analytic",
+            "cloud",
+            "internal_metrics",
+            "preview",
+            "thumbnail",
+            "toa_factors",
+            "visual"
+          ]
+        },
+        {
+          "item_id": "20260129_232722_761_SN31_L1D_SR_MS_14N_426_3596_2_0_1",
+          "datetime": "2026-01-29T23:27:22.761346+00:00",
+          "crs": "EPSG:32614",
+          "width": 2860,
+          "height": 2860,
+          "visual_bytes": 26312866,
+          "cloud_bytes": 61857,
+          "asset_keys": [
+            "analytic",
+            "cloud",
+            "internal_metrics",
+            "preview",
+            "thumbnail",
+            "toa_factors",
+            "visual"
+          ]
+        },
+        {
+          "item_id": "20260129_232723_268_SN31_L1D_SR_MS_14N_424_3594_2_0_1",
+          "datetime": "2026-01-29T23:27:23.268713+00:00",
+          "crs": "EPSG:32614",
+          "width": 2860,
+          "height": 2860,
+          "visual_bytes": 23740043,
+          "cloud_bytes": 67378,
+          "asset_keys": [
+            "analytic",
+            "cloud",
+            "internal_metrics",
+            "preview",
+            "thumbnail",
+            "toa_factors",
+            "visual"
+          ]
+        },
+        {
+          "item_id": "20260129_232723_268_SN31_L1D_SR_MS_14N_426_3594_2_0_1",
+          "datetime": "2026-01-29T23:27:23.268713+00:00",
+          "crs": "EPSG:32614",
+          "width": 2860,
+          "height": 2860,
+          "visual_bytes": 25336949,
+          "cloud_bytes": 61857,
+          "asset_keys": [
+            "analytic",
+            "cloud",
+            "internal_metrics",
+            "preview",
+            "thumbnail",
+            "toa_factors",
+            "visual"
+          ]
+        }
+      ],
+      "errors": [],
+      "visual_coverage_fraction": 1.0,
+      "cloud_mask_coverage_fraction": 1.0,
+      "haze_fraction_over_focus": 0.0,
+      "cloud_fraction_over_focus": 0.0,
+      "unknown_mask_fraction_over_focus": 0.0,
+      "cloud_mask_class_counts_over_focus": {
+        "1": 16000000
+      },
+      "decision": "keep",
+      "decision_reason": "clear_focus",
+      "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask",
+      "path": "openai-stargate-abilene/frames/20260129_88d84eccd6.png"
+    },
+    {
+      "outcome_id": "b497b289-bbde-40c3-afaa-43a159705407",
+      "datetime": "2026-02-02T17:28:59.941678+00:00",
+      "item_ids": [
+        "20260202_172859_941_SN37_L1D_SR_MS_14N_424_3594_2_0_1",
+        "20260202_172859_941_SN37_L1D_SR_MS_14N_424_3596_2_0_1",
+        "20260202_172859_941_SN37_L1D_SR_MS_14N_426_3594_2_0_1",
+        "20260202_172859_941_SN37_L1D_SR_MS_14N_426_3596_2_0_1"
+      ],
+      "tile_count": 4,
+      "decoded_tile_count": 4,
+      "tile_details": [
+        {
+          "item_id": "20260202_172859_941_SN37_L1D_SR_MS_14N_424_3594_2_0_1",
+          "datetime": "2026-02-02T17:28:59.941678+00:00",
+          "crs": "EPSG:32614",
+          "width": 2860,
+          "height": 2860,
+          "visual_bytes": 26267877,
+          "cloud_bytes": 94453,
+          "asset_keys": [
+            "analytic",
+            "cloud",
+            "internal_metrics",
+            "preview",
+            "thumbnail",
+            "toa_factors",
+            "visual"
+          ]
+        },
+        {
+          "item_id": "20260202_172859_941_SN37_L1D_SR_MS_14N_424_3596_2_0_1",
+          "datetime": "2026-02-02T17:28:59.941678+00:00",
+          "crs": "EPSG:32614",
+          "width": 2860,
+          "height": 2860,
+          "visual_bytes": 29930895,
+          "cloud_bytes": 66080,
+          "asset_keys": [
+            "analytic",
+            "cloud",
+            "internal_metrics",
+            "preview",
+            "thumbnail",
+            "toa_factors",
+            "visual"
+          ]
+        },
+        {
+          "item_id": "20260202_172859_941_SN37_L1D_SR_MS_14N_426_3594_2_0_1",
+          "datetime": "2026-02-02T17:28:59.941678+00:00",
+          "crs": "EPSG:32614",
+          "width": 2860,
+          "height": 2860,
+          "visual_bytes": 29115487,
+          "cloud_bytes": 61857,
+          "asset_keys": [
+            "analytic",
+            "cloud",
+            "internal_metrics",
+            "preview",
+            "thumbnail",
+            "toa_factors",
+            "visual"
+          ]
+        },
+        {
+          "item_id": "20260202_172859_941_SN37_L1D_SR_MS_14N_426_3596_2_0_1",
+          "datetime": "2026-02-02T17:28:59.941678+00:00",
+          "crs": "EPSG:32614",
+          "width": 2860,
+          "height": 2860,
+          "visual_bytes": 29991269,
+          "cloud_bytes": 77434,
+          "asset_keys": [
+            "analytic",
+            "cloud",
+            "internal_metrics",
+            "preview",
+            "thumbnail",
+            "toa_factors",
+            "visual"
+          ]
+        }
+      ],
+      "errors": [],
+      "visual_coverage_fraction": 1.0,
+      "cloud_mask_coverage_fraction": 1.0,
+      "haze_fraction_over_focus": 0.047634,
+      "cloud_fraction_over_focus": 0.0,
+      "unknown_mask_fraction_over_focus": 0.0,
+      "cloud_mask_class_counts_over_focus": {
+        "1": 15237862,
+        "2": 762138
+      },
+      "decision": "keep",
+      "decision_reason": "haze_allowed_over_focus",
+      "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask",
+      "path": "openai-stargate-abilene/frames/20260202_117bfc9f61.png"
+    },
+    {
+      "outcome_id": "61df0b07-57f4-41a3-89c3-14497d079095",
+      "datetime": "2026-02-11T17:54:28.359043+00:00",
+      "item_ids": [
+        "20260211_175428_359_SN45_L1D_SR_MS_14N_426_3596_2_0_1",
+        "20260211_175428_865_SN45_L1D_SR_MS_14N_424_3594_2_0_1",
+        "20260211_175428_865_SN45_L1D_SR_MS_14N_424_3596_2_0_1",
+        "20260211_175428_865_SN45_L1D_SR_MS_14N_426_3594_2_0_1"
+      ],
+      "tile_count": 4,
+      "decoded_tile_count": 4,
+      "tile_details": [
+        {
+          "item_id": "20260211_175428_359_SN45_L1D_SR_MS_14N_426_3596_2_0_1",
+          "datetime": "2026-02-11T17:54:28.359043+00:00",
+          "crs": "EPSG:32614",
+          "width": 4004,
+          "height": 4006,
+          "visual_bytes": 62142980,
+          "cloud_bytes": 97294,
+          "asset_keys": [
+            "analytic",
+            "cloud",
+            "internal_metrics",
+            "preview",
+            "thumbnail",
+            "toa_factors",
+            "visual"
+          ]
+        },
+        {
+          "item_id": "20260211_175428_865_SN45_L1D_SR_MS_14N_424_3594_2_0_1",
+          "datetime": "2026-02-11T17:54:28.865623+00:00",
+          "crs": "EPSG:32614",
+          "width": 4004,
+          "height": 4004,
+          "visual_bytes": 57512083,
+          "cloud_bytes": 97370,
+          "asset_keys": [
+            "analytic",
+            "cloud",
+            "internal_metrics",
+            "preview",
+            "thumbnail",
+            "toa_factors",
+            "visual"
+          ]
+        },
+        {
+          "item_id": "20260211_175428_865_SN45_L1D_SR_MS_14N_424_3596_2_0_1",
+          "datetime": "2026-02-11T17:54:28.865623+00:00",
+          "crs": "EPSG:32614",
+          "width": 4004,
+          "height": 4006,
+          "visual_bytes": 64112099,
+          "cloud_bytes": 97294,
+          "asset_keys": [
+            "analytic",
+            "cloud",
+            "internal_metrics",
+            "preview",
+            "thumbnail",
+            "toa_factors",
+            "visual"
+          ]
+        },
+        {
+          "item_id": "20260211_175428_865_SN45_L1D_SR_MS_14N_426_3594_2_0_1",
+          "datetime": "2026-02-11T17:54:28.865623+00:00",
+          "crs": "EPSG:32614",
+          "width": 4004,
+          "height": 4004,
+          "visual_bytes": 59813565,
+          "cloud_bytes": 97370,
+          "asset_keys": [
+            "analytic",
+            "cloud",
+            "internal_metrics",
+            "preview",
+            "thumbnail",
+            "toa_factors",
+            "visual"
+          ]
+        }
+      ],
+      "errors": [],
+      "visual_coverage_fraction": 1.0,
+      "cloud_mask_coverage_fraction": 1.0,
+      "haze_fraction_over_focus": 0.0,
+      "cloud_fraction_over_focus": 0.0,
+      "unknown_mask_fraction_over_focus": 0.0,
+      "cloud_mask_class_counts_over_focus": {
+        "1": 16000000
+      },
+      "decision": "keep",
+      "decision_reason": "clear_focus",
+      "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask",
+      "path": "openai-stargate-abilene/frames/20260211_116ccfa2cf.png"
+    }
+  ],
+  "rejected_frames": [
+    {
+      "outcome_id": "a498aa0d-da76-4aae-a562-278da82994c6",
+      "datetime": "2026-01-22T17:24:42.661354+00:00",
+      "item_ids": [
+        "20260122_172442_661_SN37_L1D_SR_MS_14N_424_3594_2_0_1",
+        "20260122_172442_661_SN37_L1D_SR_MS_14N_426_3594_2_0_1",
+        "20260122_172443_168_SN37_L1D_SR_MS_14N_424_3596_2_0_1",
+        "20260122_172443_168_SN37_L1D_SR_MS_14N_426_3596_2_0_1"
+      ],
+      "tile_count": 4,
+      "decoded_tile_count": 4,
+      "tile_details": [],
+      "errors": [],
+      "visual_coverage_fraction": null,
+      "cloud_mask_coverage_fraction": 1.0,
+      "haze_fraction_over_focus": 0.899118,
+      "cloud_fraction_over_focus": 0.100532,
+      "unknown_mask_fraction_over_focus": 0.0,
+      "cloud_mask_class_counts_over_focus": {
+        "1": 5601,
+        "2": 14385889,
+        "3": 1608510
+      },
+      "cloud_mask_decision": "reject",
+      "cloud_mask_decision_reason": "cloud_over_focus",
+      "cloud_mask_errors": [],
+      "decision": "reject",
+      "decision_reason": "cloud_over_focus",
+      "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+    },
+    {
+      "outcome_id": "03e3f19f-ffb0-4f33-b3f5-9562e2645b82",
+      "datetime": "2026-01-26T17:53:27.743627+00:00",
+      "item_ids": [
+        "20260126_175327_743_SN45_L1D_SR_MS_14N_424_3596_2_0_1",
+        "20260126_175327_743_SN45_L1D_SR_MS_14N_426_3596_2_0_1",
+        "20260126_175328_249_SN45_L1D_SR_MS_14N_424_3594_2_0_1",
+        "20260126_175328_249_SN45_L1D_SR_MS_14N_426_3594_2_0_1"
+      ],
+      "tile_count": 4,
+      "decoded_tile_count": 4,
+      "tile_details": [],
+      "errors": [],
+      "visual_coverage_fraction": null,
+      "cloud_mask_coverage_fraction": 1.0,
+      "haze_fraction_over_focus": 0.0,
+      "cloud_fraction_over_focus": 0.028918,
+      "unknown_mask_fraction_over_focus": 0.0,
+      "cloud_mask_class_counts_over_focus": {
+        "1": 15537314,
+        "3": 462686
+      },
+      "cloud_mask_decision": "reject",
+      "cloud_mask_decision_reason": "cloud_over_focus",
+      "cloud_mask_errors": [],
+      "decision": "reject",
+      "decision_reason": "cloud_over_focus",
+      "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+    },
+    {
+      "outcome_id": "a88a026c-65df-442f-962f-cb305b48099a",
+      "datetime": "2026-02-05T17:41:16.802027+00:00",
+      "item_ids": [
+        "20260205_174116_802_SN26_L1D_SR_MS_14N_424_3596_2_0_1",
+        "20260205_174116_802_SN26_L1D_SR_MS_14N_426_3596_2_0_1",
+        "20260205_174117_309_SN26_L1D_SR_MS_14N_426_3594_2_0_1",
+        "20260205_174117_804_SN26_L1D_SR_MS_14N_424_3594_2_0_1"
+      ],
+      "tile_count": 4,
+      "decoded_tile_count": 4,
+      "tile_details": [],
+      "errors": [],
+      "visual_coverage_fraction": null,
+      "cloud_mask_coverage_fraction": 1.0,
+      "haze_fraction_over_focus": 0.0,
+      "cloud_fraction_over_focus": 0.009286,
+      "unknown_mask_fraction_over_focus": 0.0,
+      "cloud_mask_class_counts_over_focus": {
+        "1": 15851432,
+        "3": 148568
+      },
+      "cloud_mask_decision": "reject",
+      "cloud_mask_decision_reason": "cloud_over_focus",
+      "cloud_mask_errors": [],
+      "decision": "reject",
+      "decision_reason": "cloud_over_focus",
+      "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+    },
+    {
+      "outcome_id": "2124a24d-7b41-4049-b0f5-838149eb322c",
+      "datetime": "2026-02-09T22:13:19.912101+00:00",
+      "item_ids": [
+        "20260209_221319_912_SN28_L1D_SR_MS_14N_424_3594_2_0_1",
+        "20260209_221319_912_SN28_L1D_SR_MS_14N_424_3596_2_0_1",
+        "20260209_221319_912_SN28_L1D_SR_MS_14N_426_3594_2_0_1",
+        "20260209_221319_912_SN28_L1D_SR_MS_14N_426_3596_2_0_1"
+      ],
+      "tile_count": 4,
+      "decoded_tile_count": 4,
+      "tile_details": [],
+      "errors": [],
+      "visual_coverage_fraction": null,
+      "cloud_mask_coverage_fraction": 1.0,
+      "haze_fraction_over_focus": 0.0,
+      "cloud_fraction_over_focus": 1.0,
+      "unknown_mask_fraction_over_focus": 0.0,
+      "cloud_mask_class_counts_over_focus": {
+        "3": 16000000
+      },
+      "cloud_mask_decision": "reject",
+      "cloud_mask_decision_reason": "cloud_over_focus",
+      "cloud_mask_errors": [],
+      "decision": "reject",
+      "decision_reason": "cloud_over_focus",
+      "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+    },
+    {
+      "outcome_id": "2f12e183-0bdc-45f0-b75e-03193200c697",
+      "datetime": "2026-02-14T21:37:49.759843+00:00",
+      "item_ids": [
+        "20260214_213749_759_SN40_L1D_SR_MS_14N_426_3596_2_0_1",
+        "20260214_213750_434_SN40_L1D_SR_MS_14N_424_3594_2_0_1",
+        "20260214_213750_434_SN40_L1D_SR_MS_14N_424_3596_2_0_1",
+        "20260214_213750_434_SN40_L1D_SR_MS_14N_426_3594_2_0_1"
+      ],
+      "tile_count": 4,
+      "decoded_tile_count": 4,
+      "tile_details": [],
+      "errors": [],
+      "visual_coverage_fraction": null,
+      "cloud_mask_coverage_fraction": 1.0,
+      "haze_fraction_over_focus": 0.252859,
+      "cloud_fraction_over_focus": 0.220694,
+      "unknown_mask_fraction_over_focus": 0.0,
+      "cloud_mask_class_counts_over_focus": {
+        "1": 8423152,
+        "2": 4045746,
+        "3": 3531102
+      },
+      "cloud_mask_decision": "reject",
+      "cloud_mask_decision_reason": "cloud_over_focus",
+      "cloud_mask_errors": [],
+      "decision": "reject",
+      "decision_reason": "cloud_over_focus",
+      "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+    },
+    {
+      "outcome_id": "32ba2518-d613-402d-89b1-7ff8f010b476",
+      "datetime": "2026-02-15T17:53:54.351368+00:00",
+      "item_ids": [
+        "20260215_175354_351_SN45_L1D_SR_MS_14N_424_3594_2_0_1",
+        "20260215_175354_351_SN45_L1D_SR_MS_14N_424_3596_2_0_1",
+        "20260215_175354_351_SN45_L1D_SR_MS_14N_426_3594_2_0_1",
+        "20260215_175354_351_SN45_L1D_SR_MS_14N_426_3596_2_0_1"
+      ],
+      "tile_count": 4,
+      "decoded_tile_count": 4,
+      "tile_details": [],
+      "errors": [],
+      "visual_coverage_fraction": null,
+      "cloud_mask_coverage_fraction": 1.0,
+      "haze_fraction_over_focus": 0.0,
+      "cloud_fraction_over_focus": 0.000758,
+      "unknown_mask_fraction_over_focus": 0.0,
+      "cloud_mask_class_counts_over_focus": {
+        "1": 15987876,
+        "3": 12124
+      },
+      "cloud_mask_decision": "reject",
+      "cloud_mask_decision_reason": "cloud_over_focus",
+      "cloud_mask_errors": [],
+      "decision": "reject",
+      "decision_reason": "cloud_over_focus",
+      "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+    },
+    {
+      "outcome_id": "3f7f0ca4-e7df-46cb-b482-a3bf16c553a8",
+      "datetime": "2026-02-19T17:52:31.843552+00:00",
+      "item_ids": [
+        "20260219_175231_843_SN45_L1D_SR_MS_14N_424_3594_2_0_1",
+        "20260219_175231_843_SN45_L1D_SR_MS_14N_424_3596_2_0_1",
+        "20260219_175231_843_SN45_L1D_SR_MS_14N_426_3594_2_0_1",
+        "20260219_175231_843_SN45_L1D_SR_MS_14N_426_3596_2_0_1"
+      ],
+      "tile_count": 4,
+      "decoded_tile_count": 4,
+      "tile_details": [],
+      "errors": [],
+      "visual_coverage_fraction": null,
+      "cloud_mask_coverage_fraction": 1.0,
+      "haze_fraction_over_focus": 0.0,
+      "cloud_fraction_over_focus": 0.006635,
+      "unknown_mask_fraction_over_focus": 0.0,
+      "cloud_mask_class_counts_over_focus": {
+        "1": 15893841,
+        "3": 106159
+      },
+      "cloud_mask_decision": "reject",
+      "cloud_mask_decision_reason": "cloud_over_focus",
+      "cloud_mask_errors": [],
+      "decision": "reject",
+      "decision_reason": "cloud_over_focus",
+      "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+    },
+    {
+      "outcome_id": "dffb2354-ef42-4ad9-9b10-fefd3c2f7e13",
+      "datetime": "2026-02-25T17:35:10.012251+00:00",
+      "item_ids": [
+        "20260225_173510_012_SN38_L1D_SR_MS_14N_424_3594_2_0_1",
+        "20260225_173510_012_SN38_L1D_SR_MS_14N_424_3596_2_0_1",
+        "20260225_173510_012_SN38_L1D_SR_MS_14N_426_3594_2_0_1",
+        "20260225_173510_012_SN38_L1D_SR_MS_14N_426_3596_2_0_1"
+      ],
+      "tile_count": 4,
+      "decoded_tile_count": 4,
+      "tile_details": [],
+      "errors": [],
+      "visual_coverage_fraction": null,
+      "cloud_mask_coverage_fraction": 1.0,
+      "haze_fraction_over_focus": 0.0,
+      "cloud_fraction_over_focus": 1.0,
+      "unknown_mask_fraction_over_focus": 0.0,
+      "cloud_mask_class_counts_over_focus": {
+        "3": 16000000
+      },
+      "cloud_mask_decision": "reject",
+      "cloud_mask_decision_reason": "cloud_over_focus",
+      "cloud_mask_errors": [],
+      "decision": "reject",
+      "decision_reason": "cloud_over_focus",
+      "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+    },
+    {
+      "outcome_id": "5aacd6a3-d1fd-413d-86bd-c937b4c5df33",
+      "datetime": "2026-02-28T17:44:18.224677+00:00",
+      "item_ids": [
+        "20260228_174418_224_SN48_L1D_SR_MS_14N_424_3594_2_0_1",
+        "20260228_174418_224_SN48_L1D_SR_MS_14N_424_3596_2_0_1",
+        "20260228_174418_224_SN48_L1D_SR_MS_14N_426_3594_2_0_1",
+        "20260228_174418_224_SN48_L1D_SR_MS_14N_426_3596_2_0_1"
+      ],
+      "tile_count": 4,
+      "decoded_tile_count": 4,
+      "tile_details": [],
+      "errors": [],
+      "visual_coverage_fraction": null,
+      "cloud_mask_coverage_fraction": 1.0,
+      "haze_fraction_over_focus": 0.0,
+      "cloud_fraction_over_focus": 0.003516,
+      "unknown_mask_fraction_over_focus": 0.0,
+      "cloud_mask_class_counts_over_focus": {
+        "1": 15943748,
+        "3": 56252
+      },
+      "cloud_mask_decision": "reject",
+      "cloud_mask_decision_reason": "cloud_over_focus",
+      "cloud_mask_errors": [],
+      "decision": "reject",
+      "decision_reason": "cloud_over_focus",
+      "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+    },
+    {
+      "outcome_id": "3986bcac-b2d1-4172-b7d1-5f796fb55d0b",
+      "datetime": "2026-09-07T18:47:41.259565+00:00",
+      "item_ids": [
+        "20260907_184741_259_SN46_L1D_SR_MS_14N_424_3596_2_0_1",
+        "20260907_184741_778_SN46_L1D_SR_MS_14N_424_3594_2_0_1",
+        "20260907_184741_778_SN46_L1D_SR_MS_14N_426_3594_2_0_1",
+        "20260907_184741_778_SN46_L1D_SR_MS_14N_426_3596_2_0_1"
+      ],
+      "tile_count": 4,
+      "decoded_tile_count": 4,
+      "tile_details": [],
+      "errors": [],
+      "visual_coverage_fraction": null,
+      "cloud_mask_coverage_fraction": 1.0,
+      "haze_fraction_over_focus": 0.0,
+      "cloud_fraction_over_focus": 0.164051,
+      "unknown_mask_fraction_over_focus": 0.0,
+      "cloud_mask_class_counts_over_focus": {
+        "1": 13375182,
+        "3": 2624818
+      },
+      "cloud_mask_decision": "reject",
+      "cloud_mask_decision_reason": "cloud_over_focus",
+      "cloud_mask_errors": [],
+      "decision": "reject",
+      "decision_reason": "cloud_over_focus",
+      "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+    }
+  ],
+  "resolution_m": 0.5,
+  "output_size": [
+    4000,
+    4000
+  ],
+  "focus_size_m": 2000.0,
+  "focus_center": [
+    -99.78560811260724,
+    32.501314051807306
+  ],
+  "focus_bounds_m": [
+    425200.7144414256,
+    3595276.6433975007,
+    427200.7144414256,
+    3597276.6433975007
+  ],
+  "target_crs": "EPSG:32614",
+  "tasking_approved_in_source": false,
+  "quality_policy": {
+    "min_focus_coverage_fraction": 0.9,
+    "focus_size_m": 2000.0,
+    "clear_class": 1,
+    "haze_classes_allowed": [
+      2
+    ],
+    "cloud_classes_rejected": [
+      3
+    ],
+    "known_classes": [
+      1,
+      2,
+      3
+    ],
+    "scope": "fixed square centered on the site pin; class-2 haze is allowed in focus; scene-wide cloud does not reject a frame"
+  },
+  "status": "ready",
+  "video": "animations/openai-stargate-abilene/openai-stargate-abilene.mp4",
+  "poster": "animations/openai-stargate-abilene/poster.png",
+  "html": "animations/openai-stargate-abilene/animation.html",
+  "search_error": null,
+  "latest_capture_datetime": "2026-09-07T18:47:41.778656+00:00",
+  "active_last_14_days": true,
+  "tasking_preview": false
+}

@@ -214,7 +214,7 @@ class SatellogicClient:
             elif self.key_id and self.key_secret:
                 headers["authorizationToken"] = f"Key,Secret {self.key_id},{self.key_secret}"
 
-        effective_contract_id = contract_id if contract_id is not None else self.contract_id
+        effective_contract_id = (contract_id or "").strip() or self.contract_id
         if include_contract and effective_contract_id:
             headers["X-Satellogic-Contract-Id"] = effective_contract_id
 

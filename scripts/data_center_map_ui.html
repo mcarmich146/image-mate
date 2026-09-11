@@ -1,0 +1,308 @@
+<title>Data centre archive atlas · Image Mate</title>
+<style>
+  :root { --ink:#182d3c; --muted:#627583; --line:#dce5e9; --accent:#087e8b; --accent-dark:#06646d; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; color:var(--ink); background:#f4f7f8; }
+  #__MAP_ID__ { position:fixed!important; left:344px!important; top:72px!important; right:0!important; bottom:0!important; width:auto!important; height:auto!important; }
+  #map-fallback { position:fixed; z-index:1; left:344px; top:72px; right:0; bottom:0; overflow:hidden; background:#e8f0f2; }
+  #map-fallback[hidden] { display:none; }
+  #map-fallback svg { display:block; width:100%; height:100%; }
+  .fallback-note { position:absolute; left:18px; bottom:18px; max-width:360px; padding:8px 10px; border:1px solid #c8d7dc; border-radius:6px; background:rgba(255,255,255,.94); color:#526a75; font-size:11px; line-height:1.45; }
+  .atlas-header { position:fixed; z-index:1001; inset:0 0 auto; height:72px; display:flex; align-items:center; justify-content:space-between; gap:18px; padding:12px 24px; background:#102d38; color:#fff; }
+  .atlas-header h1 { margin:0; font-size:21px; letter-spacing:-.5px; font-weight:650; }
+  .atlas-header p { margin:4px 0 0; color:#bbd0d7; font-size:12px; }
+  .header-right { text-align:right; font-size:12px; color:#bbd0d7; line-height:1.7; }
+  .header-right strong { color:#fff; font-weight:600; }
+  #sidebar { position:fixed; top:72px; bottom:0; left:0; width:344px; background:#fff; display:flex; flex-direction:column; border-right:1px solid var(--line); z-index:1000; }
+  .sidebar-top { padding:20px 20px 14px; border-bottom:1px solid var(--line); }
+  label.field { display:block; font-size:10px; font-weight:750; text-transform:uppercase; letter-spacing:1.2px; margin-bottom:8px; color:var(--muted); }
+  select,button,input { font:inherit; }
+  select { width:100%; background:#f5f8f9; border:1px solid var(--line); border-radius:7px; padding:10px 9px; color:var(--ink); font-size:13px; }
+  button { border:1px solid var(--line); background:#fff; color:var(--ink); border-radius:6px; padding:7px 10px; cursor:pointer; font-size:12px; }
+  button:hover { border-color:var(--accent); background:#eff9fa; }
+  button:focus-visible,select:focus-visible,input:focus-visible { outline:3px solid #41a8ba; outline-offset:2px; }
+  button:disabled { opacity:.4; cursor:default; }
+  button.active { background:#e6f4f4; border-color:var(--accent); color:#07646d; }
+  .navrow { display:flex; align-items:center; gap:6px; margin-top:10px; }
+  .navrow .grow { flex:1; }
+  .site-note { margin:12px 0 0; font-size:12px; color:var(--muted); line-height:1.5; }
+  .warning { color:#8f5c16; background:#fff6e3; padding:9px; border-radius:5px; }
+  #result-caption { font-size:11px; line-height:1.5; color:var(--muted); padding:12px 20px 6px; }
+  #results { overflow-y:auto; flex:1; padding:4px 12px 12px; }
+  .site-card { display:block; width:100%; text-align:left; padding:12px; margin:5px 0; border:1px solid var(--line); border-radius:8px; }
+  .site-title { font-size:13px; font-weight:650; display:block; margin-bottom:5px; }
+  .site-meta { display:block; font-size:11px; color:var(--muted); line-height:1.6; }
+  .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:5px; }
+  .frame { display:grid; grid-template-columns:78px 1fr; align-items:center; gap:11px; width:100%; text-align:left; margin:5px 0; padding:8px; border-radius:8px; }
+  .frame img { width:78px; height:62px; object-fit:contain; background:#e7edef; border-radius:3px; }
+  .frame strong { font-size:13px; }
+  .frame small { display:block; font-size:11px; color:var(--muted); margin-top:4px; line-height:1.5; }
+  .empty { padding:16px 8px; font-size:13px; color:var(--muted); line-height:1.65; }
+  .sidebar-bottom { padding:12px 20px; border-top:1px solid var(--line); font-size:11px; color:var(--muted); line-height:1.55; }
+  .legend { display:flex; flex-wrap:wrap; gap:6px 12px; margin-bottom:8px; font-size:11px; }
+  .controls { position:fixed; top:86px; left:403px; z-index:900; background:rgba(255,255,255,.97); border:1px solid var(--line); border-radius:8px; box-shadow:0 3px 14px #18394615; padding:10px 13px; font-size:12px; max-width:calc(100vw - 530px); }
+  .controls-row { display:flex; flex-wrap:wrap; gap:12px; align-items:center; }
+  .controls-row label { display:flex; gap:5px; align-items:center; margin:0; font-weight:400; }
+  input[type=range] { width:82px; accent-color:var(--accent); }
+  input[type=checkbox] { accent-color:var(--accent); }
+  #map-status { margin-top:7px; color:var(--muted); font-size:11px; line-height:1.4; }
+  .map-pin { border:0; background:none; }
+  .map-pin span { display:flex; justify-content:center; align-items:center; width:28px; height:28px; color:white; background:var(--pin); border:2px solid white; border-radius:50% 50% 50% 0; transform:rotate(-45deg); box-shadow:0 2px 6px #17384366; }
+  .map-pin b { transform:rotate(45deg); font-size:10px; }
+  .map-pin.provisional span { border:2px dashed #ffdb86; }
+  .leaflet-popup-content { font:12px/1.6 Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; min-width:220px; }
+  .leaflet-popup-content h3 { font-size:14px; margin:0 0 7px; }
+  .leaflet-popup-content code { font-size:10px; overflow-wrap:anywhere; }
+  .leaflet-popup-content .popup-note { margin-top:8px; color:#66747b; }
+  .popup-actions { display:flex; flex-wrap:wrap; gap:7px; margin-top:11px; }
+  .popup-action { display:inline-flex; align-items:center; gap:5px; padding:7px 10px; border:1px solid var(--accent); border-radius:7px; background:var(--accent); color:#fff; text-decoration:none; font-size:11px; font-weight:750; line-height:1.2; }
+  .popup-action:hover { background:var(--accent-dark); border-color:var(--accent-dark); color:#fff; }
+  .popup-action.disabled { background:#eef3f4; border-color:#d6e1e4; color:#71828a; cursor:default; }
+  .popup-badge { display:inline-block; margin:2px 0 7px; padding:3px 7px; border-radius:999px; background:#e6f4f4; color:var(--accent-dark); font-size:10px; font-weight:750; letter-spacing:.2px; }
+  .popup-metric { color:#506873; font-size:11px; }
+  #selected-detail { overflow-wrap:anywhere; }
+  @media(max-width:760px) {
+    .atlas-header { height:68px; padding:10px 14px; }
+    .atlas-header h1 { font-size:18px; }
+    .header-right { display:none; }
+    #sidebar { top:auto; width:100%; height:38vh; bottom:0; border-top:1px solid var(--line); }
+    .sidebar-top { padding:10px 14px; }
+    .sidebar-top label.field,.sidebar-top .site-note { display:none; }
+    .sidebar-top select { padding:7px; }
+    .navrow { margin-top:7px; }
+    #result-caption { padding:7px 14px 0; }
+    .sidebar-bottom { display:none; }
+    #__MAP_ID__ { left:0!important; top:68px!important; bottom:38vh!important; }
+    #map-fallback { left:0; top:68px; bottom:38vh; }
+    .controls { top:80px; left:54px; max-width:calc(100vw - 112px); padding:7px 9px; }
+    .controls-row { gap:5px 8px; font-size:10px; }
+    input[type=range] { width:48px; }
+    #map-status { font-size:10px; }
+  }
+</style>
+<!-- END STYLE -->
+<header class="atlas-header">
+  <div><h1>Data centres <span style="color:#62c4ce;font-weight:400">/ Archive atlas</span></h1><p>Image Mate · archive footprints and L1D-SR time series</p></div>
+  <div class="header-right"><strong id="summary">Loading archive inventory…</strong><br>Research window · 09 Sep 2024 — 10 Sep 2026</div>
+</header>
+<aside id="sidebar" aria-label="Sites and capture dates">
+  <div class="sidebar-top">
+    <label class="field" for="site-select">Site under consideration</label>
+    <select id="site-select"><option value="all">All 13 sites · overview</option></select>
+    <div class="navrow"><button id="overview" class="grow">All sites</button><button id="fit-site" class="grow">Fit site</button><button id="fit-image" class="grow">Fit image</button></div>
+    <p id="site-note" class="site-note">Select a pin or a site to explore its capture dates. Footprints open the L1D-SR animation when a clear multi-date sequence is available.</p>
+  </div>
+  <div id="result-caption" aria-live="polite"></div>
+  <div id="results"></div>
+  <footer class="sidebar-bottom">
+    <div class="legend"><span><i class="dot" style="background:#087e8b"></i>OpenAI</span><span><i class="dot" style="background:#845cb3"></i>Anthropic</span><span><i class="dot" style="background:#cf644d"></i>SpaceX / xAI</span></div>
+    <div id="selected-detail">Solid outlines: image footprints. Dashed outlines: research search areas, not verified property boundaries.</div>
+    <div style="margin-top:8px">Internal research preview · verify publication rights before sharing. Browse imagery and time-series videos are embedded; the optional basemap requires internet.</div>
+  </footer>
+</aside>
+<section class="controls" aria-label="Map display controls">
+  <div class="controls-row">
+    <label><input type="checkbox" id="show-images" checked>Images</label>
+    <label><input type="checkbox" id="show-footprints" checked>Footprints</label>
+    <label><input type="checkbox" id="show-aois">Search areas</label>
+    <label for="opacity">Opacity <input id="opacity" type="range" min="0" max="1" step="0.05" value="0.85"></label>
+  </div>
+  <div id="map-status" role="status"></div>
+</section>
+<div id="map-fallback" role="img" aria-label="Static overview of the 13 data centre research sites">
+  __FALLBACK_MAP__
+  <div class="fallback-note">Static overview shown because this file preview did not run Leaflet. Open the file in Safari or Chrome for the interactive basemap, image overlays and date controls.</div>
+</div>
+<!-- START SCRIPT -->
+(function () {
+  "use strict";
+  const data = __MAP_DATA__;
+  const map = __MAP_ID__;
+  document.getElementById("map-fallback")?.setAttribute("hidden", "");
+  const el = id => document.getElementById(id);
+  const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  const colors = {"OpenAI":"#087e8b","Anthropic":"#845cb3","SpaceX / xAI":"#cf644d"};
+  const date = value => new Date(value).toISOString().slice(0,19).replace("T"," ") + " UTC";
+  const cloud = value => value == null ? "cloud unknown" : `${Number(value).toFixed(1)}% scene cloud`;
+  const ready = data.images.filter(i => i.status === "ready");
+  const animations = data.animations || {};
+  const readyAnimations = Object.values(animations).filter(item => item && item.status === "ready" && item.html);
+  let selectedSite = null, selectedOutcome = null;
+  const imageLayers = new Map();
+  const footprintLayers = L.layerGroup().addTo(map);
+  const aoiLayers = L.layerGroup();
+  const markers = new Map();
+  map.createPane("archiveImages"); map.getPane("archiveImages").style.zIndex = 300;
+  map.getPane("archiveImages").style.pointerEvents = "none";
+  const allBounds = L.latLngBounds(data.sites.map(s => [s.center[1],s.center[0]]));
+  const siteImages = site => data.images.filter(i => !site || i.sites.includes(site.id));
+  const animationForSite = siteId => {
+    const item = animations[siteId];
+    return item && item.status === "ready" && item.html ? item : null;
+  };
+  const animationFor = item => {
+    const siteIds = item.sites || [];
+    if (selectedSite && siteIds.includes(selectedSite.id)) {
+      return animationForSite(selectedSite.id);
+    }
+    for (const siteId of siteIds) {
+      const animation = animationForSite(siteId);
+      if (animation) return animation;
+    }
+    return null;
+  };
+  const animationAction = animation => animation
+    ? `<a class="popup-action" href="${esc(animation.html)}" target="_blank" rel="noopener">Animate this <span aria-hidden="true">↗</span></a>`
+    : `<span class="popup-action disabled" aria-disabled="true">No clear multi-date animation</span>`;
+  const animationMeta = animation => animation
+    ? `<span class="popup-badge">${esc(animation.frame_count)}-frame L1D-SR animation</span>`
+    : `<span class="popup-badge" style="background:#f3f5f6;color:#6d7b81">Animation unavailable for this site</span>`;
+  const itemPopup = item => {
+    const site = data.sites.find(candidate => (item.sites || []).includes(candidate.id));
+    const animation = animationFor(item);
+    return `<h3>${esc(site?.label || "Archive capture")}</h3>${animationMeta(animation)}<div class="popup-metric">${esc(date(item.datetime))}<br>${esc(item.collection)} · ${esc(item.gsd)} m<br>${esc(cloud(item.cloud))}</div><div style="margin-top:7px"><b>Outcome ID</b><br><code>${esc(item.outcome_id)}</code><br><b>Item</b><br><code>${esc(item.id)}</code></div><div class="popup-actions">${animationAction(animation)}</div><div class="popup-note">${item.status === "ready" ? "Browse GeoTIFF reprojected and footprint-clipped. The animation uses site-local L1D-SR cloud-mask QC." : "Thumbnail download / alignment unavailable."}</div>`;
+  };
+  const sitePopup = site => {
+    const animation = animationForSite(site.id);
+    const result = animations[site.id];
+    const active = result?.active_last_14_days ? "Active collection: capture in the last 14 days." : "No capture in the last 14 days.";
+    return `<h3>${esc(site.label)}</h3>${animationMeta(animation)}<div class="popup-metric">${esc(active)}<br>${esc(site.note)}</div><div class="popup-actions">${animationAction(animation)}</div><div class="popup-note">Research search area — not a property boundary. Animation frames retain only clear pixels over this site AOI; cloud elsewhere in a scene does not remove a frame.</div>`;
+  };
+  const captures = site => {
+    const groups = new Map();
+    for (const image of siteImages(site)) {
+      if (!groups.has(image.outcome_id)) groups.set(image.outcome_id, []);
+      groups.get(image.outcome_id).push(image);
+    }
+    return [...groups.entries()].map(([id, images]) => ({id, images, datetime:images[0].datetime}))
+      .sort((a,b) => a.datetime.localeCompare(b.datetime));
+  };
+  function currentImages() {
+    return siteImages(selectedSite).filter(i => !selectedOutcome || i.outcome_id === selectedOutcome);
+  }
+  function drawMap() {
+    footprintLayers.clearLayers();
+    const current = currentImages();
+    const visible = new Set();
+    for (const item of current) {
+      const color = colors[data.sites.find(s => s.id === item.sites[0]).group];
+      if (el("show-footprints").checked) {
+        L.geoJSON(item.geometry, {style:{color, weight:selectedOutcome ? 2 : 1, opacity:.75, fillOpacity:.015}})
+          .bindTooltip(`${esc(date(item.datetime))}<br>${esc(cloud(item.cloud))}`)
+          .bindPopup(itemPopup(item))
+          .addTo(footprintLayers);
+      }
+      if (item.status === "ready" && el("show-images").checked && map.getBounds().intersects(item.bounds)) {
+        visible.add(item.id);
+        if (!imageLayers.has(item.id)) imageLayers.set(item.id, L.imageOverlay(item.image_data, item.bounds,
+          {pane:"archiveImages", opacity:Number(el("opacity").value), alt:`Satellogic ${item.id}`, interactive:false}));
+        imageLayers.get(item.id).setOpacity(Number(el("opacity").value)).addTo(map).bringToFront();
+      }
+    }
+    for (const [id, layer] of imageLayers) if (!visible.has(id)) map.removeLayer(layer);
+    const total = current.length;
+    el("map-status").textContent = selectedOutcome
+      ? `${date(current[0].datetime)} · ${total} footprint${total === 1 ? "" : "s"}`
+      : `${total} footprints · all dates stacked, newest on top`;
+    if (!total) el("map-status").textContent = "No matching visual-thumbnail products for this site";
+    el("fit-image").disabled = !current.some(i => i.status === "ready");
+    el("fit-site").disabled = !selectedSite;
+  }
+  function fitSite() {
+    if (!selectedSite) return map.fitBounds(allBounds, {padding:[45,45]});
+    map.fitBounds(L.geoJSON(selectedSite.geometry).getBounds(), {padding:[65,65], maxZoom:13});
+  }
+  function chooseCapture(outcome) {
+    selectedOutcome = outcome;
+    renderResults(); drawMap();
+    const row = el("results").querySelector(".frame.active");
+    row?.scrollIntoView({block:"nearest"});
+  }
+  function chooseSite(id) {
+    selectedSite = data.sites.find(s => s.id === id) || null;
+    el("site-select").value = selectedSite?.id || "all";
+    selectedOutcome = null;
+    if (selectedSite) {
+      const groups = captures(selectedSite);
+      const clear = groups.filter(g => g.images.some(i => i.status === "ready" && i.cloud != null && i.cloud <= 20));
+      selectedOutcome = (clear.at(-1) || groups.at(-1))?.id || null;
+    }
+    el("site-note").textContent = selectedSite?.note || "Select a pin or a site to explore its capture dates. Footprints open the L1D-SR animation when a clear multi-date sequence is available.";
+    el("site-note").classList.toggle("warning", !!selectedSite && /provisional/i.test(selectedSite.note));
+    renderResults(); fitSite(); drawMap();
+  }
+  function renderResults() {
+    el("results").replaceChildren();
+    if (!selectedSite) {
+      el("result-caption").textContent = `${data.sites.length} research locations · choose a site to compare dates`;
+      for (const site of data.sites) {
+        const n = captures(site).length;
+        const animation = animationForSite(site.id);
+        const button = document.createElement("button");
+        button.className = "site-card";
+        button.innerHTML = `<span class="site-title"><i class="dot" style="background:${colors[site.group]}"></i>${esc(site.label)}</span><span class="site-meta">${site.search_status !== "ok" ? "Search unavailable — not an archive gap" : n ? `${n} capture dates · ${siteImages(site).length} thumbnail products` : "No matching thumbnails"}${animation ? ` · ${animation.frame_count}-frame L1D-SR animation` : ""}${site.animation ? (site.animation.active_last_14_days ? " · active ≤14 days" : " · no capture ≤14 days") : ""}${/provisional/i.test(site.note) ? " · provisional" : ""}</span>`;
+        button.onclick = () => chooseSite(site.id);
+        el("results").appendChild(button);
+      }
+      el("selected-detail").textContent = "Solid outlines: image footprints. Dashed outlines: research search areas, not verified property boundaries.";
+      return;
+    }
+    const groups = captures(selectedSite);
+    const animation = animationForSite(selectedSite.id);
+    el("result-caption").textContent = `${groups.length} capture dates · ${siteImages(selectedSite).length} thumbnail products${animation ? ` · ${animation.frame_count}-frame L1D-SR animation` : ""}. Opens latest capture with ≤20% scene cloud where available; this is not site-level cloud QC.`;
+    const controls = document.createElement("div"); controls.className="navrow";
+    const index = groups.findIndex(g => g.id === selectedOutcome);
+    for (const [label, action, disabled] of [
+      ["← Previous", () => chooseCapture(groups[Math.max(0,index-1)].id), !groups.length || index <= 0],
+      ["All dates", () => chooseCapture(null), !groups.length],
+      ["Next →", () => chooseCapture(groups[Math.min(groups.length-1,index+1)].id), !groups.length || index >= groups.length-1],
+    ]) {
+      const b=document.createElement("button"); b.textContent=label; b.onclick=action; b.disabled=disabled;
+      if (label === "All dates" && !selectedOutcome) b.className="active";
+      controls.appendChild(b);
+    }
+    el("results").appendChild(controls);
+    if (!groups.length) {
+      const empty=document.createElement("div"); empty.className="empty";
+      empty.textContent=selectedSite.search_status === "ok" ? "No visual-thumbnail counterpart was found for this site's previously identified images. Other collections may still contain imagery. This is not proof of an empty archive." : "The thumbnail search failed. An unavailable search must not be treated as zero coverage.";
+      el("results").appendChild(empty);
+    }
+    for (const group of [...groups].reverse()) {
+      const image=group.images.find(i => i.status === "ready");
+      const b=document.createElement("button"); b.className="frame" + (group.id === selectedOutcome ? " active" : "");
+      b.setAttribute("aria-pressed", String(group.id === selectedOutcome));
+      b.innerHTML=(image ? `<img src="${image.image_data}" alt="Capture thumbnail" loading="lazy">` : "<span>Unavailable</span>") +
+        `<span><strong>${esc(group.datetime.slice(0,10))}</strong><small>${esc(cloud(group.images[0].cloud))}<br>${group.images.length} product${group.images.length === 1 ? "" : "s"} · ${esc(group.images[0].gsd)} m source</small></span>`;
+      b.onclick=() => chooseCapture(group.id); el("results").appendChild(b);
+    }
+    const missing=selectedSite.identified_outcomes_without_thumbnail.length;
+    el("selected-detail").innerHTML=selectedOutcome ? `<b>Selected outcome</b><br><code>${esc(selectedOutcome)}</code><br>` : "";
+    el("selected-detail").innerHTML += `${missing} previously identified outcomes have no thumbnail match. These may include unusable raw records or products from other collections.`;
+  }
+  for (const [index, site] of data.sites.entries()) {
+    const option=document.createElement("option"); option.value=site.id; option.textContent=site.label; el("site-select").appendChild(option);
+    const provisional=/provisional/i.test(site.note);
+    const icon=L.divIcon({className:"map-pin" + (provisional ? " provisional" : ""), html:`<span style="--pin:${colors[site.group]}"><b>${index+1}</b></span>`, iconSize:[28,36], iconAnchor:[14,34]});
+    const marker=L.marker([site.center[1],site.center[0]], {icon, title:site.label, keyboard:true, zIndexOffset:1000}).addTo(map)
+      .bindTooltip(esc(site.label)).on("click", () => chooseSite(site.id));
+    markers.set(site.id, marker);
+    L.geoJSON(site.geometry, {style:{color:colors[site.group], weight:2, dashArray:"5 5", fillOpacity:0}})
+      .bindPopup(sitePopup(site)).addTo(aoiLayers);
+  }
+  const activeSites = data.sites.filter(site => site.animation?.active_last_14_days).length;
+  el("summary").textContent = `${data.sites.length} sites · ${activeSites} active ≤14 days · ${readyAnimations.length} L1D-SR animations`;
+  el("site-select").onchange = e => chooseSite(e.target.value);
+  el("overview").onclick = () => chooseSite("all");
+  el("fit-site").onclick = fitSite;
+  el("fit-image").onclick = () => {
+    const images=currentImages().filter(i => i.status === "ready");
+    if (images.length) map.fitBounds(images.reduce((bounds,i) => bounds.extend(i.bounds), L.latLngBounds()), {padding:[50,50]});
+  };
+  el("show-aois").onchange = () => el("show-aois").checked ? aoiLayers.addTo(map) : map.removeLayer(aoiLayers);
+  for (const id of ["show-images","show-footprints","opacity"]) el(id).addEventListener("input", drawMap);
+  map.on("moveend", drawMap);
+  window.addEventListener("resize", () => map.invalidateSize());
+  window.archiveAtlas = {map, data, chooseSite, chooseCapture, currentImages, imageLayers, footprintLayers, markers};
+  map.attributionControl.addAttribution("Browse imagery © Satellogic");
+  map.invalidateSize(); chooseSite("all");
+})();

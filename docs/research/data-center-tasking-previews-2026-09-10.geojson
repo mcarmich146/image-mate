@@ -1,0 +1,367 @@
+{
+  "type": "FeatureCollection",
+  "name": "Image Mate weekly data-centre tasking previews",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -86.471225996291,
+          41.67935929360402
+        ]
+      },
+      "properties": {
+        "site_id": "site-1",
+        "site": "Anthropic-Amazon New Carlisle",
+        "label": "New Carlisle \u00b7 AWS / Anthropic",
+        "status": "preview_requires_confirmation",
+        "reason": "No L1D-SR capture in the last 14 days",
+        "last_archive_capture": null,
+        "proposed_target_type": "point",
+        "proposed_sku": "TSKPOI-M",
+        "proposed_revisit_period": "P7D",
+        "proposed_processing_level": "L1D_SR",
+        "proposed_project_name": "Image Mate Data Centre Monitoring",
+        "proposed_order_name": "image-mate-datacentre-weekly-anthropic-amazon-new-carlisle",
+        "time_horizon": "90-day pilot (default proposal; must be confirmed)",
+        "cloud_rule": "Tasking request cloud/quality terms require provider confirmation; post-capture animation applies site-local L1D-SR cloud mask QC.",
+        "blocking_reasons": [
+          "Source geometry is a research search rectangle/center, not a verified cadastral or facility polygon.",
+          "Weekly P7D cadence and current SKU/price/entitlement must be confirmed with the Sales\u2013Showcase contract before submission."
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -90.15546042296336,
+          35.06016616737861
+        ]
+      },
+      "properties": {
+        "site_id": "site-3",
+        "site": "Colossus 1",
+        "label": "Colossus 1 \u00b7 Memphis",
+        "status": "preview_requires_confirmation",
+        "reason": "No L1D-SR capture in the last 14 days",
+        "last_archive_capture": "2025-12-29T20:50:23.597650+00:00",
+        "proposed_target_type": "point",
+        "proposed_sku": "TSKPOI-M",
+        "proposed_revisit_period": "P7D",
+        "proposed_processing_level": "L1D_SR",
+        "proposed_project_name": "Image Mate Data Centre Monitoring",
+        "proposed_order_name": "image-mate-datacentre-weekly-colossus-1",
+        "time_horizon": "90-day pilot (default proposal; must be confirmed)",
+        "cloud_rule": "Tasking request cloud/quality terms require provider confirmation; post-capture animation applies site-local L1D-SR cloud mask QC.",
+        "blocking_reasons": [
+          "Source geometry is a research search rectangle/center, not a verified cadastral or facility polygon.",
+          "Weekly P7D cadence and current SKU/price/entitlement must be confirmed with the Sales\u2013Showcase contract before submission."
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -99.54831401469934,
+          32.5437645
+        ]
+      },
+      "properties": {
+        "site_id": "site-4",
+        "site": "OpenAI Stargate Shackelford",
+        "label": "Frontier \u00b7 Shackelford County",
+        "status": "preview_requires_confirmation",
+        "reason": "No L1D-SR capture in the last 14 days",
+        "last_archive_capture": null,
+        "proposed_target_type": "point",
+        "proposed_sku": "TSKPOI-M",
+        "proposed_revisit_period": "P7D",
+        "proposed_processing_level": "L1D_SR",
+        "proposed_project_name": "Image Mate Data Centre Monitoring",
+        "proposed_order_name": "image-mate-datacentre-weekly-openai-stargate-shackelford",
+        "time_horizon": "90-day pilot (default proposal; must be confirmed)",
+        "cloud_rule": "Tasking request cloud/quality terms require provider confirmation; post-capture animation applies site-local L1D-SR cloud mask QC.",
+        "blocking_reasons": [
+          "Source geometry is a research search rectangle/center, not a verified cadastral or facility polygon.",
+          "Weekly P7D cadence and current SKU/price/entitlement must be confirmed with the Sales\u2013Showcase contract before submission."
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -80.8812281,
+          41.15311175
+        ]
+      },
+      "properties": {
+        "site_id": "site-5",
+        "site": "OpenAI Stargate Lordstown",
+        "label": "Lordstown \u00b7 Stargate",
+        "status": "preview_requires_confirmation",
+        "reason": "No L1D-SR capture in the last 14 days",
+        "last_archive_capture": "2025-06-24T16:34:30.945152+00:00",
+        "proposed_target_type": "point",
+        "proposed_sku": "TSKPOI-M",
+        "proposed_revisit_period": "P7D",
+        "proposed_processing_level": "L1D_SR",
+        "proposed_project_name": "Image Mate Data Centre Monitoring",
+        "proposed_order_name": "image-mate-datacentre-weekly-openai-stargate-lordstown",
+        "time_horizon": "90-day pilot (default proposal; must be confirmed)",
+        "cloud_rule": "Tasking request cloud/quality terms require provider confirmation; post-capture animation applies site-local L1D-SR cloud mask QC.",
+        "blocking_reasons": [
+          "Source geometry is a research search rectangle/center, not a verified cadastral or facility polygon.",
+          "Weekly P7D cadence and current SKU/price/entitlement must be confirmed with the Sales\u2013Showcase contract before submission."
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -106.68427010788022,
+          31.820319039816873
+        ]
+      },
+      "properties": {
+        "site_id": "site-6",
+        "site": "OpenAI Stargate New Mexico",
+        "label": "Jupiter \u00b7 Santa Teresa",
+        "status": "preview_requires_confirmation",
+        "reason": "No L1D-SR capture in the last 14 days",
+        "last_archive_capture": "2026-08-20T17:46:50.259964+00:00",
+        "proposed_target_type": "point",
+        "proposed_sku": "TSKPOI-M",
+        "proposed_revisit_period": "P7D",
+        "proposed_processing_level": "L1D_SR",
+        "proposed_project_name": "Image Mate Data Centre Monitoring",
+        "proposed_order_name": "image-mate-datacentre-weekly-openai-stargate-new-mexico",
+        "time_horizon": "90-day pilot (default proposal; must be confirmed)",
+        "cloud_rule": "Tasking request cloud/quality terms require provider confirmation; post-capture animation applies site-local L1D-SR cloud mask QC.",
+        "blocking_reasons": [
+          "Source geometry is a research search rectangle/center, not a verified cadastral or facility polygon.",
+          "Weekly P7D cadence and current SKU/price/entitlement must be confirmed with the Sales\u2013Showcase contract before submission."
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -87.85603566454043,
+          43.43040510723768
+        ]
+      },
+      "properties": {
+        "site_id": "site-7",
+        "site": "OpenAI Stargate Wisconsin",
+        "label": "Lighthouse \u00b7 Port Washington",
+        "status": "preview_requires_confirmation",
+        "reason": "No L1D-SR capture in the last 14 days",
+        "last_archive_capture": null,
+        "proposed_target_type": "point",
+        "proposed_sku": "TSKPOI-M",
+        "proposed_revisit_period": "P7D",
+        "proposed_processing_level": "L1D_SR",
+        "proposed_project_name": "Image Mate Data Centre Monitoring",
+        "proposed_order_name": "image-mate-datacentre-weekly-openai-stargate-wisconsin",
+        "time_horizon": "90-day pilot (default proposal; must be confirmed)",
+        "cloud_rule": "Tasking request cloud/quality terms require provider confirmation; post-capture animation applies site-local L1D-SR cloud mask QC.",
+        "blocking_reasons": [
+          "Source geometry is a research search rectangle/center, not a verified cadastral or facility polygon.",
+          "Weekly P7D cadence and current SKU/price/entitlement must be confirmed with the Sales\u2013Showcase contract before submission."
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -83.8841725,
+          42.1212265
+        ]
+      },
+      "properties": {
+        "site_id": "site-8",
+        "site": "OpenAI Stargate Michigan",
+        "label": "The Barn \u00b7 Saline Township",
+        "status": "preview_requires_confirmation",
+        "reason": "No L1D-SR capture in the last 14 days",
+        "last_archive_capture": null,
+        "proposed_target_type": "point",
+        "proposed_sku": "TSKPOI-M",
+        "proposed_revisit_period": "P7D",
+        "proposed_processing_level": "L1D_SR",
+        "proposed_project_name": "Image Mate Data Centre Monitoring",
+        "proposed_order_name": "image-mate-datacentre-weekly-openai-stargate-michigan",
+        "time_horizon": "90-day pilot (default proposal; must be confirmed)",
+        "cloud_rule": "Tasking request cloud/quality terms require provider confirmation; post-capture animation applies site-local L1D-SR cloud mask QC.",
+        "blocking_reasons": [
+          "Source geometry is a research search rectangle/center, not a verified cadastral or facility polygon.",
+          "Weekly P7D cadence and current SKU/price/entitlement must be confirmed with the Sales\u2013Showcase contract before submission."
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -97.0103365,
+          30.996308
+        ]
+      },
+      "properties": {
+        "site_id": "site-9",
+        "site": "OpenAI Stargate Milam",
+        "label": "Freebird \u00b7 Milam County",
+        "status": "preview_requires_confirmation",
+        "reason": "No L1D-SR capture in the last 14 days",
+        "last_archive_capture": null,
+        "proposed_target_type": "point",
+        "proposed_sku": "TSKPOI-M",
+        "proposed_revisit_period": "P7D",
+        "proposed_processing_level": "L1D_SR",
+        "proposed_project_name": "Image Mate Data Centre Monitoring",
+        "proposed_order_name": "image-mate-datacentre-weekly-openai-stargate-milam",
+        "time_horizon": "90-day pilot (default proposal; must be confirmed)",
+        "cloud_rule": "Tasking request cloud/quality terms require provider confirmation; post-capture animation applies site-local L1D-SR cloud mask QC.",
+        "blocking_reasons": [
+          "Source geometry is a research search rectangle/center, not a verified cadastral or facility polygon.",
+          "Weekly P7D cadence and current SKU/price/entitlement must be confirmed with the Sales\u2013Showcase contract before submission."
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -78.60203824717944,
+          43.35642754850562
+        ]
+      },
+      "properties": {
+        "site_id": "site-10",
+        "site": "Anthropic Lake Mariner",
+        "label": "Lake Mariner \u00b7 candidate",
+        "status": "preview_requires_confirmation",
+        "reason": "No L1D-SR capture in the last 14 days",
+        "last_archive_capture": null,
+        "proposed_target_type": "point",
+        "proposed_sku": "TSKPOI-M",
+        "proposed_revisit_period": "P7D",
+        "proposed_processing_level": "L1D_SR",
+        "proposed_project_name": "Image Mate Data Centre Monitoring",
+        "proposed_order_name": "image-mate-datacentre-weekly-anthropic-lake-mariner",
+        "time_horizon": "90-day pilot (default proposal; must be confirmed)",
+        "cloud_rule": "Tasking request cloud/quality terms require provider confirmation; post-capture animation applies site-local L1D-SR cloud mask QC.",
+        "blocking_reasons": [
+          "Source geometry is a research search rectangle/center, not a verified cadastral or facility polygon.",
+          "Weekly P7D cadence and current SKU/price/entitlement must be confirmed with the Sales\u2013Showcase contract before submission."
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -90.042977,
+          34.999489
+        ]
+      },
+      "properties": {
+        "site_id": "site-11",
+        "site": "Colossus 2 facility search",
+        "label": "Colossus 2 \u00b7 Memphis",
+        "status": "preview_requires_confirmation",
+        "reason": "No L1D-SR capture in the last 14 days",
+        "last_archive_capture": "2025-12-10T20:40:03.679849+00:00",
+        "proposed_target_type": "point",
+        "proposed_sku": "TSKPOI-M",
+        "proposed_revisit_period": "P7D",
+        "proposed_processing_level": "L1D_SR",
+        "proposed_project_name": "Image Mate Data Centre Monitoring",
+        "proposed_order_name": "image-mate-datacentre-weekly-colossus-2-facility-search",
+        "time_horizon": "90-day pilot (default proposal; must be confirmed)",
+        "cloud_rule": "Tasking request cloud/quality terms require provider confirmation; post-capture animation applies site-local L1D-SR cloud mask QC.",
+        "blocking_reasons": [
+          "Source geometry is a research search rectangle/center, not a verified cadastral or facility polygon.",
+          "Weekly P7D cadence and current SKU/price/entitlement must be confirmed with the Sales\u2013Showcase contract before submission."
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -90.034277800904,
+          34.991861641286
+        ]
+      },
+      "properties": {
+        "site_id": "site-12",
+        "site": "Colossus 3 Southaven",
+        "label": "Colossus 3 \u00b7 Southaven",
+        "status": "preview_requires_confirmation",
+        "reason": "No L1D-SR capture in the last 14 days",
+        "last_archive_capture": "2025-12-10T20:40:04.523644+00:00",
+        "proposed_target_type": "point",
+        "proposed_sku": "TSKPOI-M",
+        "proposed_revisit_period": "P7D",
+        "proposed_processing_level": "L1D_SR",
+        "proposed_project_name": "Image Mate Data Centre Monitoring",
+        "proposed_order_name": "image-mate-datacentre-weekly-colossus-3-southaven",
+        "time_horizon": "90-day pilot (default proposal; must be confirmed)",
+        "cloud_rule": "Tasking request cloud/quality terms require provider confirmation; post-capture animation applies site-local L1D-SR cloud mask QC.",
+        "blocking_reasons": [
+          "Source geometry is a research search rectangle/center, not a verified cadastral or facility polygon.",
+          "Weekly P7D cadence and current SKU/price/entitlement must be confirmed with the Sales\u2013Showcase contract before submission."
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -91.309069280972,
+          30.716339672268
+        ]
+      },
+      "properties": {
+        "site_id": "site-13",
+        "site": "River Bend provisional neighborhood",
+        "label": "River Bend \u00b7 provisional location",
+        "status": "blocked_unverified_location",
+        "reason": "No L1D-SR capture in the last 14 days",
+        "last_archive_capture": null,
+        "proposed_target_type": "point",
+        "proposed_sku": "TSKPOI-M",
+        "proposed_revisit_period": "P7D",
+        "proposed_processing_level": "L1D_SR",
+        "proposed_project_name": "Image Mate Data Centre Monitoring",
+        "proposed_order_name": "image-mate-datacentre-weekly-river-bend-provisional-neighborhood",
+        "time_horizon": "90-day pilot (default proposal; must be confirmed)",
+        "cloud_rule": "Tasking request cloud/quality terms require provider confirmation; post-capture animation applies site-local L1D-SR cloud mask QC.",
+        "blocking_reasons": [
+          "Source geometry is a research search rectangle/center, not a verified cadastral or facility polygon.",
+          "Weekly P7D cadence and current SKU/price/entitlement must be confirmed with the Sales\u2013Showcase contract before submission.",
+          "River Bend location is explicitly provisional and must not be tasked without a verified site."
+        ]
+      }
+    }
+  ]
+}

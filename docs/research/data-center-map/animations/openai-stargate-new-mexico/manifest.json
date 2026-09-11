@@ -1,0 +1,87 @@
+{
+  "site_id": "site-6",
+  "site_name": "OpenAI Stargate New Mexico",
+  "site_label": "Jupiter \u00b7 Santa Teresa",
+  "slug": "openai-stargate-new-mexico",
+  "collection": "l1d-sr",
+  "archive_window": [
+    "2024-09-09T00:00:00Z",
+    "2026-09-10T23:59:59Z"
+  ],
+  "active_cutoff": "2026-08-27T00:00:00Z",
+  "total_items": 3,
+  "total_outcomes": 1,
+  "frame_count": 0,
+  "rejected_count": 1,
+  "frames": [],
+  "rejected_frames": [
+    {
+      "outcome_id": "b5349f6b-d3c4-40e5-9cee-11c7242dd91e",
+      "datetime": "2026-08-20T17:46:49.585344+00:00",
+      "item_ids": [
+        "20260820_174649_585_SN51_L1D_SR_MS_13N_344_3520_2_0_1",
+        "20260820_174649_585_SN51_L1D_SR_MS_13N_344_3522_2_0_1",
+        "20260820_174650_259_SN51_L1D_SR_MS_13N_342_3520_2_0_1"
+      ],
+      "tile_count": 3,
+      "decoded_tile_count": 3,
+      "tile_details": [],
+      "errors": [],
+      "visual_coverage_fraction": null,
+      "cloud_mask_coverage_fraction": 0.0,
+      "haze_fraction_over_focus": 0.0,
+      "cloud_fraction_over_focus": 0.0,
+      "unknown_mask_fraction_over_focus": 0.0,
+      "cloud_mask_class_counts_over_focus": {},
+      "cloud_mask_decision": "reject",
+      "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+      "cloud_mask_errors": [],
+      "decision": "reject",
+      "decision_reason": "cloud_mask_does_not_cover_focus",
+      "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+    }
+  ],
+  "resolution_m": 0.5,
+  "output_size": [
+    4000,
+    4000
+  ],
+  "focus_size_m": 2000.0,
+  "focus_center": [
+    -106.68427010788022,
+    31.820319039816873
+  ],
+  "focus_bounds_m": [
+    339591.9509591567,
+    3520755.2715398674,
+    341591.9509591567,
+    3522755.2715398674
+  ],
+  "target_crs": "EPSG:32613",
+  "tasking_approved_in_source": false,
+  "quality_policy": {
+    "min_focus_coverage_fraction": 0.9,
+    "focus_size_m": 2000.0,
+    "clear_class": 1,
+    "haze_classes_allowed": [
+      2
+    ],
+    "cloud_classes_rejected": [
+      3
+    ],
+    "known_classes": [
+      1,
+      2,
+      3
+    ],
+    "scope": "fixed square centered on the site pin; class-2 haze is allowed in focus; scene-wide cloud does not reject a frame"
+  },
+  "status": "no_clear_multi_date_sequence",
+  "video": null,
+  "poster": null,
+  "html": null,
+  "search_error": null,
+  "latest_capture_datetime": "2026-08-20T17:46:50.259964+00:00",
+  "active_last_14_days": false,
+  "tasking_preview": true
+}

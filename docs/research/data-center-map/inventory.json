@@ -1,0 +1,6995 @@
+{
+  "collection": "quickview-visual-thumb",
+  "generated_at": "2026-09-10T12:35:06.707970+00:00",
+  "interval": [
+    "2024-09-09T00:00:00Z",
+    "2026-09-09T23:59:59Z"
+  ],
+  "sites": [
+    {
+      "id": "site-1",
+      "name": "Anthropic-Amazon New Carlisle",
+      "label": "New Carlisle \u00b7 AWS / Anthropic",
+      "group": "Anthropic",
+      "note": "Campus map reference; not a surveyed parcel.",
+      "center": [
+        -86.471225996291,
+        41.67935929360402
+      ],
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -86.49613398502005,
+              41.65034148501307
+            ],
+            [
+              -86.44631800756194,
+              41.65034148501307
+            ],
+            [
+              -86.44631800756194,
+              41.70837710219497
+            ],
+            [
+              -86.49613398502005,
+              41.70837710219497
+            ],
+            [
+              -86.49613398502005,
+              41.65034148501307
+            ]
+          ]
+        ]
+      },
+      "reference": "Epoch AI public map center and map bounds",
+      "source": "https://epoch.ai/data/ai-data-centers/directory/openai-stargate-abilene/satellite-explorer",
+      "expected_outcomes": [],
+      "search_status": "ok",
+      "thumbnail_items_found": 0,
+      "matched_items": 0,
+      "identified_outcomes_without_thumbnail": []
+    },
+    {
+      "id": "site-2",
+      "name": "OpenAI Stargate Abilene",
+      "label": "Abilene \u00b7 Stargate",
+      "group": "OpenAI",
+      "note": "Campus map reference; distinguish flagship and expansion buildings.",
+      "center": [
+        -99.78560811260724,
+        32.501314051807306
+      ],
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -99.7967348142505,
+              32.49551262676191
+            ],
+            [
+              -99.77448141096396,
+              32.49551262676191
+            ],
+            [
+              -99.77448141096396,
+              32.507115476852704
+            ],
+            [
+              -99.7967348142505,
+              32.507115476852704
+            ],
+            [
+              -99.7967348142505,
+              32.49551262676191
+            ]
+          ]
+        ]
+      },
+      "reference": "Epoch AI public map center and map bounds",
+      "source": "https://epoch.ai/data/ai-data-centers/directory/openai-stargate-abilene/satellite-explorer",
+      "expected_outcomes": [
+        "03e3f19f-ffb0-4f33-b3f5-9562e2645b82",
+        "2124a24d-7b41-4049-b0f5-838149eb322c",
+        "2f12e183-0bdc-45f0-b75e-03193200c697",
+        "2f362208-2f48-435a-a362-6938f816dc2f",
+        "32ba2518-d613-402d-89b1-7ff8f010b476",
+        "3986bcac-b2d1-4172-b7d1-5f796fb55d0b",
+        "39ca13b8-c481-4012-afda-fe7de99d58b0",
+        "3f7f0ca4-e7df-46cb-b482-a3bf16c553a8",
+        "5aacd6a3-d1fd-413d-86bd-c937b4c5df33",
+        "61df0b07-57f4-41a3-89c3-14497d079095",
+        "7ce8a288-d702-4f65-9173-2880deb68252",
+        "89dc7fe1-3c89-4b01-b5df-e4f71f6db4c7",
+        "a16c15e5-ab8d-42ee-b321-55f4f062c461",
+        "a498aa0d-da76-4aae-a562-278da82994c6",
+        "a88a026c-65df-442f-962f-cb305b48099a",
+        "b497b289-bbde-40c3-afaa-43a159705407",
+        "dffb2354-ef42-4ad9-9b10-fefd3c2f7e13"
+      ],
+      "search_status": "ok",
+      "thumbnail_items_found": 16,
+      "matched_items": 16,
+      "identified_outcomes_without_thumbnail": [
+        "7ce8a288-d702-4f65-9173-2880deb68252"
+      ]
+    },
+    {
+      "id": "site-3",
+      "name": "Colossus 1",
+      "label": "Colossus 1 \u00b7 Memphis",
+      "group": "SpaceX / xAI",
+      "note": "Former Electrolux plant. Conversion and expansion, not a new original building.",
+      "center": [
+        -90.15546042296336,
+        35.06016616737861
+      ],
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.15829088828409,
+              35.05683276206011
+            ],
+            [
+              -90.15262995764265,
+              35.05683276206011
+            ],
+            [
+              -90.15262995764265,
+              35.06349957269711
+            ],
+            [
+              -90.15829088828409,
+              35.06349957269711
+            ],
+            [
+              -90.15829088828409,
+              35.05683276206011
+            ]
+          ]
+        ]
+      },
+      "reference": "Epoch AI public map center and map bounds",
+      "source": "https://epoch.ai/data/ai-data-centers/directory/openai-stargate-abilene/satellite-explorer",
+      "expected_outcomes": [
+        "05bff8d9-c147-4680-8d3d-055d58661731",
+        "074af251-83ee-4478-8382-f7dff21bb881",
+        "07bcc051-8da5-47d1-8afd-12db4df48284",
+        "09daad0b-8a02-4ed5-8a37-4030e8f44830",
+        "189003bd-3995-4215-9fe8-643491d6891d",
+        "203c07ad-c032-4ef0-85cd-2cfd207e236a",
+        "2743f5fa-9a24-436b-8e47-c91e2cf8e7a5",
+        "27fc2dbe-8201-4363-8786-a37a36836430",
+        "2946c4c5-79f4-4965-b252-12b62e2129dc",
+        "2a6d9dfc-c46b-45ad-90ee-59a0258529e5",
+        "2b2f84ad-8332-43c6-8a66-02e7d6073808",
+        "31bfb1f3-9296-4b51-ad63-79dec70897f4",
+        "3573aa50-4ebf-48a2-989e-33fde8c7bbc1",
+        "3b2eb625-0bb9-46c2-922d-589aaa20bc2e",
+        "4129a1d4-44c0-418d-b7e4-c1fec7eae4f1",
+        "4181d755-1cb3-4fae-ad63-5157d10c97ab",
+        "42dffb8f-7c37-4b2c-85fb-681727c782c9",
+        "4425c82b-2b62-49b8-a0e9-6ce1d190ed46",
+        "48fffce5-50f4-471f-be9b-725b39edd9d7",
+        "49511491-9ab0-436c-940b-245bb8eee6a8",
+        "4fa19ad5-8a5d-41cc-8b04-985a99822c45",
+        "53baf62e-caab-4958-8d0d-96a22f833239",
+        "5541a475-fb54-4727-b3e9-f18ae67785dd",
+        "56363745-00e7-4fb5-8668-6bb032203e8a",
+        "6396101a-ceae-40d4-bea9-f24548747664",
+        "639ea2cf-785a-429b-b4e6-03aee2851336",
+        "68c17236-f9a8-4ad3-b8fc-9800386091b7",
+        "75cbd642-5c43-4e9c-8e5d-bbf0f41cede0",
+        "77690304-c36e-40e1-bd49-54ce44242f15",
+        "7e84caf1-9b2c-485b-9c4a-1c66b541392f",
+        "7f9327fe-588d-433d-b525-3a152e6f3ced",
+        "7fabee00-7738-451a-9dcc-c406c43a16f4",
+        "8f27a0fb-96aa-449d-bf11-edd134c719c9",
+        "90f9597e-666e-4517-994c-9b4f31498035",
+        "91945358-b314-4fe7-be1e-d98af677876c",
+        "927867d5-3fce-4db0-9e96-d14f7506bf33",
+        "94e259ce-29f7-4351-9e90-030d36b77e3f",
+        "9a85941c-511d-40e1-84cf-0933de5c0437",
+        "a4169c4b-e88e-4544-86dd-d5a37bb578f8",
+        "a506f0ec-88f3-4bb8-a322-f41205fa7595",
+        "a5ffe318-9ef6-4d7a-89ce-e541fd734516",
+        "a849fd78-1d9a-4bff-98e7-cfa0b4c2f0b5",
+        "adb6f17d-9a48-497c-84ea-774d6416e27c",
+        "adf41d10-80c3-4a7b-87d2-bb8988342f88",
+        "ae64ca84-bfef-452a-a12b-f7dcefcd68fe",
+        "b13a9c10-ab54-46c2-a5f0-6526f2aa4048",
+        "b7495336-32e4-473a-bff0-b0fedfc0a299",
+        "b905f7c4-5415-412b-8fe9-a85cca3f3978",
+        "bb4691dc-1768-4085-aab8-780f29c4e670",
+        "bcded368-de84-4ec4-8ba1-9b5008af763f",
+        "bd57e04a-d3aa-4628-8b3b-45633b0b8f6b",
+        "c3a233dc-2632-4b3d-9a89-5356a522b201",
+        "c5f8f894-a1cf-41a0-a8cb-cafe009ffae1",
+        "c6d7d1aa-9174-4db6-9bfb-b7ff88c0839c",
+        "cda6e009-2568-4757-a9a6-b55a64f1d44e",
+        "cec102a8-94c4-4d02-ad87-425c93c80ea0",
+        "d1579902-d24d-436f-b371-89d468fa692d",
+        "dc640019-1f02-4e3e-ac48-9fdf33fa413a",
+        "ddcb0e0c-0e0c-43a6-9472-cdcd515a0990",
+        "f4826b0d-8c22-4c10-b52f-e15f600ee37f"
+      ],
+      "search_status": "ok",
+      "thumbnail_items_found": 53,
+      "matched_items": 53,
+      "identified_outcomes_without_thumbnail": [
+        "09daad0b-8a02-4ed5-8a37-4030e8f44830",
+        "3573aa50-4ebf-48a2-989e-33fde8c7bbc1",
+        "4425c82b-2b62-49b8-a0e9-6ce1d190ed46",
+        "a849fd78-1d9a-4bff-98e7-cfa0b4c2f0b5",
+        "adb6f17d-9a48-497c-84ea-774d6416e27c",
+        "c5f8f894-a1cf-41a0-a8cb-cafe009ffae1",
+        "f4826b0d-8c22-4c10-b52f-e15f600ee37f"
+      ]
+    },
+    {
+      "id": "site-4",
+      "name": "OpenAI Stargate Shackelford",
+      "label": "Frontier \u00b7 Shackelford County",
+      "group": "OpenAI",
+      "note": "Campus map reference, near Abilene.",
+      "center": [
+        -99.54831401469934,
+        32.5437645
+      ],
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -99.55866725869888,
+              32.5395581
+            ],
+            [
+              -99.5379607706998,
+              32.5395581
+            ],
+            [
+              -99.5379607706998,
+              32.5479709
+            ],
+            [
+              -99.55866725869888,
+              32.5479709
+            ],
+            [
+              -99.55866725869888,
+              32.5395581
+            ]
+          ]
+        ]
+      },
+      "reference": "Epoch AI public map center and map bounds",
+      "source": "https://epoch.ai/data/ai-data-centers/directory/openai-stargate-abilene/satellite-explorer",
+      "expected_outcomes": [
+        "7ce8a288-d702-4f65-9173-2880deb68252",
+        "84d62ef7-7ac6-467f-94f3-2dd9decbb446"
+      ],
+      "search_status": "ok",
+      "thumbnail_items_found": 1,
+      "matched_items": 1,
+      "identified_outcomes_without_thumbnail": [
+        "7ce8a288-d702-4f65-9173-2880deb68252"
+      ]
+    },
+    {
+      "id": "site-5",
+      "name": "OpenAI Stargate Lordstown",
+      "label": "Lordstown \u00b7 Stargate",
+      "group": "OpenAI",
+      "note": "Verify compute halls versus server manufacturing / assembly.",
+      "center": [
+        -80.8812281,
+        41.15311175
+      ],
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -80.8852943,
+              41.1504842
+            ],
+            [
+              -80.8771619,
+              41.1504842
+            ],
+            [
+              -80.8771619,
+              41.1557393
+            ],
+            [
+              -80.8852943,
+              41.1557393
+            ],
+            [
+              -80.8852943,
+              41.1504842
+            ]
+          ]
+        ]
+      },
+      "reference": "Epoch AI public map center and map bounds",
+      "source": "https://epoch.ai/data/ai-data-centers/directory/openai-stargate-abilene/satellite-explorer",
+      "expected_outcomes": [
+        "2b0da951-9a02-44a9-b559-fd5153cb179f",
+        "4838b264-45ec-482c-aa0f-4d565264dffa",
+        "6c99d579-e498-4d97-91b3-9f63c43b56c1",
+        "afb0655a-a07d-441d-a4a6-026fd0378eb3",
+        "f2ca8820-0902-451a-9aae-865ea91142e0",
+        "fa98be9a-4725-41ea-a18b-748646e77837"
+      ],
+      "search_status": "ok",
+      "thumbnail_items_found": 0,
+      "matched_items": 0,
+      "identified_outcomes_without_thumbnail": [
+        "2b0da951-9a02-44a9-b559-fd5153cb179f",
+        "4838b264-45ec-482c-aa0f-4d565264dffa",
+        "6c99d579-e498-4d97-91b3-9f63c43b56c1",
+        "afb0655a-a07d-441d-a4a6-026fd0378eb3",
+        "f2ca8820-0902-451a-9aae-865ea91142e0",
+        "fa98be9a-4725-41ea-a18b-748646e77837"
+      ]
+    },
+    {
+      "id": "site-6",
+      "name": "OpenAI Stargate New Mexico",
+      "label": "Jupiter \u00b7 Santa Teresa",
+      "group": "OpenAI",
+      "note": "Broad project search rectangle; imagery may cover only part of the development.",
+      "center": [
+        -106.68427010788022,
+        31.820319039816873
+      ],
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -106.72195189720803,
+              31.806082949248754
+            ],
+            [
+              -106.64658831855242,
+              31.806082949248754
+            ],
+            [
+              -106.64658831855242,
+              31.834555130384995
+            ],
+            [
+              -106.72195189720803,
+              31.834555130384995
+            ],
+            [
+              -106.72195189720803,
+              31.806082949248754
+            ]
+          ]
+        ]
+      },
+      "reference": "Epoch AI public map center and map bounds",
+      "source": "https://epoch.ai/data/ai-data-centers/directory/openai-stargate-abilene/satellite-explorer",
+      "expected_outcomes": [
+        "ab0dc850-a0fb-41d2-beb7-8dbb4495f491",
+        "b5349f6b-d3c4-40e5-9cee-11c7242dd91e"
+      ],
+      "search_status": "ok",
+      "thumbnail_items_found": 1,
+      "matched_items": 1,
+      "identified_outcomes_without_thumbnail": [
+        "ab0dc850-a0fb-41d2-beb7-8dbb4495f491"
+      ]
+    },
+    {
+      "id": "site-7",
+      "name": "OpenAI Stargate Wisconsin",
+      "label": "Lighthouse \u00b7 Port Washington",
+      "group": "OpenAI",
+      "note": "Campus map reference, not Mount Pleasant.",
+      "center": [
+        -87.85603566454043,
+        43.43040510723768
+      ],
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -87.87573902908086,
+              43.4112088
+            ],
+            [
+              -87.8363323,
+              43.4112088
+            ],
+            [
+              -87.8363323,
+              43.44960141447537
+            ],
+            [
+              -87.87573902908086,
+              43.44960141447537
+            ],
+            [
+              -87.87573902908086,
+              43.4112088
+            ]
+          ]
+        ]
+      },
+      "reference": "Epoch AI public map center and map bounds",
+      "source": "https://epoch.ai/data/ai-data-centers/directory/openai-stargate-abilene/satellite-explorer",
+      "expected_outcomes": [
+        "2b0da951-9a02-44a9-b559-fd5153cb179f",
+        "4838b264-45ec-482c-aa0f-4d565264dffa"
+      ],
+      "search_status": "ok",
+      "thumbnail_items_found": 0,
+      "matched_items": 0,
+      "identified_outcomes_without_thumbnail": [
+        "2b0da951-9a02-44a9-b559-fd5153cb179f",
+        "4838b264-45ec-482c-aa0f-4d565264dffa"
+      ]
+    },
+    {
+      "id": "site-8",
+      "name": "OpenAI Stargate Michigan",
+      "label": "The Barn \u00b7 Saline Township",
+      "group": "OpenAI",
+      "note": "Campus map reference, not the town center.",
+      "center": [
+        -83.8841725,
+        42.1212265
+      ],
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -83.905196,
+              42.103083
+            ],
+            [
+              -83.86314899999999,
+              42.103083
+            ],
+            [
+              -83.86314899999999,
+              42.13937
+            ],
+            [
+              -83.905196,
+              42.13937
+            ],
+            [
+              -83.905196,
+              42.103083
+            ]
+          ]
+        ]
+      },
+      "reference": "Epoch AI public map center and map bounds",
+      "source": "https://epoch.ai/data/ai-data-centers/directory/openai-stargate-abilene/satellite-explorer",
+      "expected_outcomes": [
+        "2b0da951-9a02-44a9-b559-fd5153cb179f",
+        "4838b264-45ec-482c-aa0f-4d565264dffa",
+        "f2ca8820-0902-451a-9aae-865ea91142e0"
+      ],
+      "search_status": "ok",
+      "thumbnail_items_found": 0,
+      "matched_items": 0,
+      "identified_outcomes_without_thumbnail": [
+        "2b0da951-9a02-44a9-b559-fd5153cb179f",
+        "4838b264-45ec-482c-aa0f-4d565264dffa",
+        "f2ca8820-0902-451a-9aae-865ea91142e0"
+      ]
+    },
+    {
+      "id": "site-9",
+      "name": "OpenAI Stargate Milam",
+      "label": "Freebird \u00b7 Milam County",
+      "group": "OpenAI",
+      "note": "Campus reference; expanded search rectangle used for discovery.",
+      "center": [
+        -97.0103365,
+        30.996308
+      ],
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -97.027105,
+              30.980915
+            ],
+            [
+              -96.993568,
+              30.980915
+            ],
+            [
+              -96.993568,
+              31.011701000000002
+            ],
+            [
+              -97.027105,
+              31.011701000000002
+            ],
+            [
+              -97.027105,
+              30.980915
+            ]
+          ]
+        ]
+      },
+      "reference": "Epoch AI public map center and map bounds",
+      "source": "https://epoch.ai/data/ai-data-centers/directory/openai-stargate-abilene/satellite-explorer",
+      "expected_outcomes": [
+        "3be5c54d-04bb-4e58-b9d7-c9ffd338d33d",
+        "7ce8a288-d702-4f65-9173-2880deb68252",
+        "fe64bdf2-0679-41e2-b331-623806549480"
+      ],
+      "search_status": "ok",
+      "thumbnail_items_found": 2,
+      "matched_items": 2,
+      "identified_outcomes_without_thumbnail": [
+        "7ce8a288-d702-4f65-9173-2880deb68252"
+      ]
+    },
+    {
+      "id": "site-10",
+      "name": "Anthropic Lake Mariner",
+      "label": "Lake Mariner \u00b7 candidate",
+      "group": "Anthropic",
+      "note": "Physical campus identified; Anthropic building / tenant attribution is provisional.",
+      "center": [
+        -78.60203824717944,
+        43.35642754850562
+      ],
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -78.60962673980009,
+              43.351511003464026
+            ],
+            [
+              -78.59444975455878,
+              43.351511003464026
+            ],
+            [
+              -78.59444975455878,
+              43.36134409354722
+            ],
+            [
+              -78.60962673980009,
+              43.36134409354722
+            ],
+            [
+              -78.60962673980009,
+              43.351511003464026
+            ]
+          ]
+        ]
+      },
+      "reference": "Epoch AI public map center and map bounds",
+      "source": "https://epoch.ai/data/ai-data-centers/directory/openai-stargate-abilene/satellite-explorer",
+      "expected_outcomes": [
+        "2539f005-77ed-4640-b0bf-452273437f27",
+        "650a6075-081a-4100-81c0-bfc1816c6018",
+        "d540ed84-504e-4015-81a2-ec98600b8974"
+      ],
+      "search_status": "ok",
+      "thumbnail_items_found": 0,
+      "matched_items": 0,
+      "identified_outcomes_without_thumbnail": [
+        "2539f005-77ed-4640-b0bf-452273437f27",
+        "650a6075-081a-4100-81c0-bfc1816c6018",
+        "d540ed84-504e-4015-81a2-ec98600b8974"
+      ]
+    },
+    {
+      "id": "site-11",
+      "name": "Colossus 2 facility search",
+      "label": "Colossus 2 \u00b7 Memphis",
+      "group": "SpaceX / xAI",
+      "note": "5420 Tulane Road street-address reference; not a surveyed building centroid.",
+      "center": [
+        -90.042977,
+        34.999489
+      ],
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.044,
+              34.9945
+            ],
+            [
+              -90.032,
+              34.9945
+            ],
+            [
+              -90.032,
+              35.005
+            ],
+            [
+              -90.044,
+              35.005
+            ],
+            [
+              -90.044,
+              34.9945
+            ]
+          ]
+        ]
+      },
+      "reference": "Proposed archive rectangle around independently geocoded street address",
+      "source": "https://epoch.ai/data/ai-data-centers/directory/openai-stargate-abilene/satellite-explorer",
+      "expected_outcomes": [
+        "00365ac1-698e-427d-bbbf-910fb2000edc",
+        "04d809ec-c36a-4f6b-a9b3-eb58297f3d72",
+        "1e1a32e2-33a3-40bc-8c86-c17c03363460",
+        "1ec184d4-9fcf-4e7c-b0b3-73f247fd7942",
+        "257a99d9-1e75-4343-b541-1d2110d39006",
+        "25b8c17a-36b1-4673-8f10-d89541687344",
+        "26d89949-c30c-4d1f-8805-fbd8977b17d1",
+        "29155ece-5422-4b77-83ea-084b041fafb4",
+        "2e17087d-861f-4b94-b4ac-3e772c3985ca",
+        "2e93c5a5-aeb4-4a6a-9787-bab660101a9c",
+        "37a0bc66-d0d7-4c6a-acb8-45e0631d6e55",
+        "4365ac7d-c297-4d9e-a9cc-c04d89ce9a4c",
+        "44c4aa5b-4269-46f8-ba8b-eabcff9840be",
+        "497d270d-33b8-4d75-b7d1-df59a5d6ba0c",
+        "4b16932b-a012-420f-9f68-18f16747b42e",
+        "545e8a0a-23f1-4f1b-ab4a-0d39ed4563d4",
+        "5915a81d-b602-4b16-bb1a-d6403df600e4",
+        "59f0d6d4-a212-4de1-b61e-cf42638b4d83",
+        "5a0ecb66-5fe1-4acc-99c7-f05e00d3cae2",
+        "5da056ca-95cc-4d06-97ea-deaa129edd37",
+        "6a7c23d4-d1b2-4259-a6c8-cfddd93d0f6b",
+        "6e046000-e684-4528-be75-af7339c85d91",
+        "6ee7b9b5-c45e-4e5c-aaef-08c0b060123d",
+        "768bbfc6-66bc-4ec4-a0df-6e74e02a3ca2",
+        "7a58ff9d-56c0-47aa-8e53-df5f600c61a9",
+        "8a9a03fa-a6ff-46a2-855f-3443224c18d4",
+        "9459d28e-a9ee-473b-b4c5-48ef568a5df2",
+        "9780889a-bbfd-492d-ad7d-b5b3b9a29473",
+        "a8e4ac8d-f052-44a3-bd1f-0412c2f44a02",
+        "adb6f17d-9a48-497c-84ea-774d6416e27c",
+        "b6de5cc9-d46f-446f-a935-7b0a90cc9803",
+        "be406e22-5e21-45d0-adc4-43619b5d42c9",
+        "c288391c-5146-46a0-b4f5-306a86e1b529",
+        "c4d569c1-9528-4819-b33f-b983f9daf639",
+        "c5f8f894-a1cf-41a0-a8cb-cafe009ffae1",
+        "c800d532-e040-4c35-adff-6a84b236cbc8",
+        "caa1ae56-ff06-45e3-8c78-bc680e1a71e5",
+        "cafb6ed4-fcae-4aec-946a-ac846267996f",
+        "cfd80518-0079-4d24-a120-2803b8ffda8a",
+        "d1774d90-a72f-488a-89bf-39f854cd9840",
+        "d8598f26-21f1-4663-ab4d-b630fafff4d5",
+        "de29870d-9aef-480c-84c7-7e5b7db6ecd1",
+        "e05e8587-1925-4d88-935d-ee7d28f47ca2",
+        "ea4cfb07-f767-4ca1-8411-5f8b8cd53a39",
+        "ef1b8a30-f6e2-4988-b6ba-29415b4a0c5a",
+        "f4db0107-1c21-4d6a-9cd1-e8d89052f76d",
+        "f61ea479-b8fd-45b5-aca5-79a6d3dd5ef2",
+        "fcb61c20-a8df-42ac-9602-4cfcc72c1ba9"
+      ],
+      "search_status": "ok",
+      "thumbnail_items_found": 9,
+      "matched_items": 9,
+      "identified_outcomes_without_thumbnail": [
+        "1e1a32e2-33a3-40bc-8c86-c17c03363460",
+        "1ec184d4-9fcf-4e7c-b0b3-73f247fd7942",
+        "257a99d9-1e75-4343-b541-1d2110d39006",
+        "25b8c17a-36b1-4673-8f10-d89541687344",
+        "26d89949-c30c-4d1f-8805-fbd8977b17d1",
+        "2e17087d-861f-4b94-b4ac-3e772c3985ca",
+        "37a0bc66-d0d7-4c6a-acb8-45e0631d6e55",
+        "4365ac7d-c297-4d9e-a9cc-c04d89ce9a4c",
+        "44c4aa5b-4269-46f8-ba8b-eabcff9840be",
+        "497d270d-33b8-4d75-b7d1-df59a5d6ba0c",
+        "4b16932b-a012-420f-9f68-18f16747b42e",
+        "545e8a0a-23f1-4f1b-ab4a-0d39ed4563d4",
+        "5915a81d-b602-4b16-bb1a-d6403df600e4",
+        "59f0d6d4-a212-4de1-b61e-cf42638b4d83",
+        "5a0ecb66-5fe1-4acc-99c7-f05e00d3cae2",
+        "5da056ca-95cc-4d06-97ea-deaa129edd37",
+        "6a7c23d4-d1b2-4259-a6c8-cfddd93d0f6b",
+        "6e046000-e684-4528-be75-af7339c85d91",
+        "6ee7b9b5-c45e-4e5c-aaef-08c0b060123d",
+        "768bbfc6-66bc-4ec4-a0df-6e74e02a3ca2",
+        "7a58ff9d-56c0-47aa-8e53-df5f600c61a9",
+        "8a9a03fa-a6ff-46a2-855f-3443224c18d4",
+        "9459d28e-a9ee-473b-b4c5-48ef568a5df2",
+        "9780889a-bbfd-492d-ad7d-b5b3b9a29473",
+        "a8e4ac8d-f052-44a3-bd1f-0412c2f44a02",
+        "adb6f17d-9a48-497c-84ea-774d6416e27c",
+        "be406e22-5e21-45d0-adc4-43619b5d42c9",
+        "c288391c-5146-46a0-b4f5-306a86e1b529",
+        "c4d569c1-9528-4819-b33f-b983f9daf639",
+        "c5f8f894-a1cf-41a0-a8cb-cafe009ffae1",
+        "c800d532-e040-4c35-adff-6a84b236cbc8",
+        "caa1ae56-ff06-45e3-8c78-bc680e1a71e5",
+        "cafb6ed4-fcae-4aec-946a-ac846267996f",
+        "cfd80518-0079-4d24-a120-2803b8ffda8a",
+        "d8598f26-21f1-4663-ab4d-b630fafff4d5",
+        "de29870d-9aef-480c-84c7-7e5b7db6ecd1",
+        "e05e8587-1925-4d88-935d-ee7d28f47ca2",
+        "ea4cfb07-f767-4ca1-8411-5f8b8cd53a39",
+        "f4db0107-1c21-4d6a-9cd1-e8d89052f76d"
+      ]
+    },
+    {
+      "id": "site-12",
+      "name": "Colossus 3 Southaven",
+      "label": "Colossus 3 \u00b7 Southaven",
+      "group": "SpaceX / xAI",
+      "note": "2400 Stateline Road W street-address reference; not the separate power plant.",
+      "center": [
+        -90.034277800904,
+        34.991861641286
+      ],
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.0403,
+              34.9838
+            ],
+            [
+              -90.0243,
+              34.9838
+            ],
+            [
+              -90.0243,
+              34.9938
+            ],
+            [
+              -90.0403,
+              34.9938
+            ],
+            [
+              -90.0403,
+              34.9838
+            ]
+          ]
+        ]
+      },
+      "reference": "Census street-address match; rectangle proposed for archive discovery",
+      "source": "https://southaven.org/Blog.aspx?IID=227",
+      "expected_outcomes": [
+        "00365ac1-698e-427d-bbbf-910fb2000edc",
+        "04d809ec-c36a-4f6b-a9b3-eb58297f3d72",
+        "1e1a32e2-33a3-40bc-8c86-c17c03363460",
+        "1ec184d4-9fcf-4e7c-b0b3-73f247fd7942",
+        "257a99d9-1e75-4343-b541-1d2110d39006",
+        "25b8c17a-36b1-4673-8f10-d89541687344",
+        "26d89949-c30c-4d1f-8805-fbd8977b17d1",
+        "29155ece-5422-4b77-83ea-084b041fafb4",
+        "2e17087d-861f-4b94-b4ac-3e772c3985ca",
+        "2e93c5a5-aeb4-4a6a-9787-bab660101a9c",
+        "2ed9107a-d5b4-4ce8-bda7-c8627ae14ceb",
+        "321b9d57-08da-4c45-8a02-223d6bc09d50",
+        "37a0bc66-d0d7-4c6a-acb8-45e0631d6e55",
+        "3a511472-433f-4b04-83e5-0b75804206b6",
+        "4365ac7d-c297-4d9e-a9cc-c04d89ce9a4c",
+        "44c4aa5b-4269-46f8-ba8b-eabcff9840be",
+        "497d270d-33b8-4d75-b7d1-df59a5d6ba0c",
+        "4b16932b-a012-420f-9f68-18f16747b42e",
+        "545e8a0a-23f1-4f1b-ab4a-0d39ed4563d4",
+        "5915a81d-b602-4b16-bb1a-d6403df600e4",
+        "59f0d6d4-a212-4de1-b61e-cf42638b4d83",
+        "5a0ecb66-5fe1-4acc-99c7-f05e00d3cae2",
+        "60b5af15-86a2-4cba-b911-ea857da22738",
+        "6a7c23d4-d1b2-4259-a6c8-cfddd93d0f6b",
+        "6e046000-e684-4528-be75-af7339c85d91",
+        "6ee7b9b5-c45e-4e5c-aaef-08c0b060123d",
+        "7000be56-4505-45a8-a442-7c61e3b18201",
+        "768bbfc6-66bc-4ec4-a0df-6e74e02a3ca2",
+        "7a58ff9d-56c0-47aa-8e53-df5f600c61a9",
+        "8a9a03fa-a6ff-46a2-855f-3443224c18d4",
+        "9459d28e-a9ee-473b-b4c5-48ef568a5df2",
+        "a8e4ac8d-f052-44a3-bd1f-0412c2f44a02",
+        "adb6f17d-9a48-497c-84ea-774d6416e27c",
+        "adcb19a7-9973-4e8a-827b-da591e23c915",
+        "b6de5cc9-d46f-446f-a935-7b0a90cc9803",
+        "be406e22-5e21-45d0-adc4-43619b5d42c9",
+        "c288391c-5146-46a0-b4f5-306a86e1b529",
+        "c4d569c1-9528-4819-b33f-b983f9daf639",
+        "c5f8f894-a1cf-41a0-a8cb-cafe009ffae1",
+        "c800d532-e040-4c35-adff-6a84b236cbc8",
+        "caa1ae56-ff06-45e3-8c78-bc680e1a71e5",
+        "cafb6ed4-fcae-4aec-946a-ac846267996f",
+        "cfd80518-0079-4d24-a120-2803b8ffda8a",
+        "d1774d90-a72f-488a-89bf-39f854cd9840",
+        "d8598f26-21f1-4663-ab4d-b630fafff4d5",
+        "e05e8587-1925-4d88-935d-ee7d28f47ca2",
+        "ea4cfb07-f767-4ca1-8411-5f8b8cd53a39",
+        "ef1b8a30-f6e2-4988-b6ba-29415b4a0c5a",
+        "f4db0107-1c21-4d6a-9cd1-e8d89052f76d",
+        "f61ea479-b8fd-45b5-aca5-79a6d3dd5ef2",
+        "fcb61c20-a8df-42ac-9602-4cfcc72c1ba9",
+        "ff35c1ce-338f-4996-88ae-1b9f00d6ccae"
+      ],
+      "search_status": "ok",
+      "thumbnail_items_found": 10,
+      "matched_items": 10,
+      "identified_outcomes_without_thumbnail": [
+        "1e1a32e2-33a3-40bc-8c86-c17c03363460",
+        "1ec184d4-9fcf-4e7c-b0b3-73f247fd7942",
+        "257a99d9-1e75-4343-b541-1d2110d39006",
+        "25b8c17a-36b1-4673-8f10-d89541687344",
+        "26d89949-c30c-4d1f-8805-fbd8977b17d1",
+        "2e17087d-861f-4b94-b4ac-3e772c3985ca",
+        "2ed9107a-d5b4-4ce8-bda7-c8627ae14ceb",
+        "321b9d57-08da-4c45-8a02-223d6bc09d50",
+        "37a0bc66-d0d7-4c6a-acb8-45e0631d6e55",
+        "3a511472-433f-4b04-83e5-0b75804206b6",
+        "4365ac7d-c297-4d9e-a9cc-c04d89ce9a4c",
+        "497d270d-33b8-4d75-b7d1-df59a5d6ba0c",
+        "4b16932b-a012-420f-9f68-18f16747b42e",
+        "545e8a0a-23f1-4f1b-ab4a-0d39ed4563d4",
+        "5915a81d-b602-4b16-bb1a-d6403df600e4",
+        "59f0d6d4-a212-4de1-b61e-cf42638b4d83",
+        "5a0ecb66-5fe1-4acc-99c7-f05e00d3cae2",
+        "60b5af15-86a2-4cba-b911-ea857da22738",
+        "6a7c23d4-d1b2-4259-a6c8-cfddd93d0f6b",
+        "6e046000-e684-4528-be75-af7339c85d91",
+        "6ee7b9b5-c45e-4e5c-aaef-08c0b060123d",
+        "7000be56-4505-45a8-a442-7c61e3b18201",
+        "768bbfc6-66bc-4ec4-a0df-6e74e02a3ca2",
+        "7a58ff9d-56c0-47aa-8e53-df5f600c61a9",
+        "8a9a03fa-a6ff-46a2-855f-3443224c18d4",
+        "9459d28e-a9ee-473b-b4c5-48ef568a5df2",
+        "a8e4ac8d-f052-44a3-bd1f-0412c2f44a02",
+        "adb6f17d-9a48-497c-84ea-774d6416e27c",
+        "adcb19a7-9973-4e8a-827b-da591e23c915",
+        "be406e22-5e21-45d0-adc4-43619b5d42c9",
+        "c288391c-5146-46a0-b4f5-306a86e1b529",
+        "c4d569c1-9528-4819-b33f-b983f9daf639",
+        "c5f8f894-a1cf-41a0-a8cb-cafe009ffae1",
+        "c800d532-e040-4c35-adff-6a84b236cbc8",
+        "caa1ae56-ff06-45e3-8c78-bc680e1a71e5",
+        "cafb6ed4-fcae-4aec-946a-ac846267996f",
+        "cfd80518-0079-4d24-a120-2803b8ffda8a",
+        "d8598f26-21f1-4663-ab4d-b630fafff4d5",
+        "e05e8587-1925-4d88-935d-ee7d28f47ca2",
+        "ea4cfb07-f767-4ca1-8411-5f8b8cd53a39",
+        "f4db0107-1c21-4d6a-9cd1-e8d89052f76d",
+        "ff35c1ce-338f-4996-88ae-1b9f00d6ccae"
+      ]
+    },
+    {
+      "id": "site-13",
+      "name": "River Bend provisional neighborhood",
+      "label": "River Bend \u00b7 provisional location",
+      "group": "Anthropic",
+      "note": "PROVISIONAL: pin is a neighboring commercial property, NOT a verified campus center.",
+      "center": [
+        -91.309069280972,
+        30.716339672268
+      ],
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -91.3391,
+              30.6963
+            ],
+            [
+              -91.2891,
+              30.6963
+            ],
+            [
+              -91.2891,
+              30.7413
+            ],
+            [
+              -91.3391,
+              30.7413
+            ],
+            [
+              -91.3391,
+              30.6963
+            ]
+          ]
+        ]
+      },
+      "reference": "Neighboring commercial property's Census address match; NOT campus center",
+      "source": "https://images1.showcase.com/d2/-yYFZDLoXi4PVO5mH6UnYICsGuZMsJqkW7xnbeRZHy8/document.pdf",
+      "expected_outcomes": [
+        "3e2eff5a-d229-4157-8b72-edfc81468916",
+        "7bbd45ce-5213-46b5-a11e-7160eeecf4a4",
+        "7ce8a288-d702-4f65-9173-2880deb68252",
+        "a258a4d7-f4de-425f-a992-712117154372",
+        "aa1a33c7-5ecb-44ba-b1a2-234fb0144648"
+      ],
+      "search_status": "ok",
+      "thumbnail_items_found": 4,
+      "matched_items": 4,
+      "identified_outcomes_without_thumbnail": [
+        "7ce8a288-d702-4f65-9173-2880deb68252"
+      ]
+    }
+  ],
+  "images": [
+    {
+      "id": "20250806_170251_SN50_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_7_2",
+      "outcome_id": "adf41d10-80c3-4a7b-87d2-bb8988342f88",
+      "datetime": "2025-08-06T17:02:51.909509+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.22156384289134,
+              34.93897040649508
+            ],
+            [
+              -90.16050738573897,
+              35.19137905993981
+            ],
+            [
+              -90.0854699954121,
+              35.18346600378229
+            ],
+            [
+              -90.12260386252143,
+              35.02680051224686
+            ],
+            [
+              -90.148278170878,
+              34.93114163443732
+            ],
+            [
+              -90.22156384289134,
+              34.93897040649508
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 10.8935,
+      "gsd": 20.0,
+      "platform": "newsat50",
+      "image": "images/f612c1f8945909901a9e.png",
+      "bounds": [
+        [
+          34.919694491843195,
+          -90.24135768463704
+        ],
+        [
+          35.19340183300151,
+          -90.07857383248951
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 499,
+      "height": 1024,
+      "downloaded_bytes": 265377,
+      "status": "ready"
+    },
+    {
+      "id": "20250809_171055_SN48_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_7_2",
+      "outcome_id": "4181d755-1cb3-4fae-ad63-5157d10c97ab",
+      "datetime": "2025-08-09T17:10:55.888606+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.22728292755265,
+              34.951179450893676
+            ],
+            [
+              -90.1671968142247,
+              35.188471248267405
+            ],
+            [
+              -90.08474052221342,
+              35.17317326831255
+            ],
+            [
+              -90.1164421120535,
+              35.05241269350848
+            ],
+            [
+              -90.14486053371334,
+              34.93502716606224
+            ],
+            [
+              -90.22728292755265,
+              34.951179450893676
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 8.9105,
+      "gsd": 20.0,
+      "platform": "newsat48",
+      "image": "images/f856f71d04bf52c84570.png",
+      "bounds": [
+        [
+          34.91969441423802,
+          -90.24135823444159
+        ],
+        [
+          35.19340175548289,
+          -90.07857438239719
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 499,
+      "height": 1024,
+      "downloaded_bytes": 300390,
+      "status": "ready"
+    },
+    {
+      "id": "20250812_203158_SN41_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_7_2",
+      "outcome_id": "203c07ad-c032-4ef0-85cd-2cfd207e236a",
+      "datetime": "2025-08-12T20:31:58.652633+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.21973897334178,
+              34.979848347089884
+            ],
+            [
+              -90.17319200704004,
+              35.16102721186524
+            ],
+            [
+              -90.09251317214648,
+              35.13351860200936
+            ],
+            [
+              -90.13919759820119,
+              34.95291819248047
+            ],
+            [
+              -90.21973897334178,
+              34.979848347089884
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 5.6894,
+      "gsd": 20.0,
+      "platform": "newsat41",
+      "image": "images/74211ab50fb5f11bdf11.png",
+      "bounds": [
+        [
+          34.937558834071126,
+          -90.24074850959705
+        ],
+        [
+          35.1753854026462,
+          -90.07931646374018
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 569,
+      "height": 1024,
+      "downloaded_bytes": 211703,
+      "status": "ready"
+    },
+    {
+      "id": "20250815_215026_SN31_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_7_2",
+      "outcome_id": "7fabee00-7738-451a-9dcc-c406c43a16f4",
+      "datetime": "2025-08-15T21:50:26.191405+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.22032440408597,
+              34.936779188282166
+            ],
+            [
+              -90.15342330123768,
+              35.193015899953586
+            ],
+            [
+              -90.09725756873836,
+              35.179243238042076
+            ],
+            [
+              -90.16434869836685,
+              34.92214434099172
+            ],
+            [
+              -90.22032440408597,
+              34.936779188282166
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 1.4195,
+      "gsd": 20.0,
+      "platform": "newsat31",
+      "image": "images/c64bdb1180a40fb86303.png",
+      "bounds": [
+        [
+          34.91967891943633,
+          -90.24135777589495
+        ],
+        [
+          35.211415550648326,
+          -90.07810349400869
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 469,
+      "height": 1024,
+      "downloaded_bytes": 205122,
+      "status": "ready"
+    },
+    {
+      "id": "20250819_202733_SN41_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_7_2",
+      "outcome_id": "68c17236-f9a8-4ad3-b8fc-9800386091b7",
+      "datetime": "2025-08-19T20:27:33.483207+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.21698882309279,
+              34.983570821622266
+            ],
+            [
+              -90.17276282762175,
+              35.154527212299705
+            ],
+            [
+              -90.09586386056239,
+              35.13197634717051
+            ],
+            [
+              -90.14067033884346,
+              34.96106488637105
+            ],
+            [
+              -90.21698882309279,
+              34.983570821622266
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 0.4441,
+      "gsd": 20.0,
+      "platform": "newsat41",
+      "image": "images/ce04eb80d0243d19a85a.png",
+      "bounds": [
+        [
+          34.95559446405724,
+          -90.21826786523309
+        ],
+        [
+          35.156868716475934,
+          -90.07993296925288
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 576,
+      "height": 1024,
+      "downloaded_bytes": 186912,
+      "status": "ready"
+    },
+    {
+      "id": "20250822_203724_SN44_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_8_0",
+      "outcome_id": "91945358-b314-4fe7-be1e-d98af677876c",
+      "datetime": "2025-08-22T20:37:24.440069+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.22658447921802,
+              34.945757638190486
+            ],
+            [
+              -90.16235186916191,
+              35.19502985613837
+            ],
+            [
+              -90.08329011401628,
+              35.17674586285601
+            ],
+            [
+              -90.14708579365791,
+              34.927510255772184
+            ],
+            [
+              -90.22658447921802,
+              34.945757638190486
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 9.8551,
+      "gsd": 20.0,
+      "platform": "newsat44",
+      "image": "images/dd8b941c62f9656909fc.png",
+      "bounds": [
+        [
+          34.91968042848531,
+          -90.24135280050439
+        ],
+        [
+          35.21141705882946,
+          -90.07809851608656
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 469,
+      "height": 1024,
+      "downloaded_bytes": 288011,
+      "status": "ready"
+    },
+    {
+      "id": "20250827_170432_SN48_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_8_0",
+      "outcome_id": "ddcb0e0c-0e0c-43a6-9472-cdcd515a0990",
+      "datetime": "2025-08-27T17:04:32.553576+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.22505237270619,
+              34.93941201732118
+            ],
+            [
+              -90.16188091796685,
+              35.18979012975607
+            ],
+            [
+              -90.08582504282626,
+              35.179690259823325
+            ],
+            [
+              -90.14942850612806,
+              34.929547391492754
+            ],
+            [
+              -90.22505237270619,
+              34.93941201732118
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 26.5874,
+      "gsd": 20.0,
+      "platform": "newsat48",
+      "image": "images/78bec8cb39b0bab123ea.png",
+      "bounds": [
+        [
+          34.91969576777499,
+          -90.24135829855001
+        ],
+        [
+          35.19340310898284,
+          -90.07857444382932
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 499,
+      "height": 1024,
+      "downloaded_bytes": 185303,
+      "status": "ready"
+    },
+    {
+      "id": "20250828_171302_SN45_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_8_0",
+      "outcome_id": "7e84caf1-9b2c-485b-9c4a-1c66b541392f",
+      "datetime": "2025-08-28T17:13:02.071055+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.23774372158063,
+              34.920047174214005
+            ],
+            [
+              -90.15986942202524,
+              35.19712996398204
+            ],
+            [
+              -90.15894775826614,
+              35.19837020278965
+            ],
+            [
+              -90.1539009525742,
+              35.198251593747706
+            ],
+            [
+              -90.0777675025906,
+              35.190127573933694
+            ],
+            [
+              -90.15616928337609,
+              34.91185437990804
+            ],
+            [
+              -90.23774372158063,
+              34.920047174214005
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 100.0,
+      "gsd": 20.0,
+      "platform": "newsat45",
+      "image": "images/085c3eabd0c7a77ead3f.png",
+      "bounds": [
+        [
+          34.90115581388872,
+          -90.24196236022105
+        ],
+        [
+          35.21141234092745,
+          -90.0560843858593
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 502,
+      "height": 1024,
+      "downloaded_bytes": 75698,
+      "status": "ready"
+    },
+    {
+      "id": "20250829_164912_SN38_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_8_0",
+      "outcome_id": "a506f0ec-88f3-4bb8-a322-f41205fa7595",
+      "datetime": "2025-08-29T16:49:12.004772+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.21646440954069,
+              35.192682050788086
+            ],
+            [
+              -90.1641166472057,
+              35.20138133938875
+            ],
+            [
+              -90.12137811137089,
+              35.0368691984742
+            ],
+            [
+              -90.09877011846876,
+              34.94475350676367
+            ],
+            [
+              -90.09972126348053,
+              34.94261314006188
+            ],
+            [
+              -90.15122562869911,
+              34.93463885640251
+            ],
+            [
+              -90.21646440954069,
+              35.192682050788086
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 6.1,
+      "gsd": 20.0,
+      "platform": "newsat38",
+      "image": "images/3dfdb6ceefd8e4704117.png",
+      "bounds": [
+        [
+          34.919681353501524,
+          -90.24136174369397
+        ],
+        [
+          35.21141798526936,
+          -90.07810745662799
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 469,
+      "height": 1024,
+      "downloaded_bytes": 161444,
+      "status": "ready"
+    },
+    {
+      "id": "20250902_170726_SN45_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_8_0",
+      "outcome_id": "dc640019-1f02-4e3e-ac48-9fdf33fa413a",
+      "datetime": "2025-09-02T17:07:26.735894+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.23121778017604,
+              34.91863497254198
+            ],
+            [
+              -90.16846791687438,
+              35.170650139382
+            ],
+            [
+              -90.08796519768227,
+              35.162611035451576
+            ],
+            [
+              -90.15117634072995,
+              34.91047380590151
+            ],
+            [
+              -90.23121778017604,
+              34.91863497254198
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 65.2784,
+      "gsd": 20.0,
+      "platform": "newsat45",
+      "image": "images/8c06786c90323b777847.png",
+      "bounds": [
+        [
+          34.90167608618222,
+          -90.24195519844437
+        ],
+        [
+          35.175384141717366,
+          -90.07920682565984
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 499,
+      "height": 1024,
+      "downloaded_bytes": 175094,
+      "status": "ready"
+    },
+    {
+      "id": "20250903_165134_SN38_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_8_0",
+      "outcome_id": "bd57e04a-d3aa-4628-8b3b-45633b0b8f6b",
+      "datetime": "2025-09-03T16:51:34.487037+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.21741830623947,
+              35.19018021951186
+            ],
+            [
+              -90.21735685001438,
+              35.1919813110475
+            ],
+            [
+              -90.21359586879194,
+              35.19279612057101
+            ],
+            [
+              -90.1674295578041,
+              35.200557418412174
+            ],
+            [
+              -90.16484028471356,
+              35.1992348989475
+            ],
+            [
+              -90.1005990050475,
+              34.94227339136434
+            ],
+            [
+              -90.15233435894291,
+              34.933943654656936
+            ],
+            [
+              -90.21741830623947,
+              35.19018021951186
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 8.1382,
+      "gsd": 20.0,
+      "platform": "newsat38",
+      "image": "images/966f938265b3e681e35b.png",
+      "bounds": [
+        [
+          34.919680948955495,
+          -90.24135190754396
+        ],
+        [
+          35.21141757913452,
+          -90.07809762217774
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 469,
+      "height": 1024,
+      "downloaded_bytes": 220595,
+      "status": "ready"
+    },
+    {
+      "id": "20250906_170610_SN26_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_8_0",
+      "outcome_id": "d1579902-d24d-436f-b371-89d468fa692d",
+      "datetime": "2025-09-06T17:06:10.414662+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.23206103282341,
+              34.91973730874782
+            ],
+            [
+              -90.21757410911826,
+              34.97276798571072
+            ],
+            [
+              -90.21010066551528,
+              34.992987318784685
+            ],
+            [
+              -90.17842215719497,
+              35.13050353928452
+            ],
+            [
+              -90.16654221764914,
+              35.16934457467326
+            ],
+            [
+              -90.09563990148055,
+              35.16297712984044
+            ],
+            [
+              -90.1272455881347,
+              35.02564573915783
+            ],
+            [
+              -90.14071769803984,
+              34.98484251017032
+            ],
+            [
+              -90.14644085242148,
+              34.958857559123516
+            ],
+            [
+              -90.15097065559871,
+              34.94812780786559
+            ],
+            [
+              -90.15766028232402,
+              34.9129708139556
+            ],
+            [
+              -90.23206103282341,
+              34.91973730874782
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 100.0,
+      "gsd": 20.0,
+      "platform": "newsat26",
+      "image": "images/4a66d88d2895d979c264.png",
+      "bounds": [
+        [
+          34.90167763691467,
+          -90.24195996090637
+        ],
+        [
+          35.17538569312299,
+          -90.07921158463216
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 499,
+      "height": 1024,
+      "downloaded_bytes": 79155,
+      "status": "ready"
+    },
+    {
+      "id": "20250907_163340_SN37_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_8_0",
+      "outcome_id": "53baf62e-caab-4958-8d0d-96a22f833239",
+      "datetime": "2025-09-07T16:33:40.833098+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.22025128703957,
+              35.19096701732837
+            ],
+            [
+              -90.16393621977414,
+              35.20011586394408
+            ],
+            [
+              -90.10188153234999,
+              34.94951564995339
+            ],
+            [
+              -90.1584586404006,
+              34.940577769014524
+            ],
+            [
+              -90.22025128703957,
+              35.19096701732837
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 0.18,
+      "gsd": 20.0,
+      "platform": "newsat37",
+      "image": "images/f1dbf7ebd27d3f198b4e.png",
+      "bounds": [
+        [
+          34.93771187956493,
+          -90.24075332073504
+        ],
+        [
+          35.21141850523891,
+          -90.07793396015222
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 499,
+      "height": 1024,
+      "downloaded_bytes": 227438,
+      "status": "ready"
+    },
+    {
+      "id": "20250911_171504_SN45_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_8_0",
+      "outcome_id": "b7495336-32e4-473a-bff0-b0fedfc0a299",
+      "datetime": "2025-09-11T17:15:04.069449+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.22750759859606,
+              34.93784237432371
+            ],
+            [
+              -90.16560490896033,
+              35.183564827322684
+            ],
+            [
+              -90.08821882890422,
+              35.173976167252285
+            ],
+            [
+              -90.1505600224915,
+              34.928308853839475
+            ],
+            [
+              -90.22750759859606,
+              34.93784237432371
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 35.6142,
+      "gsd": 20.0,
+      "platform": "newsat45",
+      "image": "images/2c7bf49d5734d92f1e74.png",
+      "bounds": [
+        [
+          34.91969239314624,
+          -90.24135261119595
+        ],
+        [
+          35.19339973360308,
+          -90.07856876365022
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 499,
+      "height": 1024,
+      "downloaded_bytes": 268247,
+      "status": "ready"
+    },
+    {
+      "id": "20250912_203347_SN41_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_8_0",
+      "outcome_id": "c3a233dc-2632-4b3d-9a89-5356a522b201",
+      "datetime": "2025-09-12T20:33:47.789392+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.21704555829764,
+              34.98844434810046
+            ],
+            [
+              -90.17254709133567,
+              35.160836446973825
+            ],
+            [
+              -90.0938035609037,
+              35.134455418007434
+            ],
+            [
+              -90.1384473403876,
+              34.96209889860747
+            ],
+            [
+              -90.21704555829764,
+              34.98844434810046
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 0.9744,
+      "gsd": 20.0,
+      "platform": "newsat41",
+      "image": "images/0135c5954faafe65dfae.png",
+      "bounds": [
+        [
+          34.95558178530874,
+          -90.21827043886847
+        ],
+        [
+          35.174886519583936,
+          -90.07924302225976
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 531,
+      "height": 1024,
+      "downloaded_bytes": 185890,
+      "status": "ready"
+    },
+    {
+      "id": "20250916_165430_SN38_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_8_0",
+      "outcome_id": "4fa19ad5-8a5d-41cc-8b04-985a99822c45",
+      "datetime": "2025-09-16T16:54:30.544255+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.21660622346599,
+              35.18853345512966
+            ],
+            [
+              -90.21631310595092,
+              35.19068981636751
+            ],
+            [
+              -90.16265619350176,
+              35.1991781136679
+            ],
+            [
+              -90.10229251725673,
+              34.95042041861466
+            ],
+            [
+              -90.15557663004633,
+              34.941765845010764
+            ],
+            [
+              -90.21660622346599,
+              35.18853345512966
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 0.216,
+      "gsd": 20.0,
+      "platform": "newsat38",
+      "image": "images/690998a4632575e531be.png",
+      "bounds": [
+        [
+          34.93770559939429,
+          -90.24075856665071
+        ],
+        [
+          35.21141222608578,
+          -90.07793921799262
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 499,
+      "height": 1024,
+      "downloaded_bytes": 213339,
+      "status": "ready"
+    },
+    {
+      "id": "20250920_163130_SN37_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_8_0",
+      "outcome_id": "2946c4c5-79f4-4965-b252-12b62e2129dc",
+      "datetime": "2025-09-20T16:31:30.321482+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.22289756354338,
+              35.1906669620673
+            ],
+            [
+              -90.15752348388101,
+              35.19509793732945
+            ],
+            [
+              -90.0965314595182,
+              34.939833188592736
+            ],
+            [
+              -90.16170208894697,
+              34.9354254948467
+            ],
+            [
+              -90.22289756354338,
+              35.1906669620673
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 10.2393,
+      "gsd": 20.0,
+      "platform": "newsat37",
+      "image": "images/b55456efd2466295769d.png",
+      "bounds": [
+        [
+          34.91968162401719,
+          -90.24135779475421
+        ],
+        [
+          35.21141825513095,
+          -90.07810350751387
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 469,
+      "height": 1024,
+      "downloaded_bytes": 178891,
+      "status": "ready"
+    },
+    {
+      "id": "20250923_170303_SN26_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_8_0",
+      "outcome_id": "9a85941c-511d-40e1-84cf-0933de5c0437",
+      "datetime": "2025-09-23T17:03:03.606261+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.22934051760008,
+              34.92255971019324
+            ],
+            [
+              -90.20400440056318,
+              35.02401462276093
+            ],
+            [
+              -90.19434453408434,
+              35.05662112358338
+            ],
+            [
+              -90.16748304153842,
+              35.1675639038361
+            ],
+            [
+              -90.09286656980684,
+              35.160747374500254
+            ],
+            [
+              -90.11572336308238,
+              35.066653886174485
+            ],
+            [
+              -90.11705528741406,
+              35.06612491743177
+            ],
+            [
+              -90.11775475117338,
+              35.05877038687815
+            ],
+            [
+              -90.12111100799534,
+              35.05053791636326
+            ],
+            [
+              -90.15558739304407,
+              34.91598693658957
+            ],
+            [
+              -90.22934051760008,
+              34.92255971019324
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 27.1343,
+      "gsd": 20.0,
+      "platform": "newsat26",
+      "image": "images/bed2dfcb722aa3ffda05.png",
+      "bounds": [
+        [
+          34.90167765684442,
+          -90.24196083557639
+        ],
+        [
+          35.17538571318553,
+          -90.07921245918341
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 499,
+      "height": 1024,
+      "downloaded_bytes": 199223,
+      "status": "ready"
+    },
+    {
+      "id": "20250924_165736_SN38_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_8_0",
+      "outcome_id": "2a6d9dfc-c46b-45ad-90ee-59a0258529e5",
+      "datetime": "2025-09-24T16:57:36.640655+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.21982084151232,
+              35.190591055433586
+            ],
+            [
+              -90.21953393934453,
+              35.192567297272774
+            ],
+            [
+              -90.1623586576685,
+              35.2011548659705
+            ],
+            [
+              -90.09765499736675,
+              34.94508248808234
+            ],
+            [
+              -90.15466058060748,
+              34.9363368302033
+            ],
+            [
+              -90.21982084151232,
+              35.190591055433586
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 99.8728,
+      "gsd": 20.0,
+      "platform": "newsat38",
+      "image": "images/7ce573a3a3e518ccd14c.png",
+      "bounds": [
+        [
+          34.91967610763881,
+          -90.24135305465951
+        ],
+        [
+          35.21141273818625,
+          -90.07809877876937
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 469,
+      "height": 1024,
+      "downloaded_bytes": 109252,
+      "status": "ready"
+    },
+    {
+      "id": "20250925_164011_SN37_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_8_0",
+      "outcome_id": "77690304-c36e-40e1-bd49-54ce44242f15",
+      "datetime": "2025-09-25T16:40:11.536142+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.2215531698747,
+              35.19802109778099
+            ],
+            [
+              -90.16743413429775,
+              35.20704159904429
+            ],
+            [
+              -90.1026635674545,
+              34.94610278135231
+            ],
+            [
+              -90.15638222289768,
+              34.93745809263281
+            ],
+            [
+              -90.2215531698747,
+              35.19802109778099
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 88.7382,
+      "gsd": 20.0,
+      "platform": "newsat37",
+      "image": "images/b69c0f2e042f7b2284b6.png",
+      "bounds": [
+        [
+          34.91967559403507,
+          -90.24136215547193
+        ],
+        [
+          35.21141222608578,
+          -90.07810787976626
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 469,
+      "height": 1024,
+      "downloaded_bytes": 166578,
+      "status": "ready"
+    },
+    {
+      "id": "20250926_204544_SN44_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_8_0",
+      "outcome_id": "6396101a-ceae-40d4-bea9-f24548747664",
+      "datetime": "2025-09-26T20:45:44.388964+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.22761202700386,
+              34.941271053114534
+            ],
+            [
+              -90.16368784039939,
+              35.18820797538898
+            ],
+            [
+              -90.08178118936864,
+              35.17598536897432
+            ],
+            [
+              -90.14594306928208,
+              34.92892251982574
+            ],
+            [
+              -90.22761202700386,
+              34.941271053114534
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 1.0115,
+      "gsd": 20.0,
+      "platform": "newsat44",
+      "image": "images/d2f4ac5a160dcf3bd138.png",
+      "bounds": [
+        [
+          34.9196934964175,
+          -90.24135355921483
+        ],
+        [
+          35.193400836980814,
+          -90.07856970940622
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 499,
+      "height": 1024,
+      "downloaded_bytes": 275029,
+      "status": "ready"
+    },
+    {
+      "id": "20250930_160331_SN33_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_8_0",
+      "outcome_id": "cda6e009-2568-4757-a9a6-b55a64f1d44e",
+      "datetime": "2025-09-30T16:03:31.913841+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.22193513427113,
+              34.94078666370538
+            ],
+            [
+              -90.15749918372674,
+              35.189330532384886
+            ],
+            [
+              -90.0936767149121,
+              35.17483544399776
+            ],
+            [
+              -90.15853277167099,
+              34.925618361168304
+            ],
+            [
+              -90.22193513427113,
+              34.94078666370538
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 0.3633,
+      "gsd": 20.0,
+      "platform": "newsat33",
+      "image": "images/07d097ef611b5e6fb775.png",
+      "bounds": [
+        [
+          34.91969941608265,
+          -90.24135226654228
+        ],
+        [
+          35.19340675624397,
+          -90.07856840517192
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 499,
+      "height": 1024,
+      "downloaded_bytes": 228377,
+      "status": "ready"
+    },
+    {
+      "id": "20251003_163058_SN37_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_8_0",
+      "outcome_id": "ae64ca84-bfef-452a-a12b-f7dcefcd68fe",
+      "datetime": "2025-10-03T16:30:58.507428+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.22308488934985,
+              35.19156955363449
+            ],
+            [
+              -90.1603556187807,
+              35.20201149616755
+            ],
+            [
+              -90.09366999547296,
+              34.946431637549395
+            ],
+            [
+              -90.15685123240286,
+              34.936390560011475
+            ],
+            [
+              -90.20695233403505,
+              35.12395718585109
+            ],
+            [
+              -90.22308488934985,
+              35.19156955363449
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 0.1694,
+      "gsd": 20.0,
+      "platform": "newsat37",
+      "image": "images/70500e0e3c75fb4299e6.png",
+      "bounds": [
+        [
+          34.919678526743674,
+          -90.24135636631274
+        ],
+        [
+          35.211415157740525,
+          -90.07810208533247
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 469,
+      "height": 1024,
+      "downloaded_bytes": 258142,
+      "status": "ready"
+    },
+    {
+      "id": "20251007_203046_SN40_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_8_0",
+      "outcome_id": "4129a1d4-44c0-418d-b7e4-c1fec7eae4f1",
+      "datetime": "2025-10-07T20:30:46.682646+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.20921486256303,
+              34.98664045346416
+            ],
+            [
+              -90.1681530119357,
+              35.148113340852994
+            ],
+            [
+              -90.10397246559918,
+              35.13217378529399
+            ],
+            [
+              -90.14494277009827,
+              34.97036255736499
+            ],
+            [
+              -90.20921486256303,
+              34.98664045346416
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 17.1179,
+      "gsd": 20.0,
+      "platform": "newsat40",
+      "image": "images/b528d629af2cb9d775fc.png",
+      "bounds": [
+        [
+          34.95608643294662,
+          -90.21826447350365
+        ],
+        [
+          35.15687188303622,
+          -90.10189232796645
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 486,
+      "height": 1024,
+      "downloaded_bytes": 155406,
+      "status": "ready"
+    },
+    {
+      "id": "20251008_163344_SN37_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_8_0",
+      "outcome_id": "b13a9c10-ab54-46c2-a5f0-6526f2aa4048",
+      "datetime": "2025-10-08T16:33:44.611227+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.22033572334118,
+              35.1819495525283
+            ],
+            [
+              -90.21937223356792,
+              35.18445101019401
+            ],
+            [
+              -90.15817180010303,
+              35.18897822253775
+            ],
+            [
+              -90.09528510683644,
+              34.937814624624224
+            ],
+            [
+              -90.15739190154437,
+              34.93333586280821
+            ],
+            [
+              -90.22033572334118,
+              35.1819495525283
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 10.3728,
+      "gsd": 20.0,
+      "platform": "newsat37",
+      "image": "images/46d707fab89dc73c2127.png",
+      "bounds": [
+        [
+          34.91969188015036,
+          -90.24135383222908
+        ],
+        [
+          35.19339922081122,
+          -90.07856998558447
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 499,
+      "height": 1024,
+      "downloaded_bytes": 234809,
+      "status": "ready"
+    },
+    {
+      "id": "20251011_171056_SN50_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_8_0",
+      "outcome_id": "189003bd-3995-4215-9fe8-643491d6891d",
+      "datetime": "2025-10-11T17:10:56.335534+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.2267154741172,
+              34.94197254062822
+            ],
+            [
+              -90.16600992940505,
+              35.18465784811405
+            ],
+            [
+              -90.08628698790044,
+              35.17285006928652
+            ],
+            [
+              -90.14722070938915,
+              34.930035149849964
+            ],
+            [
+              -90.2267154741172,
+              34.94197254062822
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 1.3354,
+      "gsd": 20.0,
+      "platform": "newsat50",
+      "image": "images/626300b122464c5a72a4.png",
+      "bounds": [
+        [
+          34.9196944619286,
+          -90.24135637234598
+        ],
+        [
+          35.19340180288773,
+          -90.07857252037674
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 499,
+      "height": 1024,
+      "downloaded_bytes": 261923,
+      "status": "ready"
+    },
+    {
+      "id": "20251015_165523_SN38_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_8_0",
+      "outcome_id": "42dffb8f-7c37-4b2c-85fb-681727c782c9",
+      "datetime": "2025-10-15T16:55:23.959926+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.21739822635372,
+              35.19107441681729
+            ],
+            [
+              -90.16285718739041,
+              35.199722789407296
+            ],
+            [
+              -90.12603300950191,
+              35.06040806744301
+            ],
+            [
+              -90.09884358572914,
+              34.948894958623946
+            ],
+            [
+              -90.15343311346331,
+              34.9404527219913
+            ],
+            [
+              -90.21739822635372,
+              35.19107441681729
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 0.2293,
+      "gsd": 20.0,
+      "platform": "newsat38",
+      "image": "images/c4e5596b119c121600f0.png",
+      "bounds": [
+        [
+          34.937704706185,
+          -90.24075892498786
+        ],
+        [
+          35.211411332962044,
+          -90.07793957806102
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 499,
+      "height": 1024,
+      "downloaded_bytes": 229818,
+      "status": "ready"
+    },
+    {
+      "id": "20251018_171036_SN50_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_8_0",
+      "outcome_id": "90f9597e-666e-4517-994c-9b4f31498035",
+      "datetime": "2025-10-18T17:10:36.005501+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.22666696540145,
+              34.9434137546906
+            ],
+            [
+              -90.17826610188993,
+              35.12871987689006
+            ],
+            [
+              -90.16532043270983,
+              35.185543042627486
+            ],
+            [
+              -90.08511938084287,
+              35.174804861780245
+            ],
+            [
+              -90.11581002429106,
+              35.05169652359869
+            ],
+            [
+              -90.1477895039447,
+              34.93257234153232
+            ],
+            [
+              -90.22666696540145,
+              34.9434137546906
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 4.6357,
+      "gsd": 20.0,
+      "platform": "newsat50",
+      "image": "images/ef471ac6ef0a8ba30f6b.png",
+      "bounds": [
+        [
+          34.9196944619286,
+          -90.24135637234598
+        ],
+        [
+          35.19340180288773,
+          -90.07857252037674
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 499,
+      "height": 1024,
+      "downloaded_bytes": 286812,
+      "status": "ready"
+    },
+    {
+      "id": "20251022_171930_SN45_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_8_0",
+      "outcome_id": "48fffce5-50f4-471f-be9b-725b39edd9d7",
+      "datetime": "2025-10-22T17:19:30.818843+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.22998734023213,
+              34.942229429650425
+            ],
+            [
+              -90.22930723930126,
+              34.9494248568398
+            ],
+            [
+              -90.17069422138518,
+              35.176116344472334
+            ],
+            [
+              -90.08248359666429,
+              35.17474315689878
+            ],
+            [
+              -90.14202400104536,
+              34.94091137777653
+            ],
+            [
+              -90.22998734023213,
+              34.942229429650425
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 0.543,
+      "gsd": 20.0,
+      "platform": "newsat45",
+      "image": "images/0bc71b189d6693ea938a.png",
+      "bounds": [
+        [
+          34.93754644219942,
+          -90.24074922160669
+        ],
+        [
+          35.19340352390481,
+          -90.07862235882298
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 531,
+      "height": 1024,
+      "downloaded_bytes": 281069,
+      "status": "ready"
+    },
+    {
+      "id": "20251026_163322_SN37_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_8_0",
+      "outcome_id": "8f27a0fb-96aa-449d-bf11-edd134c719c9",
+      "datetime": "2025-10-26T16:33:22.150830+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.22246084294882,
+              35.19047180026823
+            ],
+            [
+              -90.15928116732366,
+              35.19495407933117
+            ],
+            [
+              -90.0956970353996,
+              34.938546466851164
+            ],
+            [
+              -90.15845441891578,
+              34.93426300838238
+            ],
+            [
+              -90.20078484661671,
+              35.09893543751446
+            ],
+            [
+              -90.22246084294882,
+              35.19047180026823
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 99.9826,
+      "gsd": 20.0,
+      "platform": "newsat37",
+      "image": "images/8adc7c92730254b76edb.png",
+      "bounds": [
+        [
+          34.91967666551018,
+          -90.24135380206293
+        ],
+        [
+          35.211413296158604,
+          -90.07809952500043
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 469,
+      "height": 1024,
+      "downloaded_bytes": 124381,
+      "status": "ready"
+    },
+    {
+      "id": "20251027_171100_SN48_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_8_0",
+      "outcome_id": "75cbd642-5c43-4e9c-8e5d-bbf0f41cede0",
+      "datetime": "2025-10-27T17:11:00.412590+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.22487769545924,
+              34.937963041932136
+            ],
+            [
+              -90.19121630101651,
+              35.07095213987668
+            ],
+            [
+              -90.17119344130099,
+              35.14279476544085
+            ],
+            [
+              -90.1614250407571,
+              35.190137269511226
+            ],
+            [
+              -90.08945351781222,
+              35.182478848479285
+            ],
+            [
+              -90.09878362540107,
+              35.13619449955107
+            ],
+            [
+              -90.11502296233127,
+              35.08013893528864
+            ],
+            [
+              -90.15267359164294,
+              34.93052220719472
+            ],
+            [
+              -90.22487769545924,
+              34.937963041932136
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 100.0,
+      "gsd": 20.0,
+      "platform": "newsat48",
+      "image": "images/588238720426100d4832.png",
+      "bounds": [
+        [
+          34.91969296098564,
+          -90.2413537960297
+        ],
+        [
+          35.193400301603596,
+          -90.07856994725594
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 499,
+      "height": 1024,
+      "downloaded_bytes": 64420,
+      "status": "ready"
+    },
+    {
+      "id": "20251028_221306_SN31_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_8_0",
+      "outcome_id": "bcded368-de84-4ec4-8ba1-9b5008af763f",
+      "datetime": "2025-10-28T22:13:06.242011+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.2160412139473,
+              34.93379756902368
+            ],
+            [
+              -90.15143805879259,
+              35.180531601901
+            ],
+            [
+              -90.10144368718298,
+              35.17249438684931
+            ],
+            [
+              -90.16641841765718,
+              34.92543850445699
+            ],
+            [
+              -90.2160412139473,
+              34.93379756902368
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 100.0,
+      "gsd": 20.0,
+      "platform": "newsat31",
+      "image": "images/4d248d6cd7e4db04b0c9.png",
+      "bounds": [
+        [
+          34.9201817054091,
+          -90.2194808096855
+        ],
+        [
+          35.19289926367584,
+          -90.10065311228671
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 365,
+      "height": 1024,
+      "downloaded_bytes": 90522,
+      "status": "ready"
+    },
+    {
+      "id": "20251029_203619_SN40_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_8_0",
+      "outcome_id": "2743f5fa-9a24-436b-8e47-c91e2cf8e7a5",
+      "datetime": "2025-10-29T20:36:19.177366+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.20796934613878,
+              34.99111444192036
+            ],
+            [
+              -90.1853461297825,
+              35.08865999547292
+            ],
+            [
+              -90.17014021343002,
+              35.141485586422476
+            ],
+            [
+              -90.10594526348355,
+              35.12608764935604
+            ],
+            [
+              -90.13103704036385,
+              35.03616994324276
+            ],
+            [
+              -90.145407246826,
+              34.97595774990268
+            ],
+            [
+              -90.20796934613878,
+              34.99111444192036
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 99.8531,
+      "gsd": 20.0,
+      "platform": "newsat40",
+      "image": "images/fc823b91f91d657f0ada.png",
+      "bounds": [
+        [
+          34.97411264928537,
+          -90.21765692568933
+        ],
+        [
+          35.156867690397355,
+          -90.10194638465967
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 526,
+      "height": 1015,
+      "downloaded_bytes": 45889,
+      "status": "ready"
+    },
+    {
+      "id": "20251030_205149_SN44_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_8_0",
+      "outcome_id": "56363745-00e7-4fb5-8668-6bb032203e8a",
+      "datetime": "2025-10-30T20:51:49.185901+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.22702489975053,
+              34.945948698613385
+            ],
+            [
+              -90.16436700206651,
+              35.19417647597788
+            ],
+            [
+              -90.08142798178886,
+              35.17381746498091
+            ],
+            [
+              -90.14453268345848,
+              34.925648281412265
+            ],
+            [
+              -90.22702489975053,
+              34.945948698613385
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 11.0226,
+      "gsd": 20.0,
+      "platform": "newsat44",
+      "image": "images/76994e49b239c660690c.png",
+      "bounds": [
+        [
+          34.919681353501524,
+          -90.24136174369397
+        ],
+        [
+          35.21141798526936,
+          -90.07810745662799
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 469,
+      "height": 1024,
+      "downloaded_bytes": 302758,
+      "status": "ready"
+    },
+    {
+      "id": "20251104_170136_SN38_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_8_0",
+      "outcome_id": "bb4691dc-1768-4085-aab8-780f29c4e670",
+      "datetime": "2025-11-04T17:01:36.198056+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.22209264284137,
+              35.18866478019636
+            ],
+            [
+              -90.16204268307813,
+              35.197907315925065
+            ],
+            [
+              -90.10035631094813,
+              34.94947823188681
+            ],
+            [
+              -90.16001466768124,
+              34.94007243033165
+            ],
+            [
+              -90.22209264284137,
+              35.18866478019636
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 0.2535,
+      "gsd": 20.0,
+      "platform": "newsat38",
+      "image": "images/5c0a45e1c52e48efc38b.png",
+      "bounds": [
+        [
+          34.93771102849734,
+          -90.24075947930815
+        ],
+        [
+          35.21141765514021,
+          -90.07794011984616
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 499,
+      "height": 1024,
+      "downloaded_bytes": 239002,
+      "status": "ready"
+    },
+    {
+      "id": "20251108_170040_SN50_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_8_0",
+      "outcome_id": "5541a475-fb54-4727-b3e9-f18ae67785dd",
+      "datetime": "2025-11-08T17:00:40.939074+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.23510659190157,
+              34.92683952934376
+            ],
+            [
+              -90.17020966855254,
+              35.17123504577241
+            ],
+            [
+              -90.08358428891286,
+              35.162508987923424
+            ],
+            [
+              -90.1483023299603,
+              34.91780105755291
+            ],
+            [
+              -90.23510659190157,
+              34.92683952934376
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 0.4047,
+      "gsd": 20.0,
+      "platform": "newsat50",
+      "image": "images/0e8928af14a2c2e0ec94.png",
+      "bounds": [
+        [
+          34.90167963838268,
+          -90.24196076926984
+        ],
+        [
+          35.17538769464514,
+          -90.07921238897687
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 499,
+      "height": 1024,
+      "downloaded_bytes": 280415,
+      "status": "ready"
+    },
+    {
+      "id": "20251112_171837_SN48_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_8_0",
+      "outcome_id": "31bfb1f3-9296-4b51-ad63-79dec70897f4",
+      "datetime": "2025-11-12T17:18:37.490380+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.23145745127712,
+              34.93757574846068
+            ],
+            [
+              -90.16828217396373,
+              35.18867875283557
+            ],
+            [
+              -90.08318073023882,
+              35.179807363449115
+            ],
+            [
+              -90.14614229840193,
+              34.92947078684981
+            ],
+            [
+              -90.23145745127712,
+              34.93757574846068
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 0.229,
+      "gsd": 20.0,
+      "platform": "newsat48",
+      "image": "images/47a0a4d1253551d9d603.png",
+      "bounds": [
+        [
+          34.91969618354837,
+          -90.24135281257084
+        ],
+        [
+          35.19340352390481,
+          -90.07856895752852
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 499,
+      "height": 1024,
+      "downloaded_bytes": 293609,
+      "status": "ready"
+    },
+    {
+      "id": "20251118_163430_SN37_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_9_0",
+      "outcome_id": "3b2eb625-0bb9-46c2-922d-589aaa20bc2e",
+      "datetime": "2025-11-18T16:34:30.721774+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.21834952266092,
+              35.18244993332932
+            ],
+            [
+              -90.15712553771318,
+              35.18769717880945
+            ],
+            [
+              -90.1267474315756,
+              35.071247829620724
+            ],
+            [
+              -90.09569123773798,
+              34.93891137268471
+            ],
+            [
+              -90.15845504586652,
+              34.93444780378735
+            ],
+            [
+              -90.18666926902867,
+              35.05677003653258
+            ],
+            [
+              -90.21834952266092,
+              35.18244993332932
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 97.5304,
+      "gsd": 20.0,
+      "platform": "newsat37",
+      "image": "images/2e054ce121679da72350.png",
+      "bounds": [
+        [
+          34.919697443871314,
+          -90.24136065011807
+        ],
+        [
+          35.193404785379975,
+          -90.07857679187677
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 499,
+      "height": 1024,
+      "downloaded_bytes": 175911,
+      "status": "ready"
+    },
+    {
+      "id": "20251119_164736_SN38_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_9_0",
+      "outcome_id": "49511491-9ab0-436c-940b-245bb8eee6a8",
+      "datetime": "2025-11-19T16:47:36.630662+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.22220325869266,
+              35.19155157258556
+            ],
+            [
+              -90.15872170407243,
+              35.19837003238305
+            ],
+            [
+              -90.09523303943031,
+              34.939260492356276
+            ],
+            [
+              -90.15852145908175,
+              34.93228562071947
+            ],
+            [
+              -90.22220325869266,
+              35.19155157258556
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 100.0,
+      "gsd": 20.0,
+      "platform": "newsat38",
+      "image": "images/350e25806072c1a6befb.png",
+      "bounds": [
+        [
+          34.9196806912138,
+          -90.24135246338177
+        ],
+        [
+          35.21141732149315,
+          -90.07809817847479
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 469,
+      "height": 1024,
+      "downloaded_bytes": 115318,
+      "status": "ready"
+    },
+    {
+      "id": "20251121_170311_SN38_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_9_0",
+      "outcome_id": "b905f7c4-5415-412b-8fe9-a85cca3f3978",
+      "datetime": "2025-11-21T17:03:11.617621+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.22036080757613,
+              35.19420927891578
+            ],
+            [
+              -90.16206217213463,
+              35.20349193765465
+            ],
+            [
+              -90.12180732676327,
+              35.04949380434779
+            ],
+            [
+              -90.09677177006145,
+              34.94542244650521
+            ],
+            [
+              -90.15577116222,
+              34.93600284939734
+            ],
+            [
+              -90.22036080757613,
+              35.19420927891578
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 100.0,
+      "gsd": 20.0,
+      "platform": "newsat38",
+      "image": "images/2450cee1f5dc479fcb69.png",
+      "bounds": [
+        [
+          34.919676750286136,
+          -90.24135752022083
+        ],
+        [
+          35.21141338153769,
+          -90.07810324265066
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 469,
+      "height": 1024,
+      "downloaded_bytes": 100316,
+      "status": "ready"
+    },
+    {
+      "id": "20251122_171002_SN49_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_9_0",
+      "outcome_id": "ef1b8a30-f6e2-4988-b6ba-29415b4a0c5a",
+      "datetime": "2025-11-22T17:10:02.383355+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.04293980073622,
+              35.39910573444712
+            ],
+            [
+              -90.04266726807728,
+              35.400540964762726
+            ],
+            [
+              -89.97119496957326,
+              35.40435638956098
+            ],
+            [
+              -89.97285003785257,
+              35.1711841190824
+            ],
+            [
+              -89.97119924413921,
+              35.00832840397922
+            ],
+            [
+              -89.97232694538178,
+              34.90038130386901
+            ],
+            [
+              -90.04648511315403,
+              34.8948164607738
+            ],
+            [
+              -90.04459002476905,
+              35.00848164630639
+            ],
+            [
+              -90.04584034552238,
+              35.13185271613898
+            ],
+            [
+              -90.04293980073622,
+              35.39910573444712
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-11",
+        "site-12"
+      ],
+      "cloud": 91.3596,
+      "gsd": 20.0,
+      "platform": "newsat49",
+      "image": "images/2dcf6a6bf4ad664e7531.png",
+      "bounds": [
+        [
+          34.880374755141574,
+          -90.06768549337399
+        ],
+        [
+          35.42338938122213,
+          -89.93811899809299
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 200,
+      "height": 1024,
+      "downloaded_bytes": 157608,
+      "status": "ready"
+    },
+    {
+      "id": "20251123_203755_SN41_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_9_0",
+      "outcome_id": "07bcc051-8da5-47d1-8afd-12db4df48284",
+      "datetime": "2025-11-23T20:37:55.527759+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.20523684018313,
+              35.39774768676688
+            ],
+            [
+              -90.20488621254907,
+              35.40152494257264
+            ],
+            [
+              -90.20136916061874,
+              35.40144354942831
+            ],
+            [
+              -90.1275867702272,
+              35.39592462323859
+            ],
+            [
+              -90.13388553486945,
+              35.123911228256624
+            ],
+            [
+              -90.13344779516746,
+              34.89798430342486
+            ],
+            [
+              -90.20916232128546,
+              34.90425466653739
+            ],
+            [
+              -90.2097717443296,
+              35.15052365598771
+            ],
+            [
+              -90.20523684018313,
+              35.39774768676688
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 0.0,
+      "gsd": 20.0,
+      "platform": "newsat41",
+      "image": "images/ef003441e941d9238d8d.png",
+      "bounds": [
+        [
+          34.8846889033239,
+          -90.2425583948841
+        ],
+        [
+          35.40955727862538,
+          -90.1149703509787
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 204,
+      "height": 1024,
+      "downloaded_bytes": 470557,
+      "status": "ready"
+    },
+    {
+      "id": "20251123_205553_SN44_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_9_0",
+      "outcome_id": "c6d7d1aa-9174-4db6-9bfb-b7ff88c0839c",
+      "datetime": "2025-11-23T20:55:53.357062+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.16496703888723,
+              35.416090416122586
+            ],
+            [
+              -90.08235877033235,
+              35.41087887023365
+            ],
+            [
+              -90.08347020225717,
+              35.110265201999184
+            ],
+            [
+              -90.08224954605282,
+              34.88558426107508
+            ],
+            [
+              -90.16541671928518,
+              34.890978750473494
+            ],
+            [
+              -90.16496703888723,
+              35.416090416122586
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 0.0,
+      "gsd": 20.0,
+      "platform": "newsat44",
+      "image": "images/72e8877ebf5923e25973.png",
+      "bounds": [
+        [
+          34.883155734377326,
+          -90.1988367216323
+        ],
+        [
+          35.426545183355294,
+          -90.04810699160312
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 232,
+      "height": 1024,
+      "downloaded_bytes": 538568,
+      "status": "ready"
+    },
+    {
+      "id": "20251128_171348_SN50_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_9_0",
+      "outcome_id": "a4169c4b-e88e-4544-86dd-d5a37bb578f8",
+      "datetime": "2025-11-28T17:13:48.604488+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.20886385863881,
+              35.401257808650975
+            ],
+            [
+              -90.12792597180731,
+              35.40512739924394
+            ],
+            [
+              -90.12702086314582,
+              34.88791877347527
+            ],
+            [
+              -90.20697788702707,
+              34.88491611425418
+            ],
+            [
+              -90.20886385863881,
+              35.401257808650975
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 0.0,
+      "gsd": 20.0,
+      "platform": "newsat50",
+      "image": "images/8ad96037c89c2277537a.png",
+      "bounds": [
+        [
+          34.86615411072782,
+          -90.24316569103358
+        ],
+        [
+          35.40955875350544,
+          -90.09290386962367
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 232,
+      "height": 1024,
+      "downloaded_bytes": 521209,
+      "status": "ready"
+    },
+    {
+      "id": "20251128_193133_SN46_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_9_0",
+      "outcome_id": "cec102a8-94c4-4d02-ad87-425c93c80ea0",
+      "datetime": "2025-11-28T19:31:33.503398+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.16398023070063,
+              35.406697108573105
+            ],
+            [
+              -90.16363767009183,
+              35.410113961178325
+            ],
+            [
+              -90.0750208850034,
+              35.406917065717714
+            ],
+            [
+              -90.0761113621555,
+              35.05849340491773
+            ],
+            [
+              -90.08145865379103,
+              34.88953247770678
+            ],
+            [
+              -90.16356136168542,
+              34.89418165199466
+            ],
+            [
+              -90.1595687638785,
+              35.098479983012915
+            ],
+            [
+              -90.16398023070063,
+              35.406697108573105
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 1.9839,
+      "gsd": 20.0,
+      "platform": "newsat46",
+      "image": "images/4192a63ae3eaf47077bc.png",
+      "bounds": [
+        [
+          34.883157114542904,
+          -90.1988418161224
+        ],
+        [
+          35.426546565022846,
+          -90.04811208311814
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 232,
+      "height": 1024,
+      "downloaded_bytes": 439065,
+      "status": "ready"
+    },
+    {
+      "id": "20251129_190140_SN46_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_9_0",
+      "outcome_id": "94e259ce-29f7-4351-9e90-030d36b77e3f",
+      "datetime": "2025-11-29T19:01:40.745197+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.2167658218485,
+              35.382873207352404
+            ],
+            [
+              -90.21594500994425,
+              35.40033992923652
+            ],
+            [
+              -90.1277305187168,
+              35.39214407527395
+            ],
+            [
+              -90.1319422631873,
+              35.28556572234926
+            ],
+            [
+              -90.13083407950717,
+              35.25467457872123
+            ],
+            [
+              -90.13286823588314,
+              35.21564470490493
+            ],
+            [
+              -90.13233748670466,
+              35.205699893964756
+            ],
+            [
+              -90.13103006429526,
+              35.20546877711715
+            ],
+            [
+              -90.13159012093999,
+              35.19577627025639
+            ],
+            [
+              -90.13006850486178,
+              35.19535105268427
+            ],
+            [
+              -90.12891244007415,
+              35.16578847756137
+            ],
+            [
+              -90.12761072905508,
+              35.16536845706029
+            ],
+            [
+              -90.12817057739262,
+              35.15567591610392
+            ],
+            [
+              -90.12686263880312,
+              35.1554339014676
+            ],
+            [
+              -90.12713016493196,
+              35.110373311831054
+            ],
+            [
+              -90.13097524191451,
+              35.038216018974715
+            ],
+            [
+              -90.1294562846437,
+              35.0377820849406
+            ],
+            [
+              -90.13025814119263,
+              35.02737400263398
+            ],
+            [
+              -90.12895227034606,
+              35.02713421471998
+            ],
+            [
+              -90.12947508276093,
+              35.00590328057982
+            ],
+            [
+              -90.12816971102897,
+              35.00566351031165
+            ],
+            [
+              -90.12841307168833,
+              34.97360962875888
+            ],
+            [
+              -90.12711434634811,
+              34.97318973847999
+            ],
+            [
+              -90.12769521382599,
+              34.96276760007982
+            ],
+            [
+              -90.12639793140494,
+              34.962356549298754
+            ],
+            [
+              -90.12735120681953,
+              34.94132469776643
+            ],
+            [
+              -90.12561528826978,
+              34.9408856799159
+            ],
+            [
+              -90.12501873964185,
+              34.895262775819496
+            ],
+            [
+              -90.21206918781195,
+              34.90270046642927
+            ],
+            [
+              -90.21009136360831,
+              34.97400712551264
+            ],
+            [
+              -90.21220173689571,
+              34.995726143491396
+            ],
+            [
+              -90.21125629920189,
+              35.01711970637279
+            ],
+            [
+              -90.21255642510602,
+              35.01754758588603
+            ],
+            [
+              -90.21306523185035,
+              35.028375707766536
+            ],
+            [
+              -90.2136453536973,
+              35.08226244700437
+            ],
+            [
+              -90.21495240439485,
+              35.0825013729227
+            ],
+            [
+              -90.214514085966,
+              35.11473158714823
+            ],
+            [
+              -90.21582170669156,
+              35.11497263724447
+            ],
+            [
+              -90.2130070437241,
+              35.16534455408561
+            ],
+            [
+              -90.21280314859723,
+              35.20986680496093
+            ],
+            [
+              -90.21432576148804,
+              35.21029985310194
+            ],
+            [
+              -90.21452786498287,
+              35.23010564423509
+            ],
+            [
+              -90.21583725964008,
+              35.23034466575061
+            ],
+            [
+              -90.21528668556243,
+              35.24003797134159
+            ],
+            [
+              -90.21659624088674,
+              35.24027699178339
+            ],
+            [
+              -90.21887385387508,
+              35.27007601656712
+            ],
+            [
+              -90.21664565092404,
+              35.30946407944746
+            ],
+            [
+              -90.21833928075775,
+              35.330634016943904
+            ],
+            [
+              -90.2167658218485,
+              35.382873207352404
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 99.6551,
+      "gsd": 20.0,
+      "platform": "newsat46",
+      "image": "images/b589eb66c18278e86d0b.png",
+      "bounds": [
+        [
+          34.88417783533853,
+          -90.2425678536581
+        ],
+        [
+          35.40955902975147,
+          -90.09295223974559
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 238,
+      "height": 1024,
+      "downloaded_bytes": 106871,
+      "status": "ready"
+    },
+    {
+      "id": "20251130_164912_SN37_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_9_0",
+      "outcome_id": "927867d5-3fce-4db0-9e96-d14f7506bf33",
+      "datetime": "2025-11-30T16:49:12.338537+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.20263165519906,
+              35.42238025391009
+            ],
+            [
+              -90.13899549071589,
+              35.422150090640606
+            ],
+            [
+              -90.13727253314612,
+              35.02101457598467
+            ],
+            [
+              -90.13847195579656,
+              34.885840922427874
+            ],
+            [
+              -90.20037961198648,
+              34.88602157593372
+            ],
+            [
+              -90.19971188091425,
+              35.047134923287146
+            ],
+            [
+              -90.20263165519906,
+              35.42238025391009
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 0.0653,
+      "gsd": 20.0,
+      "platform": "newsat37",
+      "image": "images/0e730267e0a674002b79.png",
+      "bounds": [
+        [
+          34.8666545667903,
+          -90.24316824876703
+        ],
+        [
+          35.42756663363879,
+          -90.11425623719737
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 192,
+      "height": 1024,
+      "downloaded_bytes": 421542,
+      "status": "ready"
+    },
+    {
+      "id": "20251202_171458_SN49_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_9_0",
+      "outcome_id": "2e93c5a5-aeb4-4a6a-9787-bab660101a9c",
+      "datetime": "2025-12-02T17:14:58.281929+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.08978315468131,
+              35.39429939022949
+            ],
+            [
+              -90.00720599361831,
+              35.39498397724447
+            ],
+            [
+              -90.00531911454621,
+              35.18367304915847
+            ],
+            [
+              -90.01022534338871,
+              34.90510734074559
+            ],
+            [
+              -90.01158929700946,
+              34.9037011031929
+            ],
+            [
+              -90.08885438931699,
+              34.90305415590405
+            ],
+            [
+              -90.08553061634353,
+              35.15841375294879
+            ],
+            [
+              -90.08978315468131,
+              35.39429939022949
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-11",
+        "site-12"
+      ],
+      "cloud": 99.9738,
+      "gsd": 20.0,
+      "platform": "newsat49",
+      "image": "images/ed0e26a06cb784ee413c.png",
+      "bounds": [
+        [
+          34.89946355504234,
+          -90.11076859631912
+        ],
+        [
+          35.40645127319692,
+          -89.98296185272832
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 211,
+      "height": 1024,
+      "downloaded_bytes": 120324,
+      "status": "ready"
+    },
+    {
+      "id": "20251202_175455_SN25_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_9_0",
+      "outcome_id": "44c4aa5b-4269-46f8-ba8b-eabcff9840be",
+      "datetime": "2025-12-02T17:54:55.548758+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.02764702396706,
+              35.401793357081154
+            ],
+            [
+              -89.98723597036124,
+              35.39917114616126
+            ],
+            [
+              -89.98773596682604,
+              34.89175241921463
+            ],
+            [
+              -90.02789751846929,
+              34.894364284935854
+            ],
+            [
+              -90.02764702396706,
+              35.401793357081154
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-12"
+      ],
+      "cloud": 100.0,
+      "gsd": 20.0,
+      "platform": "newsat25",
+      "image": "images/663396f3d0cc0c498106.png",
+      "bounds": [
+        [
+          34.88090300810115,
+          -90.06768173596494
+        ],
+        [
+          35.40538080611412,
+          -89.96081885299905
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 171,
+      "height": 1024,
+      "downloaded_bytes": 120394,
+      "status": "ready"
+    },
+    {
+      "id": "20251203_204610_SN41_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_9_0",
+      "outcome_id": "2b2f84ad-8332-43c6-8a66-02e7d6073808",
+      "datetime": "2025-12-03T20:46:10.975301+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.22234715899532,
+              34.98063054163226
+            ],
+            [
+              -90.17507251986295,
+              35.163956776540154
+            ],
+            [
+              -90.09081157687778,
+              35.13834626247766
+            ],
+            [
+              -90.13822217516633,
+              34.95596111868467
+            ],
+            [
+              -90.22234715899532,
+              34.98063054163226
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 66.7192,
+      "gsd": 20.0,
+      "platform": "newsat41",
+      "image": "images/d6c787c00ac3fe8d0e88.png",
+      "bounds": [
+        [
+          34.93756032723953,
+          -90.24075469904963
+        ],
+        [
+          35.17538689658711,
+          -90.07932264971565
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 569,
+      "height": 1024,
+      "downloaded_bytes": 189908,
+      "status": "ready"
+    },
+    {
+      "id": "20251203_205902_SN44_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_9_0",
+      "outcome_id": "00365ac1-698e-427d-bbbf-910fb2000edc",
+      "datetime": "2025-12-03T20:59:02.018716+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.08805353723295,
+              35.423992440383444
+            ],
+            [
+              -90.00245279493222,
+              35.41631048057339
+            ],
+            [
+              -90.0049850605695,
+              35.096992882462054
+            ],
+            [
+              -90.00208936052596,
+              34.88813837900253
+            ],
+            [
+              -90.0884335519678,
+              34.896368097816094
+            ],
+            [
+              -90.09125908143406,
+              35.13186850030505
+            ],
+            [
+              -90.08805353723295,
+              35.423992440383444
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-11",
+        "site-12"
+      ],
+      "cloud": 56.9398,
+      "gsd": 20.0,
+      "platform": "newsat44",
+      "image": "images/9d313fd218f9526377ab.png",
+      "bounds": [
+        [
+          34.881426820603714,
+          -90.11139934285028
+        ],
+        [
+          35.42445567746964,
+          -89.98226848488407
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 199,
+      "height": 1024,
+      "downloaded_bytes": 480690,
+      "status": "ready"
+    },
+    {
+      "id": "20251205_160454_SN33_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_9_0",
+      "outcome_id": "fcb61c20-a8df-42ac-9602-4cfcc72c1ba9",
+      "datetime": "2025-12-05T16:04:54.419657+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.07901501086306,
+              35.412243929657436
+            ],
+            [
+              -90.01562515033365,
+              35.411594188410156
+            ],
+            [
+              -90.0162998948152,
+              34.882543907376075
+            ],
+            [
+              -90.07649278119247,
+              34.88166393314122
+            ],
+            [
+              -90.08039242874892,
+              34.8826591220857
+            ],
+            [
+              -90.07901501086306,
+              35.412243929657436
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-11",
+        "site-12"
+      ],
+      "cloud": 99.6669,
+      "gsd": 20.0,
+      "platform": "newsat33",
+      "image": "images/2bb72b51e64470a53053.png",
+      "bounds": [
+        [
+          34.86341020416769,
+          -90.11203637895566
+        ],
+        [
+          35.424460251728654,
+          -89.98225774343878
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 194,
+      "height": 1024,
+      "downloaded_bytes": 286759,
+      "status": "ready"
+    },
+    {
+      "id": "20251205_164442_SN37_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_9_0",
+      "outcome_id": "f61ea479-b8fd-45b5-aca5-79a6d3dd5ef2",
+      "datetime": "2025-12-05T16:44:42.625357+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.03297385408189,
+              35.41868895775709
+            ],
+            [
+              -89.97707429816809,
+              35.41784223379102
+            ],
+            [
+              -89.97875132595259,
+              35.10657861872607
+            ],
+            [
+              -89.98185641250271,
+              34.89106421543313
+            ],
+            [
+              -90.03634916204823,
+              34.89060347960041
+            ],
+            [
+              -90.03297385408189,
+              35.41868895775709
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-11",
+        "site-12"
+      ],
+      "cloud": 99.896,
+      "gsd": 20.0,
+      "platform": "newsat37",
+      "image": "images/f3abad28615de9cfadd9.png",
+      "bounds": [
+        [
+          34.880892665972354,
+          -90.06768419152405
+        ],
+        [
+          35.423389078782115,
+          -89.9601480577246
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 166,
+      "height": 1024,
+      "downloaded_bytes": 257706,
+      "status": "ready"
+    },
+    {
+      "id": "20251207_211112_SN28_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_9_0",
+      "outcome_id": "b6de5cc9-d46f-446f-a935-7b0a90cc9803",
+      "datetime": "2025-12-07T21:11:12.593992+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [
+                -90.07156975353897,
+                35.01980669513268
+              ],
+              [
+                -90.0712933295372,
+                35.027551506031166
+              ],
+              [
+                -90.02548640142585,
+                35.027698246100435
+              ],
+              [
+                -90.025528623145,
+                35.02048890593736
+              ],
+              [
+                -90.03359672238345,
+                35.02032591889667
+              ],
+              [
+                -90.02554168726303,
+                35.02012848986248
+              ],
+              [
+                -90.02563901698997,
+                35.005349368248574
+              ],
+              [
+                -90.02757011312738,
+                35.00521634434643
+              ],
+              [
+                -90.02565207329097,
+                35.00498895123785
+              ],
+              [
+                -90.02547540837185,
+                34.997774216373024
+              ],
+              [
+                -90.02871939928673,
+                34.997673366229364
+              ],
+              [
+                -90.0254883024461,
+                34.997413801494915
+              ],
+              [
+                -90.02471604789581,
+                34.909783442850724
+              ],
+              [
+                -90.02478762364119,
+                34.90780457543233
+              ],
+              [
+                -90.02715368349836,
+                34.90768215428351
+              ],
+              [
+                -90.02480063648295,
+                34.907444152908305
+              ],
+              [
+                -90.02457212591302,
+                34.8834632073021
+              ],
+              [
+                -90.07116659888159,
+                34.88351395948302
+              ],
+              [
+                -90.07119644446085,
+                34.907310164711504
+              ],
+              [
+                -90.06817447634492,
+                34.907417614015095
+              ],
+              [
+                -90.07139587372086,
+                34.90785593135906
+              ],
+              [
+                -90.07195172227796,
+                34.97222754121232
+              ],
+              [
+                -90.07186827823143,
+                34.97456669875619
+              ],
+              [
+                -90.07037556572713,
+                34.97471103650525
+              ],
+              [
+                -90.07185543912412,
+                34.97492713260826
+              ],
+              [
+                -90.07071159841767,
+                34.989861663124266
+              ],
+              [
+                -90.07183169540829,
+                34.99403707959474
+              ],
+              [
+                -90.07171607343213,
+                34.99727679211306
+              ],
+              [
+                -90.06934742576162,
+                34.99739995634298
+              ],
+              [
+                -90.07170322283588,
+                34.99763722456681
+              ],
+              [
+                -90.07176802942627,
+                35.001967322675355
+              ],
+              [
+                -90.07166521799365,
+                35.004846805828876
+              ],
+              [
+                -90.06798295305872,
+                35.00493821367609
+              ],
+              [
+                -90.071433462682,
+                35.0052019522752
+              ],
+              [
+                -90.07168502128422,
+                35.01043789307053
+              ],
+              [
+                -90.07161430227826,
+                35.01241681084098
+              ],
+              [
+                -90.06683709948129,
+                35.01248173028772
+              ],
+              [
+                -90.0713825229759,
+                35.01277195573868
+              ],
+              [
+                -90.07156975353897,
+                35.01980669513268
+              ]
+            ]
+          ],
+          [
+            [
+              [
+                -90.07113979805368,
+                35.050261413336706
+              ],
+              [
+                -90.06570332726334,
+                35.05031030073244
+              ],
+              [
+                -90.0709078977667,
+                35.05061655002453
+              ],
+              [
+                -90.07087589685237,
+                35.057645960795334
+              ],
+              [
+                -90.02505214491826,
+                35.057791704331876
+              ],
+              [
+                -90.02547333339767,
+                35.02805866170727
+              ],
+              [
+                -90.07128046264904,
+                35.02791193654923
+              ],
+              [
+                -90.0712422127236,
+                35.035121483842204
+              ],
+              [
+                -90.06733960580604,
+                35.03520751448008
+              ],
+              [
+                -90.07101036049583,
+                35.0354766236285
+              ],
+              [
+                -90.0711910355673,
+                35.042691452944474
+              ],
+              [
+                -90.06685006721278,
+                35.04276686700828
+              ],
+              [
+                -90.07095915931421,
+                35.04304659118158
+              ],
+              [
+                -90.07113979805368,
+                35.050261413336706
+              ]
+            ]
+          ],
+          [
+            [
+              [
+                -90.07038397683618,
+                35.40716303770503
+              ],
+              [
+                -90.02482269580855,
+                35.40676944427013
+              ],
+              [
+                -90.0256741095351,
+                35.37037869321277
+              ],
+              [
+                -90.0243147204061,
+                35.34871211945275
+              ],
+              [
+                -90.0256012170804,
+                35.34838550969932
+              ],
+              [
+                -90.02433460165085,
+                35.3481739459205
+              ],
+              [
+                -90.02379788465825,
+                35.29083655147688
+              ],
+              [
+                -90.02383751225321,
+                35.28975829141352
+              ],
+              [
+                -90.02643435051267,
+                35.28964185220832
+              ],
+              [
+                -90.02385071474237,
+                35.289397891923116
+              ],
+              [
+                -90.0237365705163,
+                35.28650883222381
+              ],
+              [
+                -90.02388832620579,
+                35.28236893264846
+              ],
+              [
+                -90.02670456235548,
+                35.28225788392685
+              ],
+              [
+                -90.02368189107172,
+                35.282003124306215
+              ],
+              [
+                -90.02364509467164,
+                35.25298280711509
+              ],
+              [
+                -90.0255822900676,
+                35.25284800751386
+              ],
+              [
+                -90.02347187626532,
+                35.251714469700914
+              ],
+              [
+                -90.02352701005815,
+                35.238196493766445
+              ],
+              [
+                -90.02721961518388,
+                35.23810696844974
+              ],
+              [
+                -90.02354002903247,
+                35.237836093807275
+              ],
+              [
+                -90.02357731650022,
+                35.230807082892284
+              ],
+              [
+                -90.02529428217763,
+                35.2306689631738
+              ],
+              [
+                -90.02359049139719,
+                35.23044667997321
+              ],
+              [
+                -90.02385378135637,
+                35.22324296374605
+              ],
+              [
+                -90.02710691503302,
+                35.223142603838255
+              ],
+              [
+                -90.02364747698209,
+                35.22287715966624
+              ],
+              [
+                -90.02383773769645,
+                35.19962613936545
+              ],
+              [
+                -90.02406788815954,
+                35.19332499075924
+              ],
+              [
+                -90.0288555924973,
+                35.19326228744045
+              ],
+              [
+                -90.0240810426348,
+                35.19296458544631
+              ],
+              [
+                -90.02390109236119,
+                35.19187865390485
+              ],
+              [
+                -90.02417457975217,
+                35.17836595318462
+              ],
+              [
+                -90.02610978779333,
+                35.17823315982997
+              ],
+              [
+                -90.02418772647681,
+                35.17800554694583
+              ],
+              [
+                -90.02438703710104,
+                35.14844987991871
+              ],
+              [
+                -90.02785665725949,
+                35.14835263626431
+              ],
+              [
+                -90.02440037113905,
+                35.148087367831764
+              ],
+              [
+                -90.02449320869405,
+                35.133488636252544
+              ],
+              [
+                -90.02730428489342,
+                35.13337731657916
+              ],
+              [
+                -90.02450633219217,
+                35.13312822723763
+              ],
+              [
+                -90.02459893678389,
+                35.11852946257153
+              ],
+              [
+                -90.02653271882977,
+                35.11839659082944
+              ],
+              [
+                -90.02441907831412,
+                35.11744332101964
+              ],
+              [
+                -90.02465478408486,
+                35.11096191615313
+              ],
+              [
+                -90.02812280859395,
+                35.110864585160265
+              ],
+              [
+                -90.02446858436632,
+                35.11005377196979
+              ],
+              [
+                -90.02451498045119,
+                35.09671329620699
+              ],
+              [
+                -90.03108282539924,
+                35.095795072797145
+              ],
+              [
+                -90.02456087180634,
+                35.09545469167674
+              ],
+              [
+                -90.02459710398735,
+                35.08842552977885
+              ],
+              [
+                -90.02740662579032,
+                35.088314129864074
+              ],
+              [
+                -90.02461020514204,
+                35.08806511804868
+              ],
+              [
+                -90.02465308732909,
+                35.08085584324675
+              ],
+              [
+                -90.02636672086379,
+                35.080717551237974
+              ],
+              [
+                -90.02466602512567,
+                35.08049543356787
+              ],
+              [
+                -90.02492776307317,
+                35.07329153187366
+              ],
+              [
+                -90.02795583734817,
+                35.07318547148205
+              ],
+              [
+                -90.02472832728903,
+                35.07274569704946
+              ],
+              [
+                -90.02503906039489,
+                35.05815211800734
+              ],
+              [
+                -90.07085657583869,
+                35.05818650015608
+              ],
+              [
+                -90.07081808055622,
+                35.06539601346041
+              ],
+              [
+                -90.06625684689031,
+                35.065466051849704
+              ],
+              [
+                -90.07080519351557,
+                35.06575644157499
+              ],
+              [
+                -90.07072158592443,
+                35.0803557610093
+              ],
+              [
+                -90.06922693107566,
+                35.08049998733748
+              ],
+              [
+                -90.07070869131324,
+                35.080716188202985
+              ],
+              [
+                -90.07044453304921,
+                35.088100487488404
+              ],
+              [
+                -90.02794215340758,
+                35.088147005026215
+              ],
+              [
+                -90.07065068402906,
+                35.088466213543235
+              ],
+              [
+                -90.07051499182741,
+                35.110635372593514
+              ],
+              [
+                -90.06682795871802,
+                35.11072650969179
+              ],
+              [
+                -90.07050208183377,
+                35.11099579791911
+              ],
+              [
+                -90.0704631920994,
+                35.11820525368935
+              ],
+              [
+                -90.06567980736534,
+                35.118269822658455
+              ],
+              [
+                -90.07043737018071,
+                35.11892583682401
+              ],
+              [
+                -90.07041133186051,
+                35.125775126062585
+              ],
+              [
+                -90.06672361425774,
+                35.12586622628455
+              ],
+              [
+                -90.07017919045225,
+                35.12613024683321
+              ],
+              [
+                -90.07036586806957,
+                35.13316488125994
+              ],
+              [
+                -90.06887024001976,
+                35.13330905468368
+              ],
+              [
+                -90.07013370312893,
+                35.13352000052797
+              ],
+              [
+                -90.07031388868933,
+                35.14073473641777
+              ],
+              [
+                -90.06596770733897,
+                35.140809862069005
+              ],
+              [
+                -90.0700816996117,
+                35.14108985413511
+              ],
+              [
+                -90.070249288281,
+                35.142535965836586
+              ],
+              [
+                -90.07021621094204,
+                35.155694312795575
+              ],
+              [
+                -90.06630783666361,
+                35.15578002594927
+              ],
+              [
+                -90.06998397416143,
+                35.156049427459195
+              ],
+              [
+                -90.07017051634048,
+                35.16308403447389
+              ],
+              [
+                -90.06713907695756,
+                35.1631909885648
+              ],
+              [
+                -90.06993825599426,
+                35.16343914763451
+              ],
+              [
+                -90.07007269017573,
+                35.17804145597889
+              ],
+              [
+                -90.06506622990891,
+                35.17810262154447
+              ],
+              [
+                -90.06984018031822,
+                35.17839867020428
+              ],
+              [
+                -90.06995609217448,
+                35.181287803629665
+              ],
+              [
+                -90.0698072387251,
+                35.18542794469667
+              ],
+              [
+                -90.0663362016479,
+                35.18552421241458
+              ],
+              [
+                -90.06979428980932,
+                35.185788365341224
+              ],
+              [
+                -90.06975482252862,
+                35.192997738595466
+              ],
+              [
+                -90.06562525462833,
+                35.19307802828992
+              ],
+              [
+                -90.06974186975376,
+                35.19335815877222
+              ],
+              [
+                -90.06960368826866,
+                35.215526961998926
+              ],
+              [
+                -90.06525351327062,
+                35.21560186626356
+              ],
+              [
+                -90.06959072402516,
+                35.21588738078475
+              ],
+              [
+                -90.06955751150245,
+                35.222916615533606
+              ],
+              [
+                -90.0658653899996,
+                35.2230074734646
+              ],
+              [
+                -90.06954454351067,
+                35.22327703386421
+              ],
+              [
+                -90.06950479570256,
+                35.23048636621292
+              ],
+              [
+                -90.0651538200811,
+                35.230561227763985
+              ],
+              [
+                -90.06949182384642,
+                35.23084678407542
+              ],
+              [
+                -90.0696140942306,
+                35.23355362401788
+              ],
+              [
+                -90.06945850321368,
+                35.23787600296192
+              ],
+              [
+                -90.06642427187272,
+                35.23798280209084
+              ],
+              [
+                -90.06944552760723,
+                35.23823642036907
+              ],
+              [
+                -90.06960669582104,
+                35.23986262711974
+              ],
+              [
+                -90.06963169752918,
+                35.24527095200114
+              ],
+              [
+                -90.0683535390457,
+                35.24542033635111
+              ],
+              [
+                -90.06959282688926,
+                35.24635389912617
+              ],
+              [
+                -90.07036619878349,
+                35.352906893589555
+              ],
+              [
+                -90.07026199468316,
+                35.35578620613096
+              ],
+              [
+                -90.06656381324603,
+                35.355876790371795
+              ],
+              [
+                -90.07024896598568,
+                35.35614661676534
+              ],
+              [
+                -90.07038397683618,
+                35.40716303770503
+              ]
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-11",
+        "site-12"
+      ],
+      "cloud": 15.1748,
+      "gsd": 20.0,
+      "platform": "newsat28",
+      "image": "images/c721fa2e185936a97eab.png",
+      "bounds": [
+        [
+          34.86392290660461,
+          -90.0901754423863
+        ],
+        [
+          35.42392312991229,
+          -90.00423914604518
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 128,
+      "height": 1024,
+      "downloaded_bytes": 211747,
+      "status": "ready"
+    },
+    {
+      "id": "20251208_170009_SN38_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_9_0",
+      "outcome_id": "29155ece-5422-4b77-83ea-084b041fafb4",
+      "datetime": "2025-12-08T17:00:09.822371+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.03385368671664,
+              35.424657967236804
+            ],
+            [
+              -89.97927674844236,
+              35.42366441958388
+            ],
+            [
+              -89.98075387821231,
+              34.88526724806828
+            ],
+            [
+              -90.03391829078132,
+              34.88513501726743
+            ],
+            [
+              -90.03385368671664,
+              35.424657967236804
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-11",
+        "site-12"
+      ],
+      "cloud": 85.66,
+      "gsd": 20.0,
+      "platform": "newsat38",
+      "image": "images/61b3f45a209de0564de3.png",
+      "bounds": [
+        [
+          34.88088264961595,
+          -90.06768204418533
+        ],
+        [
+          35.44139753417515,
+          -89.95947254850807
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 162,
+      "height": 1024,
+      "downloaded_bytes": 219780,
+      "status": "ready"
+    },
+    {
+      "id": "20251209_155927_SN33_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_9_0",
+      "outcome_id": "d1774d90-a72f-488a-89bf-39f854cd9840",
+      "datetime": "2025-12-09T15:59:27.057753+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.0378999745343,
+              35.4045691586278
+            ],
+            [
+              -89.97595674603187,
+              35.4066379777229
+            ],
+            [
+              -89.97925639487227,
+              34.878560749517725
+            ],
+            [
+              -90.04118458052145,
+              34.877921768016485
+            ],
+            [
+              -90.0378999745343,
+              35.4045691586278
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-11",
+        "site-12"
+      ],
+      "cloud": 53.0249,
+      "gsd": 20.0,
+      "platform": "newsat33",
+      "image": "images/82e975edf59ca21d23a9.png",
+      "bounds": [
+        [
+          34.862353323281525,
+          -90.06832905251954
+        ],
+        [
+          35.42338865691083,
+          -89.93811486031747
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 194,
+      "height": 1024,
+      "downloaded_bytes": 506992,
+      "status": "ready"
+    },
+    {
+      "id": "20251210_203955_SN41_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_9_0",
+      "outcome_id": "04d809ec-c36a-4f6b-a9b3-eb58297f3d72",
+      "datetime": "2025-12-10T20:39:55.411251+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.04203670237298,
+              34.90975420956126
+            ],
+            [
+              -90.03901180338394,
+              35.182781500948
+            ],
+            [
+              -90.04012359249505,
+              35.312537943488934
+            ],
+            [
+              -90.04210933517784,
+              35.400631979140414
+            ],
+            [
+              -90.04322767881142,
+              35.40110730719871
+            ],
+            [
+              -90.04289631897397,
+              35.40399950316173
+            ],
+            [
+              -90.04157944373519,
+              35.40403280413998
+            ],
+            [
+              -89.96714613910002,
+              35.397593911706615
+            ],
+            [
+              -89.96351177632572,
+              35.14730239325161
+            ],
+            [
+              -89.96607168740412,
+              34.90280052317041
+            ],
+            [
+              -90.04203670237298,
+              34.90975420956126
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-11",
+        "site-12"
+      ],
+      "cloud": 0.0057,
+      "gsd": 20.0,
+      "platform": "newsat41",
+      "image": "images/27a1042573f7f00c42ca.png",
+      "bounds": [
+        [
+          34.89844062621505,
+          -90.06179978286869
+        ],
+        [
+          35.42338668740947,
+          -89.93289289928552
+        ]
+      ],
+      "raster_crs": "EPSG:32616",
+      "stac_crs": 3857,
+      "width": 206,
+      "height": 1024,
+      "downloaded_bytes": 605333,
+      "status": "ready"
+    },
+    {
+      "id": "20251213_165613_SN38_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_9_0",
+      "outcome_id": "074af251-83ee-4478-8382-f7dff21bb881",
+      "datetime": "2025-12-13T16:56:13.238363+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.2175263511463,
+              35.18729834329252
+            ],
+            [
+              -90.16539549773968,
+              35.196183585425416
+            ],
+            [
+              -90.09886239220205,
+              34.93592260868659
+            ],
+            [
+              -90.15038135055649,
+              34.927408100154665
+            ],
+            [
+              -90.2175263511463,
+              35.18729834329252
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 0.0115,
+      "gsd": 20.0,
+      "platform": "newsat38",
+      "image": "images/d867aa5a717a429a5c0f.png",
+      "bounds": [
+        [
+          34.919681353501524,
+          -90.24136174369397
+        ],
+        [
+          35.21141798526936,
+          -90.07810745662799
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 469,
+      "height": 1024,
+      "downloaded_bytes": 193883,
+      "status": "ready"
+    },
+    {
+      "id": "20251216_170406_SN48_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_9_0",
+      "outcome_id": "639ea2cf-785a-429b-b4e6-03aee2851336",
+      "datetime": "2025-12-16T17:04:06.944822+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.22775014689937,
+              34.93712445982332
+            ],
+            [
+              -90.16411899516862,
+              35.1883947330018
+            ],
+            [
+              -90.08317363184896,
+              35.17998132771721
+            ],
+            [
+              -90.14726640729721,
+              34.928589709992295
+            ],
+            [
+              -90.22775014689937,
+              34.93712445982332
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 43.889,
+      "gsd": 20.0,
+      "platform": "newsat48",
+      "image": "images/59461bb6b4c3b8499c43.png",
+      "bounds": [
+        [
+          34.919690038872034,
+          -90.24135214284004
+        ],
+        [
+          35.19339737933882,
+          -90.07856829998177
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 499,
+      "height": 1024,
+      "downloaded_bytes": 268997,
+      "status": "ready"
+    },
+    {
+      "id": "20251217_164451_SN37_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_9_0",
+      "outcome_id": "05bff8d9-c147-4680-8d3d-055d58661731",
+      "datetime": "2025-12-17T16:44:51.468056+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.21798616165144,
+              35.193074252845165
+            ],
+            [
+              -90.16474795046746,
+              35.20211387236748
+            ],
+            [
+              -90.10823933790108,
+              34.98048943337174
+            ],
+            [
+              -90.10033102805737,
+              34.94388626985801
+            ],
+            [
+              -90.15252358358724,
+              34.935026710793814
+            ],
+            [
+              -90.21798616165144,
+              35.193074252845165
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 100.0,
+      "gsd": 20.0,
+      "platform": "newsat37",
+      "image": "images/cdf58f62c6bb3cff064b.png",
+      "bounds": [
+        [
+          34.91967797355227,
+          -90.24135977751423
+        ],
+        [
+          35.21141460512609,
+          -90.07810549731688
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 469,
+      "height": 1024,
+      "downloaded_bytes": 100375,
+      "status": "ready"
+    },
+    {
+      "id": "20251222_170616_SN45_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_9_0",
+      "outcome_id": "27fc2dbe-8201-4363-8786-a37a36836430",
+      "datetime": "2025-12-22T17:06:16.806865+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.22921657538696,
+              34.94563440625845
+            ],
+            [
+              -90.16796919631715,
+              35.185063350387495
+            ],
+            [
+              -90.08460061891662,
+              35.176954639287125
+            ],
+            [
+              -90.14569329719384,
+              34.93612763654842
+            ],
+            [
+              -90.22921657538696,
+              34.94563440625845
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 67.1624,
+      "gsd": 20.0,
+      "platform": "newsat45",
+      "image": "images/6d4e5f715cdb0ea0b06a.png",
+      "bounds": [
+        [
+          34.9196934964175,
+          -90.24135355921483
+        ],
+        [
+          35.193400836980814,
+          -90.07856970940622
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 499,
+      "height": 1024,
+      "downloaded_bytes": 115866,
+      "status": "ready"
+    },
+    {
+      "id": "20251225_205530_SN40_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_9_0",
+      "outcome_id": "a5ffe318-9ef6-4d7a-89ce-e541fd734516",
+      "datetime": "2025-12-25T20:55:30.785323+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.21069924095394,
+              34.994603012291556
+            ],
+            [
+              -90.17277325701998,
+              35.14785708319158
+            ],
+            [
+              -90.10310211087322,
+              35.12583994221246
+            ],
+            [
+              -90.14113125527173,
+              34.97297339192088
+            ],
+            [
+              -90.21069924095394,
+              34.994603012291556
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 14.2637,
+      "gsd": 20.0,
+      "platform": "newsat40",
+      "image": "images/02fa016ec87521a13c71.png",
+      "bounds": [
+        [
+          34.955593991095284,
+          -90.2182668958388
+        ],
+        [
+          35.15686824341719,
+          -90.07993200072644
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 576,
+      "height": 1024,
+      "downloaded_bytes": 159536,
+      "status": "ready"
+    },
+    {
+      "id": "20251229_205021_SN40_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_9_0",
+      "outcome_id": "7f9327fe-588d-433d-b525-3a152e6f3ced",
+      "datetime": "2025-12-29T20:50:21.234309+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.20496416752613,
+              34.995735900330004
+            ],
+            [
+              -90.16680710958352,
+              35.14267304455779
+            ],
+            [
+              -90.10694559631877,
+              35.12881906506702
+            ],
+            [
+              -90.14431900983864,
+              34.98206484983666
+            ],
+            [
+              -90.20496416752613,
+              34.995735900330004
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-3"
+      ],
+      "cloud": 0.0,
+      "gsd": 20.0,
+      "platform": "newsat40",
+      "image": "images/20695ae80778fb2a0bd3.png",
+      "bounds": [
+        [
+          34.97411616191142,
+          -90.2176568067955
+        ],
+        [
+          35.15687120293199,
+          -90.10194626084451
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 526,
+      "height": 1015,
+      "downloaded_bytes": 117120,
+      "status": "ready"
+    },
+    {
+      "id": "20260122_172441_SN37_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_10_0",
+      "outcome_id": "a498aa0d-da76-4aae-a562-278da82994c6",
+      "datetime": "2026-01-22T17:24:41.393088+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -99.841783255716,
+              32.63340371246988
+            ],
+            [
+              -99.79282600402281,
+              32.642562376347705
+            ],
+            [
+              -99.73211895335616,
+              32.38782410180325
+            ],
+            [
+              -99.78095175150064,
+              32.379412345984264
+            ],
+            [
+              -99.841783255716,
+              32.63340371246988
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-2"
+      ],
+      "cloud": 48.7531,
+      "gsd": 20.0,
+      "platform": "newsat37",
+      "image": "images/5f5d053738a98d9275a7.png",
+      "bounds": [
+        [
+          32.37218226693038,
+          -99.85295856897858
+        ],
+        [
+          32.643513592921884,
+          -99.72276480701002
+        ]
+      ],
+      "raster_crs": "EPSG:32614",
+      "stac_crs": 3857,
+      "width": 414,
+      "height": 1024,
+      "downloaded_bytes": 132583,
+      "status": "ready"
+    },
+    {
+      "id": "20260125_232037_SN31_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_10_0",
+      "outcome_id": "2f362208-2f48-435a-a362-6938f816dc2f",
+      "datetime": "2026-01-25T23:20:37.607537+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -99.82828604773769,
+              32.39480995929077
+            ],
+            [
+              -99.77756673535796,
+              32.6047750883888
+            ],
+            [
+              -99.73765341501205,
+              32.597979654638834
+            ],
+            [
+              -99.78803706017649,
+              32.38803173853855
+            ],
+            [
+              -99.82828604773769,
+              32.39480995929077
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-2"
+      ],
+      "cloud": 99.9956,
+      "gsd": 20.0,
+      "platform": "newsat31",
+      "image": "images/fc47876a621b97a46806.png",
+      "bounds": [
+        [
+          32.37233129621291,
+          -99.83129721828638
+        ],
+        [
+          32.60743645817867,
+          -99.72292572637109
+        ]
+      ],
+      "raster_crs": "EPSG:32614",
+      "stac_crs": 3857,
+      "width": 398,
+      "height": 1024,
+      "downloaded_bytes": 59386,
+      "status": "ready"
+    },
+    {
+      "id": "20260126_175326_SN45_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_10_0",
+      "outcome_id": "03e3f19f-ffb0-4f33-b3f5-9562e2645b82",
+      "datetime": "2026-01-26T17:53:26.037789+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -99.84667410841793,
+              32.38241841994635
+            ],
+            [
+              -99.78798213350949,
+              32.625456361029684
+            ],
+            [
+              -99.71607530332355,
+              32.61776843021035
+            ],
+            [
+              -99.77495659561916,
+              32.374760855952
+            ],
+            [
+              -99.84667410841793,
+              32.38241841994635
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-2"
+      ],
+      "cloud": 2.1937,
+      "gsd": 20.0,
+      "platform": "newsat45",
+      "image": "images/0c9b66bfa7d94ebb71b7.png",
+      "bounds": [
+        [
+          32.37217892000906,
+          -99.85295603434089
+        ],
+        [
+          32.64363746774784,
+          -99.70162724932628
+        ]
+      ],
+      "raster_crs": "EPSG:32614",
+      "stac_crs": 3857,
+      "width": 481,
+      "height": 1024,
+      "downloaded_bytes": 208421,
+      "status": "ready"
+    },
+    {
+      "id": "20260129_232721_SN31_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_10_0",
+      "outcome_id": "89dc7fe1-3c89-4b01-b5df-e4f71f6db4c7",
+      "datetime": "2026-01-29T23:27:21.048572+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -99.83377178107183,
+              32.390259458905014
+            ],
+            [
+              -99.7809755248372,
+              32.60474997235929
+            ],
+            [
+              -99.7361603519951,
+              32.59798444638179
+            ],
+            [
+              -99.78884702786563,
+              32.383512314997226
+            ],
+            [
+              -99.83377178107183,
+              32.390259458905014
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-2"
+      ],
+      "cloud": 0.0266,
+      "gsd": 20.0,
+      "platform": "newsat31",
+      "image": "images/e610dee2c3d74b96ee98.png",
+      "bounds": [
+        [
+          32.372020256276116,
+          -99.85260917226664
+        ],
+        [
+          32.60743249666008,
+          -99.72289234568821
+        ]
+      ],
+      "raster_crs": "EPSG:32614",
+      "stac_crs": 3857,
+      "width": 476,
+      "height": 1024,
+      "downloaded_bytes": 145428,
+      "status": "ready"
+    },
+    {
+      "id": "20260202_172858_SN37_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_10_0",
+      "outcome_id": "b497b289-bbde-40c3-afaa-43a159705407",
+      "datetime": "2026-02-02T17:28:58.164758+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -99.84048385890345,
+              32.631066997384515
+            ],
+            [
+              -99.79067011454747,
+              32.63968937153568
+            ],
+            [
+              -99.73084346394964,
+              32.3876509940674
+            ],
+            [
+              -99.78073929063936,
+              32.379233022321735
+            ],
+            [
+              -99.84048385890345,
+              32.631066997384515
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-2"
+      ],
+      "cloud": 0.3336,
+      "gsd": 20.0,
+      "platform": "newsat37",
+      "image": "images/112da9554b7e62ebcd80.png",
+      "bounds": [
+        [
+          32.37218216696944,
+          -99.85296027386197
+        ],
+        [
+          32.64351349286858,
+          -99.72276651208253
+        ]
+      ],
+      "raster_crs": "EPSG:32614",
+      "stac_crs": 3857,
+      "width": 414,
+      "height": 1024,
+      "downloaded_bytes": 206632,
+      "status": "ready"
+    },
+    {
+      "id": "20260205_174115_SN26_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_10_0",
+      "outcome_id": "a88a026c-65df-442f-962f-cb305b48099a",
+      "datetime": "2026-02-05T17:41:15.586749+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -99.85100014858907,
+              32.36777813001918
+            ],
+            [
+              -99.83092833955182,
+              32.45090340915272
+            ],
+            [
+              -99.81979272918848,
+              32.48978541983146
+            ],
+            [
+              -99.79248762673478,
+              32.60468337401039
+            ],
+            [
+              -99.7257264245789,
+              32.598772308376354
+            ],
+            [
+              -99.74549939746298,
+              32.51566635953916
+            ],
+            [
+              -99.7778677502895,
+              32.39240665593273
+            ],
+            [
+              -99.78440614838216,
+              32.361354068920534
+            ],
+            [
+              -99.85100014858907,
+              32.36777813001918
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-2"
+      ],
+      "cloud": 0.0237,
+      "gsd": 20.0,
+      "platform": "newsat26",
+      "image": "images/789fb2398e412401c834.png",
+      "bounds": [
+        [
+          32.35385016538549,
+          -99.87392532632055
+        ],
+        [
+          32.607437981778176,
+          -99.72265785009573
+        ]
+      ],
+      "raster_crs": "EPSG:32614",
+      "stac_crs": 3857,
+      "width": 515,
+      "height": 1024,
+      "downloaded_bytes": 257541,
+      "status": "ready"
+    },
+    {
+      "id": "20260209_221318_SN28_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_10_0",
+      "outcome_id": "2124a24d-7b41-4049-b0f5-838149eb322c",
+      "datetime": "2026-02-09T22:13:18.135971+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -99.8274560344955,
+              32.39662252619291
+            ],
+            [
+              -99.80151965089303,
+              32.49333236028068
+            ],
+            [
+              -99.7764506819398,
+              32.59847045652154
+            ],
+            [
+              -99.73718841335207,
+              32.59275329593336
+            ],
+            [
+              -99.75712929896343,
+              32.50567537011946
+            ],
+            [
+              -99.78742517860951,
+              32.390564298644854
+            ],
+            [
+              -99.8274560344955,
+              32.39662252619291
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-2"
+      ],
+      "cloud": 100.0,
+      "gsd": 20.0,
+      "platform": "newsat28",
+      "image": "images/508194b3ead87bfa04d9.png",
+      "bounds": [
+        [
+          32.37233415961082,
+          -99.83130129448584
+        ],
+        [
+          32.60743932128399,
+          -99.72292979925659
+        ]
+      ],
+      "raster_crs": "EPSG:32614",
+      "stac_crs": 3857,
+      "width": 398,
+      "height": 1024,
+      "downloaded_bytes": 60470,
+      "status": "ready"
+    },
+    {
+      "id": "20260211_175426_SN45_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_10_0",
+      "outcome_id": "61df0b07-57f4-41a3-89c3-14497d079095",
+      "datetime": "2026-02-11T17:54:26.590921+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -99.84708248194859,
+              32.380611507548124
+            ],
+            [
+              -99.78591025042869,
+              32.63232496756247
+            ],
+            [
+              -99.71335852386122,
+              32.62463956963861
+            ],
+            [
+              -99.7747286130495,
+              32.372958071950194
+            ],
+            [
+              -99.84708248194859,
+              32.380611507548124
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-2"
+      ],
+      "cloud": 0.0,
+      "gsd": 20.0,
+      "platform": "newsat45",
+      "image": "images/948347e1ab58eae98327.png",
+      "bounds": [
+        [
+          32.37217892000908,
+          -99.85295603434089
+        ],
+        [
+          32.64363746774784,
+          -99.7016272493263
+        ]
+      ],
+      "raster_crs": "EPSG:32614",
+      "stac_crs": 3857,
+      "width": 481,
+      "height": 1024,
+      "downloaded_bytes": 295149,
+      "status": "ready"
+    },
+    {
+      "id": "20260214_213748_SN40_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_10_0",
+      "outcome_id": "2f12e183-0bdc-45f0-b75e-03193200c697",
+      "datetime": "2026-02-14T21:37:48.151630+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -99.82905743393151,
+              32.432693721943785
+            ],
+            [
+              -99.80580632217823,
+              32.51599837088277
+            ],
+            [
+              -99.79054780356422,
+              32.57817487057827
+            ],
+            [
+              -99.73375837430474,
+              32.56462743561985
+            ],
+            [
+              -99.75765604016834,
+              32.46742264018965
+            ],
+            [
+              -99.77192448110344,
+              32.418623475652076
+            ],
+            [
+              -99.82905743393151,
+              32.432693721943785
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-2"
+      ],
+      "cloud": 78.0422,
+      "gsd": 20.0,
+      "platform": "newsat40",
+      "image": "images/ed4c6c56497445fe4843.png",
+      "bounds": [
+        [
+          32.40826292240034,
+          -99.831130444781
+        ],
+        [
+          32.5893974352998,
+          -99.72321291125733
+        ]
+      ],
+      "raster_crs": "EPSG:32614",
+      "stac_crs": 3857,
+      "width": 505,
+      "height": 1005,
+      "downloaded_bytes": 111547,
+      "status": "ready"
+    },
+    {
+      "id": "20260215_175352_SN45_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_10_0",
+      "outcome_id": "32ba2518-d613-402d-89b1-7ff8f010b476",
+      "datetime": "2026-02-15T17:53:52.705384+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -99.84871395389256,
+              32.373200544683954
+            ],
+            [
+              -99.7881668256906,
+              32.62220497298195
+            ],
+            [
+              -99.71605086820442,
+              32.61469866719721
+            ],
+            [
+              -99.77657706115477,
+              32.36536636381239
+            ],
+            [
+              -99.84871395389256,
+              32.373200544683954
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-2"
+      ],
+      "cloud": 0.006,
+      "gsd": 20.0,
+      "platform": "newsat45",
+      "image": "images/6dce719291b8a47c2fb4.png",
+      "bounds": [
+        [
+          32.354134897244116,
+          -99.85278485766976
+        ],
+        [
+          32.625594135247276,
+          -99.70148604441182
+        ]
+      ],
+      "raster_crs": "EPSG:32614",
+      "stac_crs": 3857,
+      "width": 481,
+      "height": 1024,
+      "downloaded_bytes": 284277,
+      "status": "ready"
+    },
+    {
+      "id": "20260219_175229_SN45_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_10_0",
+      "outcome_id": "3f7f0ca4-e7df-46cb-b482-a3bf16c553a8",
+      "datetime": "2026-02-19T17:52:29.817602+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -99.8481941156462,
+              32.386195872644365
+            ],
+            [
+              -99.7905223862853,
+              32.623815612187
+            ],
+            [
+              -99.712414928559,
+              32.61363866822351
+            ],
+            [
+              -99.7704992941516,
+              32.37605002070703
+            ],
+            [
+              -99.8481941156462,
+              32.386195872644365
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-2"
+      ],
+      "cloud": 0.0715,
+      "gsd": 20.0,
+      "platform": "newsat45",
+      "image": "images/f609bd7db910394b3d86.png",
+      "bounds": [
+        [
+          32.37218811222321,
+          -99.8527812508076
+        ],
+        [
+          32.62559595959947,
+          -99.70169663236146
+        ]
+      ],
+      "raster_crs": "EPSG:32614",
+      "stac_crs": 3857,
+      "width": 515,
+      "height": 1024,
+      "downloaded_bytes": 308202,
+      "status": "ready"
+    },
+    {
+      "id": "20260225_173508_SN38_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_10_0",
+      "outcome_id": "dffb2354-ef42-4ad9-9b10-fefd3c2f7e13",
+      "datetime": "2026-02-25T17:35:08.236379+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -99.84191802190657,
+              32.62528835839404
+            ],
+            [
+              -99.78099299119117,
+              32.63073357329573
+            ],
+            [
+              -99.7190965006558,
+              32.38158853958249
+            ],
+            [
+              -99.78028671878897,
+              32.376533730084056
+            ],
+            [
+              -99.84191802190657,
+              32.62528835839404
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-2"
+      ],
+      "cloud": 62.706,
+      "gsd": 20.0,
+      "platform": "newsat38",
+      "image": "images/be6006db9a9629a70aa8.png",
+      "bounds": [
+        [
+          32.37218054311737,
+          -99.85295615635992
+        ],
+        [
+          32.643639090787985,
+          -99.70162736865147
+        ]
+      ],
+      "raster_crs": "EPSG:32614",
+      "stac_crs": 3857,
+      "width": 481,
+      "height": 1024,
+      "downloaded_bytes": 113868,
+      "status": "ready"
+    },
+    {
+      "id": "20260228_174416_SN48_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_10_0",
+      "outcome_id": "5aacd6a3-d1fd-413d-86bd-c937b4c5df33",
+      "datetime": "2026-02-28T17:44:16.449616+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -99.85046923466247,
+              32.37950331799652
+            ],
+            [
+              -99.78951878154564,
+              32.63103656553686
+            ],
+            [
+              -99.71163401101263,
+              32.62284233918724
+            ],
+            [
+              -99.77258577603257,
+              32.37152492521495
+            ],
+            [
+              -99.85046923466247,
+              32.37950331799652
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-2"
+      ],
+      "cloud": 0.0057,
+      "gsd": 20.0,
+      "platform": "newsat48",
+      "image": "images/0fa90d1e41ab926e7f87.png",
+      "bounds": [
+        [
+          32.3540005429367,
+          -99.87427298308349
+        ],
+        [
+          32.64363460757584,
+          -99.70139160326441
+        ]
+      ],
+      "raster_crs": "EPSG:32614",
+      "stac_crs": 3857,
+      "width": 516,
+      "height": 1024,
+      "downloaded_bytes": 322503,
+      "status": "ready"
+    },
+    {
+      "id": "20260719_160057_SN46_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_11_0",
+      "outcome_id": "3e2eff5a-d229-4157-8b72-edfc81468916",
+      "datetime": "2026-07-19T16:00:57.099887+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -91.45209193180601,
+              30.76660800738534
+            ],
+            [
+              -91.41551316560303,
+              30.818312463208258
+            ],
+            [
+              -91.29217119725145,
+              30.73610722909999
+            ],
+            [
+              -91.18216284787927,
+              30.6647713007187
+            ],
+            [
+              -91.21880747082,
+              30.61277317946927
+            ],
+            [
+              -91.45209193180601,
+              30.76660800738534
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-13"
+      ],
+      "cloud": 38.4808,
+      "gsd": 20.0,
+      "platform": "newsat46",
+      "image": "images/82c49594554b20d0fa75.png",
+      "bounds": [
+        [
+          30.61171926151567,
+          -91.45596315122229
+        ],
+        [
+          30.831931739872786,
+          -91.15982672549383
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 1024,
+      "height": 886,
+      "downloaded_bytes": 297298,
+      "status": "ready"
+    },
+    {
+      "id": "20260720_172218_SN38_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_11_0",
+      "outcome_id": "a258a4d7-f4de-425f-a992-712117154372",
+      "datetime": "2026-07-20T17:22:18.132992+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -91.37277983122083,
+              30.848455835700456
+            ],
+            [
+              -91.32557706817926,
+              30.857055915975874
+            ],
+            [
+              -91.26572466372889,
+              30.602580276161103
+            ],
+            [
+              -91.31237715798578,
+              30.594713309735603
+            ],
+            [
+              -91.37277983122083,
+              30.848455835700456
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-13"
+      ],
+      "cloud": 30.7774,
+      "gsd": 20.0,
+      "platform": "newsat38",
+      "image": "images/8aef647f3ff4fee9a937.png",
+      "bounds": [
+        [
+          30.576632918653814,
+          -91.3939889833948
+        ],
+        [
+          30.867245818337697,
+          -91.24278582959536
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 458,
+      "height": 1024,
+      "downloaded_bytes": 193632,
+      "status": "ready"
+    },
+    {
+      "id": "20260721_170821_SN37_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_11_0",
+      "outcome_id": "aa1a33c7-5ecb-44ba-b1a2-234fb0144648",
+      "datetime": "2026-07-21T17:08:21.071433+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -91.36834445533373,
+              30.838833809444303
+            ],
+            [
+              -91.32198885997201,
+              30.84708258358535
+            ],
+            [
+              -91.26749197820827,
+              30.608915999529295
+            ],
+            [
+              -91.3137271423512,
+              30.601223507886672
+            ],
+            [
+              -91.36834445533373,
+              30.838833809444303
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-13"
+      ],
+      "cloud": 51.0228,
+      "gsd": 20.0,
+      "platform": "newsat37",
+      "image": "images/ab66e3c31d6ec6606b83.png",
+      "bounds": [
+        [
+          30.594739481515663,
+          -91.37284002054814
+        ],
+        [
+          30.848941323406954,
+          -91.24323460232327
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 449,
+      "height": 1024,
+      "downloaded_bytes": 166590,
+      "status": "ready"
+    },
+    {
+      "id": "20260722_155524_SN33_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_11_0",
+      "outcome_id": "7bbd45ce-5213-46b5-a11e-7160eeecf4a4",
+      "datetime": "2026-07-22T15:55:24.489565+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -91.37663318456555,
+              30.58109867876532
+            ],
+            [
+              -91.31694958150824,
+              30.835836421623604
+            ],
+            [
+              -91.26233557405658,
+              30.82645443559559
+            ],
+            [
+              -91.32215758998507,
+              30.57156613611514
+            ],
+            [
+              -91.37663318456555,
+              30.58109867876532
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-13"
+      ],
+      "cloud": 0.0107,
+      "gsd": 20.0,
+      "platform": "newsat33",
+      "image": "images/84f676417fddd7401db9.png",
+      "bounds": [
+        [
+          30.558595339288228,
+          -91.39428161163971
+        ],
+        [
+          30.84920895697439,
+          -91.24310635924857
+        ]
+      ],
+      "raster_crs": "EPSG:32615",
+      "stac_crs": 3857,
+      "width": 458,
+      "height": 1024,
+      "downloaded_bytes": 199495,
+      "status": "ready"
+    },
+    {
+      "id": "20260802_175713_SN48_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_11_0",
+      "outcome_id": "a16c15e5-ab8d-42ee-b321-55f4f062c461",
+      "datetime": "2026-08-02T17:57:13.960305+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -99.84334515432714,
+              32.390381420121
+            ],
+            [
+              -99.78316279323191,
+              32.635231115902926
+            ],
+            [
+              -99.71423886098636,
+              32.6282451596134
+            ],
+            [
+              -99.77481223925916,
+              32.38288304611516
+            ],
+            [
+              -99.84334515432714,
+              32.390381420121
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-2"
+      ],
+      "cloud": 0.013,
+      "gsd": 20.0,
+      "platform": "newsat48",
+      "image": "images/3ad0619aa5cce586e950.png",
+      "bounds": [
+        [
+          32.37218127126897,
+          -99.85295499051298
+        ],
+        [
+          32.6436398189786,
+          -99.70162620155716
+        ]
+      ],
+      "raster_crs": "EPSG:32614",
+      "stac_crs": 3857,
+      "width": 481,
+      "height": 1024,
+      "downloaded_bytes": 290446,
+      "status": "ready"
+    },
+    {
+      "id": "20260804_175559_SN38_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_11_0",
+      "outcome_id": "39ca13b8-c481-4012-afda-fe7de99d58b0",
+      "datetime": "2026-08-04T17:55:59.835366+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -99.84150003465727,
+              32.62619663872576
+            ],
+            [
+              -99.7882604357901,
+              32.6328563884188
+            ],
+            [
+              -99.72422637714656,
+              32.38499056629172
+            ],
+            [
+              -99.77754300467983,
+              32.37889954708796
+            ],
+            [
+              -99.84150003465727,
+              32.62619663872576
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-2"
+      ],
+      "cloud": 5.5282,
+      "gsd": 20.0,
+      "platform": "newsat38",
+      "image": "images/33d8a2444c418576c250.png",
+      "bounds": [
+        [
+          32.37218985880361,
+          -99.85295608228411
+        ],
+        [
+          32.643521184640484,
+          -99.72276230939632
+        ]
+      ],
+      "raster_crs": "EPSG:32614",
+      "stac_crs": 3857,
+      "width": 414,
+      "height": 1024,
+      "downloaded_bytes": 217556,
+      "status": "ready"
+    },
+    {
+      "id": "20260806_174246_SN48_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_11_0",
+      "outcome_id": "3be5c54d-04bb-4e58-b9d7-c9ffd338d33d",
+      "datetime": "2026-08-06T17:42:46.513204+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -97.07833047182483,
+              30.880143125327034
+            ],
+            [
+              -97.01812229960868,
+              31.13145247190336
+            ],
+            [
+              -96.94847442998781,
+              31.122604298187085
+            ],
+            [
+              -97.00803109225441,
+              30.870780750957547
+            ],
+            [
+              -97.07833047182483,
+              30.880143125327034
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-9"
+      ],
+      "cloud": 25.6835,
+      "gsd": 20.0,
+      "platform": "newsat48",
+      "image": "images/e2ce8e0dc58d74c093df.png",
+      "bounds": [
+        [
+          30.861116846548903,
+          -97.09644464409305
+        ],
+        [
+          31.133817311379104,
+          -96.94421154396531
+        ]
+      ],
+      "raster_crs": "EPSG:32614",
+      "stac_crs": 3857,
+      "width": 490,
+      "height": 1024,
+      "downloaded_bytes": 282474,
+      "status": "ready"
+    },
+    {
+      "id": "20260807_170707_SN51_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_11_0",
+      "outcome_id": "fe64bdf2-0679-41e2-b331-623806549480",
+      "datetime": "2026-08-07T17:07:07.188503+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -97.07543915691512,
+              30.909506456484923
+            ],
+            [
+              -97.03366606740418,
+              31.08947246631525
+            ],
+            [
+              -96.95050040733032,
+              31.086733498245362
+            ],
+            [
+              -96.9932708078321,
+              30.906453272147456
+            ],
+            [
+              -97.07543915691512,
+              30.909506456484923
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-9"
+      ],
+      "cloud": 9.4988,
+      "gsd": 20.0,
+      "platform": "newsat51",
+      "image": "images/0bc291248fd43f91e583.png",
+      "bounds": [
+        [
+          30.897063249891385,
+          -97.09572814975263
+        ],
+        [
+          31.09774312606091,
+          -96.94504636698619
+        ]
+      ],
+      "raster_crs": "EPSG:32614",
+      "stac_crs": 3857,
+      "width": 659,
+      "height": 1024,
+      "downloaded_bytes": 221634,
+      "status": "ready"
+    },
+    {
+      "id": "20260808_162442_SN33_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_11_0",
+      "outcome_id": "84d62ef7-7ac6-467f-94f3-2dd9decbb446",
+      "datetime": "2026-08-08T16:24:42.061373+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -99.61050241212364,
+              32.42059360238428
+            ],
+            [
+              -99.55095659591655,
+              32.66695698845428
+            ],
+            [
+              -99.48630155628402,
+              32.661992167178525
+            ],
+            [
+              -99.54602004106933,
+              32.415476974140226
+            ],
+            [
+              -99.61050241212364,
+              32.42059360238428
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-4"
+      ],
+      "cloud": 0.0,
+      "gsd": 20.0,
+      "platform": "newsat33",
+      "image": "images/e8c5cbd4f992f7edc059.png",
+      "bounds": [
+        [
+          32.40953161567133,
+          -99.61866200758183
+        ],
+        [
+          32.68081996597743,
+          -99.46790634088643
+        ]
+      ],
+      "raster_crs": "EPSG:32614",
+      "stac_crs": 3857,
+      "width": 480,
+      "height": 1024,
+      "downloaded_bytes": 206752,
+      "status": "ready"
+    },
+    {
+      "id": "20260820_174648_SN51_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_11_0",
+      "outcome_id": "b5349f6b-d3c4-40e5-9cee-11c7242dd91e",
+      "datetime": "2026-08-20T17:46:48.657634+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -106.66313220525323,
+              31.741805448722314
+            ],
+            [
+              -106.62990965082335,
+              31.881690762545094
+            ],
+            [
+              -106.55597771872448,
+              31.87323595691588
+            ],
+            [
+              -106.5893069943708,
+              31.733185896593668
+            ],
+            [
+              -106.66313220525323,
+              31.741805448722314
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-6"
+      ],
+      "cloud": 0.0367,
+      "gsd": 20.0,
+      "platform": "newsat51",
+      "image": "images/82067c0d7ed88da4f6d9.png",
+      "bounds": [
+        [
+          31.71452648405364,
+          -106.67074237793076
+        ],
+        [
+          31.896475946071835,
+          -106.54079965564169
+        ]
+      ],
+      "raster_crs": "EPSG:32613",
+      "stac_crs": 3857,
+      "width": 613,
+      "height": 1010,
+      "downloaded_bytes": 141517,
+      "status": "ready"
+    },
+    {
+      "id": "20260907_184740_SN46_QUICKVIEW_VISUAL_THUMBNAIL_20m_1_11_0",
+      "outcome_id": "3986bcac-b2d1-4172-b7d1-5f796fb55d0b",
+      "datetime": "2026-09-07T18:47:40.499820+00:00",
+      "collection": "quickview-visual-thumb",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -99.86924444991458,
+              32.49646740524497
+            ],
+            [
+              -99.83183194165485,
+              32.548679091376236
+            ],
+            [
+              -99.58846004716726,
+              32.40048678906685
+            ],
+            [
+              -99.62638091566339,
+              32.34852332386798
+            ],
+            [
+              -99.86924444991458,
+              32.49646740524497
+            ]
+          ]
+        ]
+      },
+      "sites": [
+        "site-2"
+      ],
+      "cloud": 37.4492,
+      "gsd": 20.0,
+      "platform": "newsat46",
+      "image": "images/02ae66a0a3247f5e6736.png",
+      "bounds": [
+        [
+          32.335852220737934,
+          -99.87340426520936
+        ],
+        [
+          32.55408441922858,
+          -99.57387437134027
+        ]
+      ],
+      "raster_crs": "EPSG:32614",
+      "stac_crs": 3857,
+      "width": 1024,
+      "height": 884,
+      "downloaded_bytes": 285545,
+      "status": "ready"
+    }
+  ],
+  "method": "Thumbnail-collection RGB GeoTIFFs, reprojected using embedded CRS to EPSG:3857; alpha-clipped to STAC footprint. No L1D-SR substitution. Outcome-matched to saved research; no orders or taskings."
+}

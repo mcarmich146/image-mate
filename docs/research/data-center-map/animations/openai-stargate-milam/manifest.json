@@ -1,0 +1,61 @@
+{
+  "site_id": "site-9",
+  "site_name": "OpenAI Stargate Milam",
+  "site_label": "Freebird \u00b7 Milam County",
+  "slug": "openai-stargate-milam",
+  "collection": "l1d-sr",
+  "archive_window": [
+    "2024-09-09T00:00:00Z",
+    "2026-09-10T23:59:59Z"
+  ],
+  "active_cutoff": "2026-08-27T00:00:00Z",
+  "total_items": 0,
+  "total_outcomes": 0,
+  "frame_count": 0,
+  "rejected_count": 0,
+  "frames": [],
+  "rejected_frames": [],
+  "resolution_m": 0.5,
+  "output_size": [
+    4000,
+    4000
+  ],
+  "focus_size_m": 2000.0,
+  "focus_center": [
+    -97.0103365,
+    30.996308
+  ],
+  "focus_bounds_m": [
+    688970.7188652945,
+    3429891.8534932877,
+    690970.7188652945,
+    3431891.8534932877
+  ],
+  "target_crs": "EPSG:32614",
+  "tasking_approved_in_source": false,
+  "quality_policy": {
+    "min_focus_coverage_fraction": 0.9,
+    "focus_size_m": 2000.0,
+    "clear_class": 1,
+    "haze_classes_allowed": [
+      2
+    ],
+    "cloud_classes_rejected": [
+      3
+    ],
+    "known_classes": [
+      1,
+      2,
+      3
+    ],
+    "scope": "fixed square centered on the site pin; class-2 haze is allowed in focus; scene-wide cloud does not reject a frame"
+  },
+  "status": "no_clear_multi_date_sequence",
+  "video": null,
+  "poster": null,
+  "html": null,
+  "search_error": null,
+  "latest_capture_datetime": null,
+  "active_last_14_days": false,
+  "tasking_preview": true
+}

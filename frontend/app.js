@@ -45,6 +45,7 @@ const state = {
   lastDetailFetchAt: 0,
   contextMenuLatLng: null,
   contextMenuPoint: null,
+  contextMenuOutcomeId: "",
   lastDetailCoverageBounds: null,
   lastDetailCoverageZoom: null,
   lastDetailContextKey: null,
@@ -312,6 +313,24 @@ const drawControl = new L.Control.Draw({
   },
 });
 map.addControl(drawControl);
+const mapPresentationControl = L.control({ position: "topleft" });
+mapPresentationControl.onAdd = () => {
+  const container = L.DomUtil.create("div", "leaflet-bar leaflet-control map-presentation-control");
+  const button = document.getElementById("mapPresentationBtn");
+  if (button) {
+    button.classList.remove("ghost", "tiny", "icon-only");
+    container.appendChild(button);
+    L.DomEvent.on(button, "click", L.DomEvent.stop);
+    L.DomEvent.on(button, "click", () => {
+      if (isPresentationMode()) exitPresentationMode();
+      else enterPresentationMode();
+    });
+  }
+  L.DomEvent.disableClickPropagation(container);
+  L.DomEvent.disableScrollPropagation(container);
+  return container;
+};
+mapPresentationControl.addTo(map);
 const taskingDrawLayer = L.layerGroup().addTo(map);
 
 map.on(L.Draw.Event.CREATED, (evt) => {
@@ -450,9 +469,13 @@ const mapTimebarDayForwardBtnEl = document.getElementById("mapTimebarDayForwardB
 const mapTimebarPageForwardBtnEl = document.getElementById("mapTimebarPageForwardBtn");
 const mapTimebarCenterInputEl = document.getElementById("mapTimebarCenterInput");
 const mapTimebarCenterBtnEl = document.getElementById("mapTimebarCenterBtn");
+const mapTimebarS2WindowBackBtnEl = document.getElementById("mapTimebarS2WindowBackBtn");
+const mapTimebarS2WindowForwardBtnEl = document.getElementById("mapTimebarS2WindowForwardBtn");
 const tilePerfHudEl = document.getElementById("tilePerfHud");
 const tilePerfNewSatEl = document.getElementById("tilePerfNewSat");
 const tilePerfMerlinEl = document.getElementById("tilePerfMerlin");
+const mapStageEl = document.querySelector(".map-stage");
+const mapPresentationBtnEl = document.getElementById("mapPresentationBtn");
 const mapLocateEl = document.getElementById("mapLocate");
 const mapLocateFormEl = document.getElementById("mapLocateForm");
 const mapLocateInputEl = document.getElementById("mapLocateInput");
@@ -461,6 +484,7 @@ const mapLocateHistoryBtnEl = document.getElementById("mapLocateHistoryBtn");
 const mapLocateHistoryEl = document.getElementById("mapLocateHistory");
 const mapContextMenuEl = document.getElementById("mapContextMenu");
 const ctxCopyLatLonEl = document.getElementById("ctxCopyLatLon");
+const ctxCopyOutcomeIdEl = document.getElementById("ctxCopyOutcomeId");
 const ctxCreateAnimationEl = document.getElementById("ctxCreateAnimation");
 const ctxCreateMonitoringProjectEl = document.getElementById("ctxCreateMonitoringProject");
 const ctxCreateMosaicEl = document.getElementById("ctxCreateMosaic");
@@ -1237,6 +1261,30 @@ function setWmtsPlaybackWindowFromMs(startMs, endExclusiveMs) {
   updateSentinelWmtsPlaybackUi();
   renderMapTimebar();
   scheduleWmtsLayerRefresh();
+}
+
+function moveWmtsPlaybackWindowByOwnWidth(direction) {
+  const current = wmtsPlaybackWindowMs();
+  if (!Number.isFinite(current.startMs) || !Number.isFinite(current.endExclusiveMs)) return;
+  const width = Math.max(WMTS_BAND_MIN_WINDOW_MS, current.endExclusiveMs - current.startMs);
+  let nextStart = current.startMs + (Number(direction) * width);
+  let nextEndExclusive = current.endExclusiveMs + (Number(direction) * width);
+  if (direction > 0) {
+    const latestEndExclusive = utcDayStartMs(Date.now()) + DAY_MS;
+    if (nextEndExclusive > latestEndExclusive) {
+      nextEndExclusive = latestEndExclusive;
+      nextStart = nextEndExclusive - width;
+    }
+  }
+  setWmtsPlaybackWindowFromMs(nextStart, nextEndExclusive);
+}
+
+function alignWmtsPlaybackWindowRightEdgeToNow() {
+  const current = wmtsPlaybackWindowMs();
+  if (!Number.isFinite(current.startMs) || !Number.isFinite(current.endExclusiveMs)) return;
+  const width = Math.max(WMTS_BAND_MIN_WINDOW_MS, current.endExclusiveMs - current.startMs);
+  const endExclusiveMs = utcDayStartMs(Date.now()) + DAY_MS;
+  setWmtsPlaybackWindowFromMs(endExclusiveMs - width, endExclusiveMs);
 }
 
 function wmtsTemplateWithPlaybackTime(templateUrl) {
@@ -2325,7 +2373,10 @@ function archivePreviewUrl(item, assetKey = "thumbnail") {
 
 function hideContextMenu() {
   mapContextMenuEl.style.display = "none";
+  mapContextMenuEl.classList.remove("is-open");
   state.contextMenuPoint = null;
+  state.contextMenuOutcomeId = "";
+  if (ctxCopyOutcomeIdEl) ctxCopyOutcomeIdEl.hidden = true;
 }
 
 function formatCoord(value) {
@@ -2952,6 +3003,34 @@ async function updateDebugStats() {
   }
 }
 
+function contextOutcomeIdForLatLng(latlng) {
+  if (!latlng) return "";
+  const point = L.latLng(latlng.lat, latlng.lng);
+  const candidates = dedupeById([
+    ...(state.detailItems || []),
+    ...(state.items || []),
+    ...(state.overviewItems || []),
+  ]).filter((item) => {
+    if (!(item?.outcome_id || "").toString().trim()) return false;
+    const bounds = boundsFromGeometry(item.geometry);
+    return Boolean(bounds?.contains(point));
+  });
+  if (!candidates.length) return "";
+  candidates.sort((a, b) => {
+    const score = (item) => {
+      let value = 0;
+      if (item.id === state.selectedCarouselId) value += 100;
+      if (state.selectedCarouselIds.has(item.id)) value += 50;
+      if ((state.detailItems || []).some((row) => row?.id === item.id)) value += 10;
+      return value;
+    };
+    const scoreDelta = score(b) - score(a);
+    if (scoreDelta) return scoreDelta;
+    return (b.datetime || "").localeCompare(a.datetime || "");
+  });
+  return (candidates[0].outcome_id || "").toString().trim();
+}
+
 function showContextMenu(x, y, latlng = null) {
   if (latlng) {
     state.contextMenuLatLng = {
@@ -2960,10 +3039,21 @@ function showContextMenu(x, y, latlng = null) {
     };
     ctxCopyLatLonEl.textContent = `Lat/Lon: ${formatLatLon(latlng)}`;
   }
+  state.contextMenuOutcomeId = contextOutcomeIdForLatLng(state.contextMenuLatLng);
+  if (ctxCopyOutcomeIdEl) {
+    ctxCopyOutcomeIdEl.hidden = !state.contextMenuOutcomeId;
+    ctxCopyOutcomeIdEl.title = state.contextMenuOutcomeId ? `Copy ${state.contextMenuOutcomeId}` : "";
+  }
   state.contextMenuPoint = { x, y };
-  mapContextMenuEl.style.left = `${x}px`;
-  mapContextMenuEl.style.top = `${y}px`;
   mapContextMenuEl.style.display = "block";
+  mapContextMenuEl.classList.add("is-open");
+  const stageRect = mapStageEl?.getBoundingClientRect();
+  const menuRect = mapContextMenuEl.getBoundingClientRect();
+  const margin = 8;
+  const maxLeft = Math.max(margin, (stageRect?.width || menuRect.width) - menuRect.width - margin);
+  const maxTop = Math.max(margin, (stageRect?.height || menuRect.height) - menuRect.height - margin);
+  mapContextMenuEl.style.left = `${Math.min(Math.max(margin, x), maxLeft)}px`;
+  mapContextMenuEl.style.top = `${Math.min(Math.max(margin, y), maxTop)}px`;
 }
 
 function toDateTimeLocalInput(isoValue) {
@@ -6628,6 +6718,7 @@ async function runSearchAnimation() {
 }
 
 async function loadContracts() {
+  state.satellogicContractMemory = null;
   contractSelectEl.innerHTML = "";
   const placeholder = document.createElement("option");
   placeholder.value = "";
@@ -6648,14 +6739,12 @@ async function loadContracts() {
       contractSelectEl.appendChild(opt);
     });
 
-    const remembered = state.satellogicContractMemory || "";
-    const fallbackContractId = data.default_contract_id || "";
-    const hasRemembered = remembered && (data.contracts || []).some((row) => row.id === remembered);
-    const nextContractId = hasRemembered ? remembered : fallbackContractId;
-    if (nextContractId) contractSelectEl.value = nextContractId;
-    if (isSourceEnabled("satellogic")) {
-      state.satellogicContractMemory = (contractSelectEl.value || "").trim() || state.satellogicContractMemory;
+    const defaultContractId = data.default_contract_id || "";
+    if (defaultContractId && !(data.contracts || []).some((row) => row.id === defaultContractId)) {
+      throw new Error(`Configured default contract ${defaultContractId} is not available to this account`);
     }
+    contractSelectEl.value = defaultContractId;
+    state.satellogicContractMemory = defaultContractId || null;
     contractSelectEl.disabled = !isSourceEnabled("satellogic");
     toast(`Contracts loaded: ${data.count}`);
   } catch (err) {
@@ -8129,6 +8218,48 @@ async function refreshEvents() {
   renderEventFeed();
 }
 
+function isPresentationMode() {
+  return document.body.classList.contains("presentation-mode") || document.fullscreenElement === mapStageEl;
+}
+
+function syncPresentationMode(active) {
+  document.body.classList.toggle("presentation-mode", active);
+  if (mapPresentationBtnEl) {
+    mapPresentationBtnEl.setAttribute("aria-pressed", active ? "true" : "false");
+    mapPresentationBtnEl.setAttribute("aria-label", active ? "Exit presentation mode" : "Enter presentation mode");
+    mapPresentationBtnEl.setAttribute("title", active ? "Exit presentation mode (Escape)" : "Enter presentation mode");
+  }
+  window.requestAnimationFrame(() => map.invalidateSize({ animate: false }));
+}
+
+async function enterPresentationMode() {
+  if (isPresentationMode()) return;
+  if (mapStageEl?.requestFullscreen) {
+    try {
+      await mapStageEl.requestFullscreen({ navigationUI: "hide" });
+      return;
+    } catch (_) {
+      // Fall back to an in-page presentation mode when browser fullscreen is unavailable.
+    }
+  }
+  syncPresentationMode(true);
+}
+
+async function exitPresentationMode() {
+  if (document.fullscreenElement === mapStageEl && document.exitFullscreen) {
+    try {
+      await document.exitFullscreen();
+    } catch (_) {
+      // Keep the CSS fallback cleanup below authoritative.
+    }
+  }
+  syncPresentationMode(false);
+}
+
+document.addEventListener("fullscreenchange", () => {
+  syncPresentationMode(document.fullscreenElement === mapStageEl);
+});
+
 workbenchTabsEl?.addEventListener("click", (evt) => {
   const btn = evt.target.closest(".tab-btn");
   if (!btn) return;
@@ -8781,10 +8912,13 @@ const centerTimelineFromInput = () => {
 const resetMapTimebarToNow = () => {
   state.timeline.userAdjusted = false;
   hideMapTimebarTooltip();
+  alignWmtsPlaybackWindowRightEdgeToNow();
   refreshMapTimebarData();
 };
 
 mapTimebarCenterBtnEl?.addEventListener("click", resetMapTimebarToNow);
+mapTimebarS2WindowBackBtnEl?.addEventListener("click", () => moveWmtsPlaybackWindowByOwnWidth(-1));
+mapTimebarS2WindowForwardBtnEl?.addEventListener("click", () => moveWmtsPlaybackWindowByOwnWidth(1));
 mapTimebarCenterInputEl?.addEventListener("keydown", (evt) => {
   if (evt.key !== "Enter") return;
   evt.preventDefault();
@@ -9138,6 +9272,11 @@ document.addEventListener("click", (evt) => {
 });
 
 document.addEventListener("keydown", (evt) => {
+  if (evt.key === "Escape" && isPresentationMode()) {
+    evt.preventDefault();
+    exitPresentationMode();
+    return;
+  }
   if (evt.key === "Escape") {
     hideLocationHistoryMenu();
     hideLayerEditorPopover();
@@ -9193,6 +9332,21 @@ ctxCopyLatLonEl.addEventListener("click", async () => {
   try {
     await navigator.clipboard.writeText(value);
     toast(`Copied ${value}`);
+  } catch (_) {
+    toast(`Clipboard unavailable: ${value}`);
+  }
+});
+
+ctxCopyOutcomeIdEl?.addEventListener("click", async () => {
+  const value = (state.contextMenuOutcomeId || "").trim();
+  hideContextMenu();
+  if (!value) {
+    toast("No Outcome ID is available at this map location");
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(value);
+    toast(`Copied Outcome ID: ${value}`);
   } catch (_) {
     toast(`Clipboard unavailable: ${value}`);
   }

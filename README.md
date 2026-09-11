@@ -58,7 +58,7 @@ cp .env-template .env
 - `SATELLOGIC_AUTH_MODE` (default `oauth_client_credentials`)
 - `SATELLOGIC_KEY_ID`
 - `SATELLOGIC_KEY_SECRET`
-- `SATELLOGIC_CONTRACT_ID`
+- `SATELLOGIC_CONTRACT_ID` defaults to Sales – Showcase (`cont.eac744cc-2afe-4012-9621-35623feeb7a7`, formerly Formula1), including when unset or blank. Set a different ID only for an intentional contract override. The UI selects the backend default whenever it loads the contract list; requests without a contract also use this default. Restart the backend and reload the browser after changing the setting.
 - Optional if using bearer mode:
   - `SATELLOGIC_BEARER_TOKEN`
 - Optional for Merlin Sentinel-2 source:

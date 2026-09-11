@@ -1,0 +1,61 @@
+{
+  "site_id": "site-7",
+  "site_name": "OpenAI Stargate Wisconsin",
+  "site_label": "Lighthouse \u00b7 Port Washington",
+  "slug": "openai-stargate-wisconsin",
+  "collection": "l1d-sr",
+  "archive_window": [
+    "2024-09-09T00:00:00Z",
+    "2026-09-10T23:59:59Z"
+  ],
+  "active_cutoff": "2026-08-27T00:00:00Z",
+  "total_items": 0,
+  "total_outcomes": 0,
+  "frame_count": 0,
+  "rejected_count": 0,
+  "frames": [],
+  "rejected_frames": [],
+  "resolution_m": 0.5,
+  "output_size": [
+    4000,
+    4000
+  ],
+  "focus_size_m": 2000.0,
+  "focus_center": [
+    -87.85603566454043,
+    43.43040510723768
+  ],
+  "focus_bounds_m": [
+    429714.7883529584,
+    4807968.19357203,
+    431714.7883529584,
+    4809968.19357203
+  ],
+  "target_crs": "EPSG:32616",
+  "tasking_approved_in_source": false,
+  "quality_policy": {
+    "min_focus_coverage_fraction": 0.9,
+    "focus_size_m": 2000.0,
+    "clear_class": 1,
+    "haze_classes_allowed": [
+      2
+    ],
+    "cloud_classes_rejected": [
+      3
+    ],
+    "known_classes": [
+      1,
+      2,
+      3
+    ],
+    "scope": "fixed square centered on the site pin; class-2 haze is allowed in focus; scene-wide cloud does not reject a frame"
+  },
+  "status": "no_clear_multi_date_sequence",
+  "video": null,
+  "poster": null,
+  "html": null,
+  "search_error": null,
+  "latest_capture_datetime": null,
+  "active_last_14_days": false,
+  "tasking_preview": true
+}

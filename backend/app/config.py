@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 import json
 import os
@@ -10,6 +10,9 @@ from dotenv import load_dotenv
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 load_dotenv(ROOT_DIR / ".env")
+
+# Sales – Showcase (formerly Formula1). Use the stable ID, not the display name.
+DEFAULT_SATELLOGIC_CONTRACT_ID = "cont.eac744cc-2afe-4012-9621-35623feeb7a7"
 
 
 def _split_csv(value: str) -> list[str]:
@@ -47,7 +50,9 @@ class Settings:
     satellogic_key_secret: str = os.getenv("SATELLOGIC_KEY_SECRET", "")
     # Supported values: oauth_client_credentials, bearer, key_secret, auto
     satellogic_auth_mode: str = os.getenv("SATELLOGIC_AUTH_MODE", "oauth_client_credentials")
-    satellogic_contract_id: str = os.getenv("SATELLOGIC_CONTRACT_ID", "")
+    satellogic_contract_id: str = field(default_factory=lambda: (
+        os.getenv("SATELLOGIC_CONTRACT_ID", "").strip() or DEFAULT_SATELLOGIC_CONTRACT_ID
+    ))
     satellogic_collection_id: str = os.getenv("SATELLOGIC_COLLECTION_ID", "l1d-sr")
     satellogic_api_base_url: str = os.getenv("SATELLOGIC_API_BASE_URL", "https://api.satellogic.com")
     satellogic_stac_url: str = os.getenv("SATELLOGIC_STAC_URL", "https://api.satellogic.com/archive/stac")

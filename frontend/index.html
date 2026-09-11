@@ -566,18 +566,17 @@ aircraft_review.py luna-evaluate \
 
     <main class="map-stage">
       <div id="map"></div>
-      <div class="global-tools" id="globalTools">
-        <button id="toolsMenuBtn" type="button" class="ghost tools-menu-btn" aria-expanded="false" aria-controls="toolsDrawer">Tools</button>
-        <div id="toolsDrawer" class="tools-drawer" role="dialog" aria-label="Image-Mate tools" hidden>
-          <div class="tools-drawer-head"><strong>Tools</strong><button id="toolsDrawerCloseBtn" type="button" class="ghost tiny">Close</button></div>
-          <p class="meta">Technical and system utilities are kept here so the analyst workspaces stay focused.</p>
-          <button type="button" class="tool-drawer-item" data-tool-view="workflows">Workflow Designer</button>
-          <button type="button" class="tool-drawer-item" data-tool-view="schedules">Schedules &amp; subscriptions</button>
-          <button type="button" class="tool-drawer-item" data-tool-view="runs">Runs &amp; logs</button>
-          <button type="button" class="tool-drawer-item" data-tool-view="settings">System settings</button>
-          <a class="tool-drawer-item" href="/manual.html" target="_blank" rel="noopener">Help &amp; user manual</a>
-        </div>
-      </div>
+      <button
+        id="mapPresentationBtn"
+        type="button"
+        class="ghost tiny icon-only map-presentation-btn"
+        aria-label="Enter presentation mode"
+        aria-pressed="false"
+        aria-keyshortcuts="Escape"
+        title="Enter presentation mode"
+      >
+        <span aria-hidden="true">⛶</span>
+      </button>
       <div id="mapLocate" class="map-locate">
         <form id="mapLocateForm" class="map-locate-form" autocomplete="off">
           <input
@@ -617,6 +616,11 @@ aircraft_review.py luna-evaluate \
           <button id="mapTimebarPageForwardBtn" type="button" class="ghost tiny icon-timebar" title="Jump forward by full timeline extent" aria-label="Jump forward by full timeline extent">&raquo;</button>
           <input id="mapTimebarCenterInput" type="datetime-local" step="60" title="Center timeline on date/time" aria-label="Center timeline on date/time" />
           <button id="mapTimebarCenterBtn" type="button" class="ghost tiny" title="Jump timeline to now">Now</button>
+          <span class="map-timebar-s2-window-controls" role="group" aria-label="Sentinel-2 window controls">
+            <span class="map-timebar-s2-window-label" aria-hidden="true">S-2</span>
+            <button id="mapTimebarS2WindowBackBtn" type="button" class="ghost tiny icon-timebar" title="Move Sentinel-2 window back by its width" aria-label="Move Sentinel-2 window back by its width">&lsaquo;</button>
+            <button id="mapTimebarS2WindowForwardBtn" type="button" class="ghost tiny icon-timebar" title="Move Sentinel-2 window forward by its width" aria-label="Move Sentinel-2 window forward by its width">&rsaquo;</button>
+          </span>
         </div>
         <canvas id="mapTimebarCanvas" class="map-timebar-canvas" aria-label="Timeline canvas"></canvas>
         <div id="mapTimebarTooltip" class="map-timebar-tooltip" role="status" aria-live="polite"></div>
@@ -633,13 +637,44 @@ aircraft_review.py luna-evaluate \
               </button>
               <div id="carouselSelectionBar" class="carousel-selection-bar" hidden>
                 <span id="carouselSelectionCount" class="selection-count">0 selected</span>
-              <button id="compareModeBtn" class="ghost tiny icon-only" type="button" title="Compare" aria-label="Compare">
-                <span class="clock-icon" aria-hidden="true"></span>
-              </button>
-              <button id="animateSeriesBtn" class="ghost tiny icon-only" type="button" title="Animate Selected" aria-label="Animate Selected">
-                <span class="movie-icon" aria-hidden="true"></span>
-              </button>
-              <button id="mosaicBtn" class="ghost tiny" type="button" title="Create mosaic from selected images" aria-label="Create mosaic from selected images">Mosaic</button>
+              </div>
+              <div class="carousel-tools-menu">
+                <button id="toolsMenuBtn" type="button" class="ghost tools-menu-btn" aria-expanded="false" aria-controls="toolsDrawer">Tools</button>
+                <div id="toolsDrawer" class="tools-drawer carousel-tools-drawer" role="dialog" aria-label="Image-Mate tools" hidden>
+                  <div class="tools-drawer-head"><strong>Tools</strong><button id="toolsDrawerCloseBtn" type="button" class="ghost tiny">Close</button></div>
+                  <p class="meta">Carousel actions and workspace utilities are kept here so the map stays clear.</p>
+
+                  <section class="tools-drawer-section" aria-labelledby="carouselToolsHeading">
+                    <h4 id="carouselToolsHeading" class="tools-drawer-section-title">Carousel tools</h4>
+                    <div class="carousel-tools-grid">
+                      <button id="compareModeBtn" class="ghost tiny icon-only" type="button" title="Compare" aria-label="Compare">
+                        <span class="clock-icon" aria-hidden="true"></span>
+                      </button>
+                      <button id="animateSeriesBtn" class="ghost tiny icon-only" type="button" title="Animate Selected" aria-label="Animate Selected">
+                        <span class="movie-icon" aria-hidden="true"></span>
+                      </button>
+                      <button id="mosaicBtn" class="ghost tiny" type="button" title="Create mosaic from selected images" aria-label="Create mosaic from selected images">Mosaic</button>
+                      <button id="generateSeriesReportBtn" class="ghost tiny icon-only" type="button" title="Generate Report" aria-label="Generate Report">
+                        <span class="report-icon" aria-hidden="true"></span>
+                      </button>
+                      <button id="downloadMenuBtn" class="ghost tiny icon-only" type="button" title="Download" aria-label="Download">
+                        <span class="download-icon" aria-hidden="true"></span>
+                      </button>
+                      <button id="carouselAnalyzeBtn" type="button" class="ghost tiny">Analyze</button>
+                      <button id="carouselMoreBtn" type="button" class="ghost tiny">More</button>
+                    </div>
+                  </section>
+
+                  <section class="tools-drawer-section" aria-labelledby="workspaceToolsHeading">
+                    <h4 id="workspaceToolsHeading" class="tools-drawer-section-title">Workspace tools</h4>
+                    <button type="button" class="tool-drawer-item" data-tool-view="workflows">Workflow Designer</button>
+                    <button type="button" class="tool-drawer-item" data-tool-view="schedules">Schedules &amp; subscriptions</button>
+                    <button type="button" class="tool-drawer-item" data-tool-view="runs">Runs &amp; logs</button>
+                    <button type="button" class="tool-drawer-item" data-tool-view="settings">System settings</button>
+                    <a class="tool-drawer-item" href="/manual.html" target="_blank" rel="noopener">Help &amp; user manual</a>
+                  </section>
+                </div>
+              </div>
               <div id="mosaicPopover" class="mosaic-popover" role="dialog" aria-label="Create mosaic">
                 <h4>Create Mosaic</h4>
                 <p id="mosaicSelectionSummary" class="meta">Select at least two images.</p>
@@ -655,9 +690,6 @@ aircraft_review.py luna-evaluate \
                   <button id="mosaicCloseBtn" type="button" class="ghost tiny">Cancel</button>
                 </div>
               </div>
-              <button id="generateSeriesReportBtn" class="ghost tiny icon-only" type="button" title="Generate Report" aria-label="Generate Report">
-                <span class="report-icon" aria-hidden="true"></span>
-              </button>
               <div id="animateSeriesPopover" class="animate-popover" role="dialog" aria-label="Animate selected timeline">
                 <h4>Animate Selected</h4>
                 <label>Time between images (seconds)<input id="animateSeriesSeconds" type="number" min="0.1" max="10" step="0.1" value="0.8" /></label>
@@ -682,21 +714,15 @@ aircraft_review.py luna-evaluate \
                 </div>
                 <p id="generateSeriesReportStatus" class="meta">Uses selected images and current viewport extent.</p>
               </div>
-              <button id="downloadMenuBtn" class="ghost tiny icon-only" type="button" title="Download" aria-label="Download">
-                <span class="download-icon" aria-hidden="true"></span>
-              </button>
               <div id="downloadPopover" class="download-popover" role="menu" aria-label="Download menu">
                 <button id="downloadOutcomeCsvBtn" type="button" class="download-menu-item" role="menuitem">Download selected Outcome IDs (CSV + clipboard)</button>
                 <button id="downloadVisibleQuickviewBtn" type="button" class="download-menu-item" role="menuitem">Download visible tiles (L1B Quickview Visual)</button>
                 <button id="downloadVisibleL1dBtn" type="button" class="download-menu-item" role="menuitem">Download visible tiles (L1D-SR Visual)</button>
               </div>
               <div id="downloadCopiedTip" class="download-copied-tip" role="status" aria-live="polite">Copied To Clipboard</div>
-              <button id="carouselAnalyzeBtn" type="button" class="ghost tiny">Analyze</button>
-              <button id="carouselMoreBtn" type="button" class="ghost tiny">More</button>
               <div id="carouselMorePopover" class="selection-more-popover" hidden>
                 <button id="carouselReportBtn" type="button" class="download-menu-item">Generate report</button>
                 <span class="meta">Additional actions use the selected imagery.</span>
-              </div>
               </div>
             </div>
           </div>
@@ -719,6 +745,7 @@ aircraft_review.py luna-evaluate \
 
       <div id="mapContextMenu" class="map-context-menu">
         <button id="ctxCopyLatLon" class="ctx-coord-btn">Lat/Lon: --, --</button>
+        <button id="ctxCopyOutcomeId" type="button" hidden>Copy Outcome ID</button>
         <button id="ctxCreateAnimation">Create Animation</button>
         <button id="ctxCreateMonitoringProject">Start Monitoring Project</button>
         <button id="ctxCreateMosaic">Create Mosaic from Selection</button>

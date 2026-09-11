@@ -1,0 +1,85 @@
+{
+  "site_id": "site-5",
+  "site_name": "OpenAI Stargate Lordstown",
+  "site_label": "Lordstown \u00b7 Stargate",
+  "slug": "openai-stargate-lordstown",
+  "collection": "l1d-sr",
+  "archive_window": [
+    "2024-09-09T00:00:00Z",
+    "2026-09-10T23:59:59Z"
+  ],
+  "active_cutoff": "2026-08-27T00:00:00Z",
+  "total_items": 1,
+  "total_outcomes": 1,
+  "frame_count": 0,
+  "rejected_count": 1,
+  "frames": [],
+  "rejected_frames": [
+    {
+      "outcome_id": "fa98be9a-4725-41ea-a18b-748646e77837",
+      "datetime": "2025-06-24T16:34:30.945152+00:00",
+      "item_ids": [
+        "20250624_163430_945_SN48_L1D_SR_MS_17N_508_4552_1_4_0"
+      ],
+      "tile_count": 1,
+      "decoded_tile_count": 1,
+      "tile_details": [],
+      "errors": [],
+      "visual_coverage_fraction": null,
+      "cloud_mask_coverage_fraction": 0.0,
+      "haze_fraction_over_focus": 0.0,
+      "cloud_fraction_over_focus": 0.0,
+      "unknown_mask_fraction_over_focus": 0.0,
+      "cloud_mask_class_counts_over_focus": {},
+      "cloud_mask_decision": "reject",
+      "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+      "cloud_mask_errors": [],
+      "decision": "reject",
+      "decision_reason": "cloud_mask_does_not_cover_focus",
+      "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+    }
+  ],
+  "resolution_m": 0.5,
+  "output_size": [
+    4000,
+    4000
+  ],
+  "focus_size_m": 2000.0,
+  "focus_center": [
+    -80.8812281,
+    41.15311175
+  ],
+  "focus_bounds_m": [
+    508965.7483310642,
+    4554760.942614714,
+    510965.7483310642,
+    4556760.942614714
+  ],
+  "target_crs": "EPSG:32617",
+  "tasking_approved_in_source": false,
+  "quality_policy": {
+    "min_focus_coverage_fraction": 0.9,
+    "focus_size_m": 2000.0,
+    "clear_class": 1,
+    "haze_classes_allowed": [
+      2
+    ],
+    "cloud_classes_rejected": [
+      3
+    ],
+    "known_classes": [
+      1,
+      2,
+      3
+    ],
+    "scope": "fixed square centered on the site pin; class-2 haze is allowed in focus; scene-wide cloud does not reject a frame"
+  },
+  "status": "no_clear_multi_date_sequence",
+  "video": null,
+  "poster": null,
+  "html": null,
+  "search_error": null,
+  "latest_capture_datetime": "2025-06-24T16:34:30.945152+00:00",
+  "active_last_14_days": false,
+  "tasking_preview": true
+}

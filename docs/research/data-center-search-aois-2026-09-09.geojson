@@ -1,0 +1,513 @@
+{
+  "type": "FeatureCollection",
+  "name": "Data-center research AOIs — not approved tasking polygons",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "site": "Anthropic-Amazon New Carlisle",
+        "search_center_longitude": -86.471225996291,
+        "search_center_latitude": 41.67935929360402,
+        "coordinate_reference": "Epoch AI public map center and map bounds",
+        "geometry_status": "research_search_rectangle_not_verified_parcel",
+        "tasking_approved": false,
+        "source": "https://epoch.ai/data/ai-data-centers/directory/openai-stargate-abilene/satellite-explorer"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -86.48113398502005,
+              41.66534148501307
+            ],
+            [
+              -86.46131800756194,
+              41.66534148501307
+            ],
+            [
+              -86.46131800756194,
+              41.69337710219497
+            ],
+            [
+              -86.48113398502005,
+              41.69337710219497
+            ],
+            [
+              -86.48113398502005,
+              41.66534148501307
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "site": "OpenAI Stargate Abilene",
+        "search_center_longitude": -99.78560811260724,
+        "search_center_latitude": 32.501314051807306,
+        "coordinate_reference": "Epoch AI public map center and map bounds",
+        "geometry_status": "research_search_rectangle_not_verified_parcel",
+        "tasking_approved": false,
+        "source": "https://epoch.ai/data/ai-data-centers/directory/openai-stargate-abilene/satellite-explorer"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -99.7967348142505,
+              32.49551262676191
+            ],
+            [
+              -99.77448141096396,
+              32.49551262676191
+            ],
+            [
+              -99.77448141096396,
+              32.507115476852704
+            ],
+            [
+              -99.7967348142505,
+              32.507115476852704
+            ],
+            [
+              -99.7967348142505,
+              32.49551262676191
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "site": "Colossus 1",
+        "search_center_longitude": -90.15546042296336,
+        "search_center_latitude": 35.06016616737861,
+        "coordinate_reference": "Epoch AI public map center and map bounds",
+        "geometry_status": "research_search_rectangle_not_verified_parcel",
+        "tasking_approved": false,
+        "source": "https://epoch.ai/data/ai-data-centers/directory/openai-stargate-abilene/satellite-explorer"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.15829088828409,
+              35.05683276206011
+            ],
+            [
+              -90.15262995764265,
+              35.05683276206011
+            ],
+            [
+              -90.15262995764265,
+              35.06349957269711
+            ],
+            [
+              -90.15829088828409,
+              35.06349957269711
+            ],
+            [
+              -90.15829088828409,
+              35.05683276206011
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "site": "OpenAI Stargate Shackelford",
+        "search_center_longitude": -99.54831401469934,
+        "search_center_latitude": 32.5437645,
+        "coordinate_reference": "Epoch AI public map center and map bounds",
+        "geometry_status": "research_search_rectangle_not_verified_parcel",
+        "tasking_approved": false,
+        "source": "https://epoch.ai/data/ai-data-centers/directory/openai-stargate-abilene/satellite-explorer"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -99.55866725869888,
+              32.5395581
+            ],
+            [
+              -99.5379607706998,
+              32.5395581
+            ],
+            [
+              -99.5379607706998,
+              32.5479709
+            ],
+            [
+              -99.55866725869888,
+              32.5479709
+            ],
+            [
+              -99.55866725869888,
+              32.5395581
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "site": "OpenAI Stargate Lordstown",
+        "search_center_longitude": -80.8812281,
+        "search_center_latitude": 41.15311175,
+        "coordinate_reference": "Epoch AI public map center and map bounds",
+        "geometry_status": "research_search_rectangle_not_verified_parcel",
+        "tasking_approved": false,
+        "source": "https://epoch.ai/data/ai-data-centers/directory/openai-stargate-abilene/satellite-explorer"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -80.8852943,
+              41.1504842
+            ],
+            [
+              -80.8771619,
+              41.1504842
+            ],
+            [
+              -80.8771619,
+              41.1557393
+            ],
+            [
+              -80.8852943,
+              41.1557393
+            ],
+            [
+              -80.8852943,
+              41.1504842
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "site": "OpenAI Stargate New Mexico",
+        "search_center_longitude": -106.68427010788022,
+        "search_center_latitude": 31.820319039816873,
+        "coordinate_reference": "Epoch AI public map center and map bounds",
+        "geometry_status": "research_search_rectangle_not_verified_parcel",
+        "tasking_approved": false,
+        "source": "https://epoch.ai/data/ai-data-centers/directory/openai-stargate-abilene/satellite-explorer"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -106.72195189720803,
+              31.806082949248754
+            ],
+            [
+              -106.64658831855242,
+              31.806082949248754
+            ],
+            [
+              -106.64658831855242,
+              31.834555130384995
+            ],
+            [
+              -106.72195189720803,
+              31.834555130384995
+            ],
+            [
+              -106.72195189720803,
+              31.806082949248754
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "site": "OpenAI Stargate Wisconsin",
+        "search_center_longitude": -87.85603566454043,
+        "search_center_latitude": 43.43040510723768,
+        "coordinate_reference": "Epoch AI public map center and map bounds",
+        "geometry_status": "research_search_rectangle_not_verified_parcel",
+        "tasking_approved": false,
+        "source": "https://epoch.ai/data/ai-data-centers/directory/openai-stargate-abilene/satellite-explorer"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -87.86073902908086,
+              43.4262088
+            ],
+            [
+              -87.8513323,
+              43.4262088
+            ],
+            [
+              -87.8513323,
+              43.43460141447537
+            ],
+            [
+              -87.86073902908086,
+              43.43460141447537
+            ],
+            [
+              -87.86073902908086,
+              43.4262088
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "site": "OpenAI Stargate Michigan",
+        "search_center_longitude": -83.8841725,
+        "search_center_latitude": 42.1212265,
+        "coordinate_reference": "Epoch AI public map center and map bounds",
+        "geometry_status": "research_search_rectangle_not_verified_parcel",
+        "tasking_approved": false,
+        "source": "https://epoch.ai/data/ai-data-centers/directory/openai-stargate-abilene/satellite-explorer"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -83.890196,
+              42.118083
+            ],
+            [
+              -83.878149,
+              42.118083
+            ],
+            [
+              -83.878149,
+              42.12437
+            ],
+            [
+              -83.890196,
+              42.12437
+            ],
+            [
+              -83.890196,
+              42.118083
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "site": "OpenAI Stargate Milam",
+        "search_center_longitude": -97.0103365,
+        "search_center_latitude": 30.996308,
+        "coordinate_reference": "Epoch AI public map center and map bounds",
+        "geometry_status": "research_search_rectangle_not_verified_parcel",
+        "tasking_approved": false,
+        "source": "https://epoch.ai/data/ai-data-centers/directory/openai-stargate-abilene/satellite-explorer"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -97.012105,
+              30.995915
+            ],
+            [
+              -97.008568,
+              30.995915
+            ],
+            [
+              -97.008568,
+              30.996701
+            ],
+            [
+              -97.012105,
+              30.996701
+            ],
+            [
+              -97.012105,
+              30.995915
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "site": "Anthropic Lake Mariner",
+        "search_center_longitude": -78.60203824717944,
+        "search_center_latitude": 43.35642754850562,
+        "coordinate_reference": "Epoch AI public map center and map bounds",
+        "geometry_status": "research_search_rectangle_not_verified_parcel",
+        "tasking_approved": false,
+        "source": "https://epoch.ai/data/ai-data-centers/directory/openai-stargate-abilene/satellite-explorer"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -78.60962673980009,
+              43.351511003464026
+            ],
+            [
+              -78.59444975455878,
+              43.351511003464026
+            ],
+            [
+              -78.59444975455878,
+              43.36134409354722
+            ],
+            [
+              -78.60962673980009,
+              43.36134409354722
+            ],
+            [
+              -78.60962673980009,
+              43.351511003464026
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "site": "Colossus 2 facility search",
+        "search_center_longitude": -90.039,
+        "search_center_latitude": 34.9995,
+        "coordinate_reference": "Proposed archive rectangle around independently geocoded street address",
+        "geometry_status": "research_search_rectangle_not_verified_parcel",
+        "tasking_approved": false,
+        "source": "https://epoch.ai/data/ai-data-centers/directory/openai-stargate-abilene/satellite-explorer"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.044,
+              34.9945
+            ],
+            [
+              -90.032,
+              34.9945
+            ],
+            [
+              -90.032,
+              35.005
+            ],
+            [
+              -90.044,
+              35.005
+            ],
+            [
+              -90.044,
+              34.9945
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "site": "Colossus 3 Southaven",
+        "search_center_longitude": -90.034277800904,
+        "search_center_latitude": 34.991861641286,
+        "coordinate_reference": "Census street-address match; rectangle proposed for archive discovery",
+        "geometry_status": "research_search_rectangle_not_verified_parcel",
+        "tasking_approved": false,
+        "source": "https://southaven.org/Blog.aspx?IID=227"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -90.0403,
+              34.9838
+            ],
+            [
+              -90.0243,
+              34.9838
+            ],
+            [
+              -90.0243,
+              34.9938
+            ],
+            [
+              -90.0403,
+              34.9938
+            ],
+            [
+              -90.0403,
+              34.9838
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "site": "River Bend provisional neighborhood",
+        "search_center_longitude": -91.309069280972,
+        "search_center_latitude": 30.716339672268,
+        "coordinate_reference": "Neighboring commercial property's Census address match; NOT campus center",
+        "geometry_status": "research_search_rectangle_not_verified_parcel",
+        "tasking_approved": false,
+        "source": "https://images1.showcase.com/d2/-yYFZDLoXi4PVO5mH6UnYICsGuZMsJqkW7xnbeRZHy8/document.pdf"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -91.3391,
+              30.6963
+            ],
+            [
+              -91.2891,
+              30.6963
+            ],
+            [
+              -91.2891,
+              30.7413
+            ],
+            [
+              -91.3391,
+              30.7413
+            ],
+            [
+              -91.3391,
+              30.6963
+            ]
+          ]
+        ]
+      }
+    }
+  ]
+}

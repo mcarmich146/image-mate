@@ -119,13 +119,6 @@ body {
 
 .secondary-panel-hidden { display: none; }
 
-.global-tools {
-  position: absolute;
-  top: 12px;
-  right: 304px;
-  z-index: 960;
-}
-
 .tools-menu-btn {
   width: auto;
   min-width: 72px;
@@ -145,6 +138,48 @@ body {
   border-radius: 10px;
   background: rgba(8, 16, 30, 0.98);
   box-shadow: 0 16px 34px rgba(0, 0, 0, 0.46);
+}
+
+.carousel-tools-menu {
+  position: relative;
+}
+
+.carousel-tools-drawer {
+  width: 270px;
+  max-height: min(70vh, 560px);
+  overflow-y: auto;
+}
+
+.tools-drawer-section {
+  margin-top: 0.75rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid rgba(49, 70, 103, 0.72);
+}
+
+.tools-drawer-section-title {
+  margin: 0 0 0.42rem;
+  color: #b9cbe4;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.65rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.carousel-tools-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.35rem;
+}
+
+.carousel-tools-grid button {
+  width: 100%;
+  min-width: 0;
+  margin-top: 0;
+}
+
+.carousel-tools-grid button.icon-only {
+  width: 100%;
+  height: 32px;
 }
 
 .tools-drawer[hidden], .carousel-selection-bar[hidden], .selection-more-popover[hidden] { display: none; }
@@ -935,6 +970,75 @@ button.ghost {
   height: 100%;
 }
 
+.map-presentation-btn {
+  width: 34px;
+  height: 34px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: #fff;
+  color: #000;
+  font-size: 1.05rem;
+  line-height: 1;
+}
+
+.map-presentation-btn:hover {
+  transform: none;
+  background: #f4f4f4;
+  color: #000;
+  opacity: 1;
+}
+
+.map-presentation-control {
+  clear: both;
+}
+
+body.presentation-mode {
+  overflow: hidden;
+}
+
+body.presentation-mode .app-shell {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+}
+
+body.presentation-mode .panel,
+body.presentation-mode .map-stage > :not(#map),
+.map-stage:fullscreen > :not(#map) {
+  display: none !important;
+}
+
+body.presentation-mode .map-stage,
+.map-stage:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  min-height: 100vh;
+  background: #070b14;
+}
+
+body.presentation-mode #map,
+.map-stage:fullscreen #map {
+  width: 100%;
+  height: 100%;
+}
+
+body.presentation-mode #map .leaflet-draw,
+.map-stage:fullscreen #map .leaflet-draw {
+  display: none !important;
+}
+
+body.presentation-mode #map .map-presentation-control,
+.map-stage:fullscreen #map .map-presentation-control {
+  display: none !important;
+}
+
+body.presentation-mode .map-stage > .map-context-menu.is-open:not(#map),
+.map-stage:fullscreen > .map-context-menu.is-open:not(#map) {
+  display: block !important;
+}
+
 #map.tasking-point-pick,
 #map.tasking-point-pick .leaflet-pane,
 #map.tasking-point-pick .leaflet-interactive,
@@ -1137,6 +1241,25 @@ button.ghost {
   width: 30px;
   height: 28px;
   padding: 0;
+}
+
+.map-timebar-s2-window-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.22rem;
+  padding-left: 0.32rem;
+  border-left: 1px solid #2f486b;
+}
+
+.map-timebar-s2-window-label {
+  color: #a9c2e6;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.62rem;
+  letter-spacing: 0.03em;
+}
+
+.map-timebar-s2-window-controls .icon-timebar {
+  margin: 0;
 }
 
 #mapTimebarCenterInput {
@@ -1913,6 +2036,8 @@ button.icon-only {
 .map-context-menu {
   position: absolute;
   display: none;
+  width: 250px;
+  max-width: calc(100% - 16px);
   min-width: 230px;
   background: #fffdf7;
   border: 1px solid #ccbca4;
@@ -2242,11 +2367,6 @@ button.icon-only {
     width: min(400px, calc(100% - 20px));
   }
 
-  .global-tools {
-    top: 10px;
-    right: 10px;
-  }
-
   .map-timebar {
     left: 10px;
     right: 10px;
@@ -2271,6 +2391,15 @@ button.icon-only {
   .map-timebar-controls .icon-timebar {
     width: 26px;
     height: 24px;
+  }
+
+  .map-timebar-s2-window-controls {
+    gap: 0.14rem;
+    padding-left: 0.22rem;
+  }
+
+  .map-timebar-s2-window-label {
+    display: none;
   }
 
   .map-timebar-tooltip {

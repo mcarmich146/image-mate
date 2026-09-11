@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Abilene · Stargate · L1D-SR time series</title>
+<style>
+:root{--ink:#122b38;--muted:#647b84;--line:#d9e5e8;--accent:#087e8b;--panel:#fff;--bg:#f3f7f8}
+*{box-sizing:border-box} body{margin:0;background:linear-gradient(135deg,#edf4f5,#f8fafb);font:14px/1.5 Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink)}
+.shell{max-width:1180px;margin:0 auto;padding:28px 24px 46px} .eyebrow{color:var(--accent);font-size:11px;font-weight:800;letter-spacing:1.6px;text-transform:uppercase}
+h1{font-size:clamp(25px,4vw,42px);letter-spacing:-1px;line-height:1.1;margin:7px 0 8px} .lede{color:var(--muted);max-width:750px;margin:0 0 22px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:0 14px 40px #17384512;overflow:hidden} video{display:block;width:100%;max-height:76vh;background:#071117;object-fit:contain}
+.body{padding:19px 21px} .grid{display:grid;grid-template-columns:1.1fr .9fr;gap:22px;margin-top:18px} h2{font-size:16px;margin:0 0 10px} p{margin:0 0 10px} .muted{color:var(--muted);font-size:12px}
+ol{list-style:none;padding:0;margin:0;display:grid;gap:7px} li{display:flex;justify-content:space-between;gap:16px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#fbfdfd} time{font-variant-numeric:tabular-nums;font-weight:700} li span{color:var(--muted);text-align:right;font-size:12px} .note{border-left:3px solid var(--accent);padding:10px 12px;background:#eff9fa;border-radius:4px;color:#315966;font-size:12px}
+@media(max-width:760px){.shell{padding:20px 14px 36px}.grid{grid-template-columns:1fr}}
+</style></head><body><main class="shell">
+<div class="eyebrow">Image Mate · Satellogic archive</div><h1>Abilene · Stargate</h1>
+<p class="lede">A fixed-extent, north-up time series of L1D-SR Visual products centered on the site pin. Each frame represents one capture outcome; spatial tiles from the same outcome are composed together.</p>
+<section class="card"><video controls autoplay muted loop playsinline poster="poster.png" src="openai-stargate-abilene.mp4">Your browser does not support HTML5 video.</video><div class="body"><div class="note">Animation window: 2.0 km × 2.0 km, centered on the data-centre pin. Quality gate: the focus must have at least 90% visual and cloud-mask coverage; class-2 haze is retained, while class-3 cloud over the focus rejects the frame. Cloud elsewhere in a source tile does not remove the frame.</div></div></section>
+<div class="grid"><section class="card"><div class="body"><h2>Included captures · 4</h2><ol><li><time>2026-01-25</time><span>4 tile(s)</span></li><li><time>2026-01-29</time><span>4 tile(s)</span></li><li><time>2026-02-02</time><span>4 tile(s)</span></li><li><time>2026-02-11</time><span>4 tile(s)</span></li></ol></div></section>
+<section class="card"><div class="body"><h2>Quality exclusions · 10</h2><ol><li><time>2026-01-22</time><span>cloud_over_focus</span></li><li><time>2026-01-26</time><span>cloud_over_focus</span></li><li><time>2026-02-05</time><span>cloud_over_focus</span></li><li><time>2026-02-09</time><span>cloud_over_focus</span></li><li><time>2026-02-14</time><span>cloud_over_focus</span></li><li><time>2026-02-15</time><span>cloud_over_focus</span></li><li><time>2026-02-19</time><span>cloud_over_focus</span></li><li><time>2026-02-25</time><span>cloud_over_focus</span></li><li><time>2026-02-28</time><span>cloud_over_focus</span></li><li><time>2026-09-07</time><span>cloud_over_focus</span></li></ol><p class="muted" style="margin-top:12px">Collection: l1d-sr · resolution: 0.50 m output grid · source collection license: proprietary</p></div></section></div>
+</main></body></html>

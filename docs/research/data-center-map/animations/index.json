@@ -1,0 +1,3427 @@
+{
+  "generated_at": "2026-09-11T01:05:46.199145+00:00",
+  "collection": "l1d-sr",
+  "archive_window": [
+    "2024-09-09T00:00:00Z",
+    "2026-09-10T23:59:59Z"
+  ],
+  "active_cutoff": "2026-08-27T00:00:00Z",
+  "focus_size_m": 2000.0,
+  "focus_definition": "square centered on each data-centre pin; archive discovery still uses the research search AOI",
+  "contract_name": "Sales - Showcase",
+  "cloud_mask_validation": {
+    "asset_key": "cloud",
+    "observed_dtype": "uint8",
+    "observed_classes": {
+      "0": "nodata",
+      "1": "clear",
+      "2": "provider haze candidate (allowed)",
+      "3": "provider cloud candidate (rejected)"
+    },
+    "stac_legend_published": false,
+    "operational_rule": "keep class 1 clear and class 2 haze over the 2.0 km animation focus; reject class 3 cloud; ignore nodata outside the valid raster mask",
+    "validation_note": "Class 1 occurred in a 0% scene-cloud capture; class 3 occupied a 100% scene-cloud capture; intermediate scenes were dominated by class 2/3. Class 2 is therefore allowed as haze for this requested exploratory animation, while class 3 remains a cloud rejection. This is an empirical QA rule because the live STAC collection does not publish a legend."
+  },
+  "site_results": {
+    "site-1": {
+      "site_id": "site-1",
+      "site_name": "Anthropic-Amazon New Carlisle",
+      "site_label": "New Carlisle \u00b7 AWS / Anthropic",
+      "slug": "anthropic-amazon-new-carlisle",
+      "collection": "l1d-sr",
+      "archive_window": [
+        "2024-09-09T00:00:00Z",
+        "2026-09-10T23:59:59Z"
+      ],
+      "active_cutoff": "2026-08-27T00:00:00Z",
+      "total_items": 0,
+      "total_outcomes": 0,
+      "frame_count": 0,
+      "rejected_count": 0,
+      "frames": [],
+      "rejected_frames": [],
+      "resolution_m": 0.5,
+      "output_size": [
+        4000,
+        4000
+      ],
+      "focus_size_m": 2000.0,
+      "focus_center": [
+        -86.471225996291,
+        41.67935929360402
+      ],
+      "focus_bounds_m": [
+        543011.0313871077,
+        4613311.897990986,
+        545011.0313871077,
+        4615311.897990986
+      ],
+      "target_crs": "EPSG:32616",
+      "tasking_approved_in_source": false,
+      "quality_policy": {
+        "min_focus_coverage_fraction": 0.9,
+        "focus_size_m": 2000.0,
+        "clear_class": 1,
+        "haze_classes_allowed": [
+          2
+        ],
+        "cloud_classes_rejected": [
+          3
+        ],
+        "known_classes": [
+          1,
+          2,
+          3
+        ],
+        "scope": "fixed square centered on the site pin; class-2 haze is allowed in focus; scene-wide cloud does not reject a frame"
+      },
+      "status": "no_clear_multi_date_sequence",
+      "video": null,
+      "poster": null,
+      "html": null,
+      "search_error": null,
+      "latest_capture_datetime": null,
+      "active_last_14_days": false,
+      "tasking_preview": true
+    },
+    "site-2": {
+      "site_id": "site-2",
+      "site_name": "OpenAI Stargate Abilene",
+      "site_label": "Abilene \u00b7 Stargate",
+      "slug": "openai-stargate-abilene",
+      "collection": "l1d-sr",
+      "archive_window": [
+        "2024-09-09T00:00:00Z",
+        "2026-09-10T23:59:59Z"
+      ],
+      "active_cutoff": "2026-08-27T00:00:00Z",
+      "total_items": 56,
+      "total_outcomes": 14,
+      "frame_count": 4,
+      "rejected_count": 10,
+      "frames": [
+        {
+          "outcome_id": "2f362208-2f48-435a-a362-6938f816dc2f",
+          "datetime": "2026-01-25T23:20:38.812838+00:00",
+          "item_ids": [
+            "20260125_232038_812_SN31_L1D_SR_MS_14N_424_3596_2_0_1",
+            "20260125_232038_812_SN31_L1D_SR_MS_14N_426_3596_2_0_1",
+            "20260125_232039_827_SN31_L1D_SR_MS_14N_424_3594_2_0_1",
+            "20260125_232039_827_SN31_L1D_SR_MS_14N_426_3594_2_0_1"
+          ],
+          "tile_count": 4,
+          "decoded_tile_count": 4,
+          "tile_details": [
+            {
+              "item_id": "20260125_232038_812_SN31_L1D_SR_MS_14N_424_3596_2_0_1",
+              "datetime": "2026-01-25T23:20:38.812838+00:00",
+              "crs": "EPSG:32614",
+              "width": 2860,
+              "height": 2860,
+              "visual_bytes": 907857,
+              "cloud_bytes": 92112,
+              "asset_keys": [
+                "analytic",
+                "cloud",
+                "internal_metrics",
+                "preview",
+                "thumbnail",
+                "toa_factors",
+                "visual"
+              ]
+            },
+            {
+              "item_id": "20260125_232038_812_SN31_L1D_SR_MS_14N_426_3596_2_0_1",
+              "datetime": "2026-01-25T23:20:38.812838+00:00",
+              "crs": "EPSG:32614",
+              "width": 2860,
+              "height": 2860,
+              "visual_bytes": 1439123,
+              "cloud_bytes": 99913,
+              "asset_keys": [
+                "analytic",
+                "cloud",
+                "internal_metrics",
+                "preview",
+                "thumbnail",
+                "toa_factors",
+                "visual"
+              ]
+            },
+            {
+              "item_id": "20260125_232039_827_SN31_L1D_SR_MS_14N_424_3594_2_0_1",
+              "datetime": "2026-01-25T23:20:39.827615+00:00",
+              "crs": "EPSG:32614",
+              "width": 2860,
+              "height": 2860,
+              "visual_bytes": 1265865,
+              "cloud_bytes": 101767,
+              "asset_keys": [
+                "analytic",
+                "cloud",
+                "internal_metrics",
+                "preview",
+                "thumbnail",
+                "toa_factors",
+                "visual"
+              ]
+            },
+            {
+              "item_id": "20260125_232039_827_SN31_L1D_SR_MS_14N_426_3594_2_0_1",
+              "datetime": "2026-01-25T23:20:39.827615+00:00",
+              "crs": "EPSG:32614",
+              "width": 2860,
+              "height": 2860,
+              "visual_bytes": 1685878,
+              "cloud_bytes": 101052,
+              "asset_keys": [
+                "analytic",
+                "cloud",
+                "internal_metrics",
+                "preview",
+                "thumbnail",
+                "toa_factors",
+                "visual"
+              ]
+            }
+          ],
+          "errors": [],
+          "visual_coverage_fraction": 0.941242,
+          "cloud_mask_coverage_fraction": 0.934106,
+          "haze_fraction_over_focus": 0.002304,
+          "cloud_fraction_over_focus": 0.0,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 14911258,
+            "2": 34435
+          },
+          "decision": "keep",
+          "decision_reason": "haze_allowed_over_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask",
+          "path": "openai-stargate-abilene/frames/20260125_0eda4c2a7a.png"
+        },
+        {
+          "outcome_id": "89dc7fe1-3c89-4b01-b5df-e4f71f6db4c7",
+          "datetime": "2026-01-29T23:27:22.761346+00:00",
+          "item_ids": [
+            "20260129_232722_761_SN31_L1D_SR_MS_14N_424_3596_2_0_1",
+            "20260129_232722_761_SN31_L1D_SR_MS_14N_426_3596_2_0_1",
+            "20260129_232723_268_SN31_L1D_SR_MS_14N_424_3594_2_0_1",
+            "20260129_232723_268_SN31_L1D_SR_MS_14N_426_3594_2_0_1"
+          ],
+          "tile_count": 4,
+          "decoded_tile_count": 4,
+          "tile_details": [
+            {
+              "item_id": "20260129_232722_761_SN31_L1D_SR_MS_14N_424_3596_2_0_1",
+              "datetime": "2026-01-29T23:27:22.761346+00:00",
+              "crs": "EPSG:32614",
+              "width": 2860,
+              "height": 2860,
+              "visual_bytes": 20538345,
+              "cloud_bytes": 73587,
+              "asset_keys": [
+                "analytic",
+                "cloud",
+                "internal_metrics",
+                "preview",
+                "thumbnail",
+                "toa_factors",
+                "visual"
+              ]
+            },
+            {
+              "item_id": "20260129_232722_761_SN31_L1D_SR_MS_14N_426_3596_2_0_1",
+              "datetime": "2026-01-29T23:27:22.761346+00:00",
+              "crs": "EPSG:32614",
+              "width": 2860,
+              "height": 2860,
+              "visual_bytes": 26312866,
+              "cloud_bytes": 61857,
+              "asset_keys": [
+                "analytic",
+                "cloud",
+                "internal_metrics",
+                "preview",
+                "thumbnail",
+                "toa_factors",
+                "visual"
+              ]
+            },
+            {
+              "item_id": "20260129_232723_268_SN31_L1D_SR_MS_14N_424_3594_2_0_1",
+              "datetime": "2026-01-29T23:27:23.268713+00:00",
+              "crs": "EPSG:32614",
+              "width": 2860,
+              "height": 2860,
+              "visual_bytes": 23740043,
+              "cloud_bytes": 67378,
+              "asset_keys": [
+                "analytic",
+                "cloud",
+                "internal_metrics",
+                "preview",
+                "thumbnail",
+                "toa_factors",
+                "visual"
+              ]
+            },
+            {
+              "item_id": "20260129_232723_268_SN31_L1D_SR_MS_14N_426_3594_2_0_1",
+              "datetime": "2026-01-29T23:27:23.268713+00:00",
+              "crs": "EPSG:32614",
+              "width": 2860,
+              "height": 2860,
+              "visual_bytes": 25336949,
+              "cloud_bytes": 61857,
+              "asset_keys": [
+                "analytic",
+                "cloud",
+                "internal_metrics",
+                "preview",
+                "thumbnail",
+                "toa_factors",
+                "visual"
+              ]
+            }
+          ],
+          "errors": [],
+          "visual_coverage_fraction": 1.0,
+          "cloud_mask_coverage_fraction": 1.0,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.0,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 16000000
+          },
+          "decision": "keep",
+          "decision_reason": "clear_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask",
+          "path": "openai-stargate-abilene/frames/20260129_88d84eccd6.png"
+        },
+        {
+          "outcome_id": "b497b289-bbde-40c3-afaa-43a159705407",
+          "datetime": "2026-02-02T17:28:59.941678+00:00",
+          "item_ids": [
+            "20260202_172859_941_SN37_L1D_SR_MS_14N_424_3594_2_0_1",
+            "20260202_172859_941_SN37_L1D_SR_MS_14N_424_3596_2_0_1",
+            "20260202_172859_941_SN37_L1D_SR_MS_14N_426_3594_2_0_1",
+            "20260202_172859_941_SN37_L1D_SR_MS_14N_426_3596_2_0_1"
+          ],
+          "tile_count": 4,
+          "decoded_tile_count": 4,
+          "tile_details": [
+            {
+              "item_id": "20260202_172859_941_SN37_L1D_SR_MS_14N_424_3594_2_0_1",
+              "datetime": "2026-02-02T17:28:59.941678+00:00",
+              "crs": "EPSG:32614",
+              "width": 2860,
+              "height": 2860,
+              "visual_bytes": 26267877,
+              "cloud_bytes": 94453,
+              "asset_keys": [
+                "analytic",
+                "cloud",
+                "internal_metrics",
+                "preview",
+                "thumbnail",
+                "toa_factors",
+                "visual"
+              ]
+            },
+            {
+              "item_id": "20260202_172859_941_SN37_L1D_SR_MS_14N_424_3596_2_0_1",
+              "datetime": "2026-02-02T17:28:59.941678+00:00",
+              "crs": "EPSG:32614",
+              "width": 2860,
+              "height": 2860,
+              "visual_bytes": 29930895,
+              "cloud_bytes": 66080,
+              "asset_keys": [
+                "analytic",
+                "cloud",
+                "internal_metrics",
+                "preview",
+                "thumbnail",
+                "toa_factors",
+                "visual"
+              ]
+            },
+            {
+              "item_id": "20260202_172859_941_SN37_L1D_SR_MS_14N_426_3594_2_0_1",
+              "datetime": "2026-02-02T17:28:59.941678+00:00",
+              "crs": "EPSG:32614",
+              "width": 2860,
+              "height": 2860,
+              "visual_bytes": 29115487,
+              "cloud_bytes": 61857,
+              "asset_keys": [
+                "analytic",
+                "cloud",
+                "internal_metrics",
+                "preview",
+                "thumbnail",
+                "toa_factors",
+                "visual"
+              ]
+            },
+            {
+              "item_id": "20260202_172859_941_SN37_L1D_SR_MS_14N_426_3596_2_0_1",
+              "datetime": "2026-02-02T17:28:59.941678+00:00",
+              "crs": "EPSG:32614",
+              "width": 2860,
+              "height": 2860,
+              "visual_bytes": 29991269,
+              "cloud_bytes": 77434,
+              "asset_keys": [
+                "analytic",
+                "cloud",
+                "internal_metrics",
+                "preview",
+                "thumbnail",
+                "toa_factors",
+                "visual"
+              ]
+            }
+          ],
+          "errors": [],
+          "visual_coverage_fraction": 1.0,
+          "cloud_mask_coverage_fraction": 1.0,
+          "haze_fraction_over_focus": 0.047634,
+          "cloud_fraction_over_focus": 0.0,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 15237862,
+            "2": 762138
+          },
+          "decision": "keep",
+          "decision_reason": "haze_allowed_over_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask",
+          "path": "openai-stargate-abilene/frames/20260202_117bfc9f61.png"
+        },
+        {
+          "outcome_id": "61df0b07-57f4-41a3-89c3-14497d079095",
+          "datetime": "2026-02-11T17:54:28.359043+00:00",
+          "item_ids": [
+            "20260211_175428_359_SN45_L1D_SR_MS_14N_426_3596_2_0_1",
+            "20260211_175428_865_SN45_L1D_SR_MS_14N_424_3594_2_0_1",
+            "20260211_175428_865_SN45_L1D_SR_MS_14N_424_3596_2_0_1",
+            "20260211_175428_865_SN45_L1D_SR_MS_14N_426_3594_2_0_1"
+          ],
+          "tile_count": 4,
+          "decoded_tile_count": 4,
+          "tile_details": [
+            {
+              "item_id": "20260211_175428_359_SN45_L1D_SR_MS_14N_426_3596_2_0_1",
+              "datetime": "2026-02-11T17:54:28.359043+00:00",
+              "crs": "EPSG:32614",
+              "width": 4004,
+              "height": 4006,
+              "visual_bytes": 62142980,
+              "cloud_bytes": 97294,
+              "asset_keys": [
+                "analytic",
+                "cloud",
+                "internal_metrics",
+                "preview",
+                "thumbnail",
+                "toa_factors",
+                "visual"
+              ]
+            },
+            {
+              "item_id": "20260211_175428_865_SN45_L1D_SR_MS_14N_424_3594_2_0_1",
+              "datetime": "2026-02-11T17:54:28.865623+00:00",
+              "crs": "EPSG:32614",
+              "width": 4004,
+              "height": 4004,
+              "visual_bytes": 57512083,
+              "cloud_bytes": 97370,
+              "asset_keys": [
+                "analytic",
+                "cloud",
+                "internal_metrics",
+                "preview",
+                "thumbnail",
+                "toa_factors",
+                "visual"
+              ]
+            },
+            {
+              "item_id": "20260211_175428_865_SN45_L1D_SR_MS_14N_424_3596_2_0_1",
+              "datetime": "2026-02-11T17:54:28.865623+00:00",
+              "crs": "EPSG:32614",
+              "width": 4004,
+              "height": 4006,
+              "visual_bytes": 64112099,
+              "cloud_bytes": 97294,
+              "asset_keys": [
+                "analytic",
+                "cloud",
+                "internal_metrics",
+                "preview",
+                "thumbnail",
+                "toa_factors",
+                "visual"
+              ]
+            },
+            {
+              "item_id": "20260211_175428_865_SN45_L1D_SR_MS_14N_426_3594_2_0_1",
+              "datetime": "2026-02-11T17:54:28.865623+00:00",
+              "crs": "EPSG:32614",
+              "width": 4004,
+              "height": 4004,
+              "visual_bytes": 59813565,
+              "cloud_bytes": 97370,
+              "asset_keys": [
+                "analytic",
+                "cloud",
+                "internal_metrics",
+                "preview",
+                "thumbnail",
+                "toa_factors",
+                "visual"
+              ]
+            }
+          ],
+          "errors": [],
+          "visual_coverage_fraction": 1.0,
+          "cloud_mask_coverage_fraction": 1.0,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.0,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 16000000
+          },
+          "decision": "keep",
+          "decision_reason": "clear_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask",
+          "path": "openai-stargate-abilene/frames/20260211_116ccfa2cf.png"
+        }
+      ],
+      "rejected_frames": [
+        {
+          "outcome_id": "a498aa0d-da76-4aae-a562-278da82994c6",
+          "datetime": "2026-01-22T17:24:42.661354+00:00",
+          "item_ids": [
+            "20260122_172442_661_SN37_L1D_SR_MS_14N_424_3594_2_0_1",
+            "20260122_172442_661_SN37_L1D_SR_MS_14N_426_3594_2_0_1",
+            "20260122_172443_168_SN37_L1D_SR_MS_14N_424_3596_2_0_1",
+            "20260122_172443_168_SN37_L1D_SR_MS_14N_426_3596_2_0_1"
+          ],
+          "tile_count": 4,
+          "decoded_tile_count": 4,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 1.0,
+          "haze_fraction_over_focus": 0.899118,
+          "cloud_fraction_over_focus": 0.100532,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 5601,
+            "2": 14385889,
+            "3": 1608510
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_over_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_over_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "03e3f19f-ffb0-4f33-b3f5-9562e2645b82",
+          "datetime": "2026-01-26T17:53:27.743627+00:00",
+          "item_ids": [
+            "20260126_175327_743_SN45_L1D_SR_MS_14N_424_3596_2_0_1",
+            "20260126_175327_743_SN45_L1D_SR_MS_14N_426_3596_2_0_1",
+            "20260126_175328_249_SN45_L1D_SR_MS_14N_424_3594_2_0_1",
+            "20260126_175328_249_SN45_L1D_SR_MS_14N_426_3594_2_0_1"
+          ],
+          "tile_count": 4,
+          "decoded_tile_count": 4,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 1.0,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.028918,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 15537314,
+            "3": 462686
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_over_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_over_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "a88a026c-65df-442f-962f-cb305b48099a",
+          "datetime": "2026-02-05T17:41:16.802027+00:00",
+          "item_ids": [
+            "20260205_174116_802_SN26_L1D_SR_MS_14N_424_3596_2_0_1",
+            "20260205_174116_802_SN26_L1D_SR_MS_14N_426_3596_2_0_1",
+            "20260205_174117_309_SN26_L1D_SR_MS_14N_426_3594_2_0_1",
+            "20260205_174117_804_SN26_L1D_SR_MS_14N_424_3594_2_0_1"
+          ],
+          "tile_count": 4,
+          "decoded_tile_count": 4,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 1.0,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.009286,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 15851432,
+            "3": 148568
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_over_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_over_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "2124a24d-7b41-4049-b0f5-838149eb322c",
+          "datetime": "2026-02-09T22:13:19.912101+00:00",
+          "item_ids": [
+            "20260209_221319_912_SN28_L1D_SR_MS_14N_424_3594_2_0_1",
+            "20260209_221319_912_SN28_L1D_SR_MS_14N_424_3596_2_0_1",
+            "20260209_221319_912_SN28_L1D_SR_MS_14N_426_3594_2_0_1",
+            "20260209_221319_912_SN28_L1D_SR_MS_14N_426_3596_2_0_1"
+          ],
+          "tile_count": 4,
+          "decoded_tile_count": 4,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 1.0,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 1.0,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "3": 16000000
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_over_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_over_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "2f12e183-0bdc-45f0-b75e-03193200c697",
+          "datetime": "2026-02-14T21:37:49.759843+00:00",
+          "item_ids": [
+            "20260214_213749_759_SN40_L1D_SR_MS_14N_426_3596_2_0_1",
+            "20260214_213750_434_SN40_L1D_SR_MS_14N_424_3594_2_0_1",
+            "20260214_213750_434_SN40_L1D_SR_MS_14N_424_3596_2_0_1",
+            "20260214_213750_434_SN40_L1D_SR_MS_14N_426_3594_2_0_1"
+          ],
+          "tile_count": 4,
+          "decoded_tile_count": 4,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 1.0,
+          "haze_fraction_over_focus": 0.252859,
+          "cloud_fraction_over_focus": 0.220694,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 8423152,
+            "2": 4045746,
+            "3": 3531102
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_over_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_over_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "32ba2518-d613-402d-89b1-7ff8f010b476",
+          "datetime": "2026-02-15T17:53:54.351368+00:00",
+          "item_ids": [
+            "20260215_175354_351_SN45_L1D_SR_MS_14N_424_3594_2_0_1",
+            "20260215_175354_351_SN45_L1D_SR_MS_14N_424_3596_2_0_1",
+            "20260215_175354_351_SN45_L1D_SR_MS_14N_426_3594_2_0_1",
+            "20260215_175354_351_SN45_L1D_SR_MS_14N_426_3596_2_0_1"
+          ],
+          "tile_count": 4,
+          "decoded_tile_count": 4,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 1.0,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.000758,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 15987876,
+            "3": 12124
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_over_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_over_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "3f7f0ca4-e7df-46cb-b482-a3bf16c553a8",
+          "datetime": "2026-02-19T17:52:31.843552+00:00",
+          "item_ids": [
+            "20260219_175231_843_SN45_L1D_SR_MS_14N_424_3594_2_0_1",
+            "20260219_175231_843_SN45_L1D_SR_MS_14N_424_3596_2_0_1",
+            "20260219_175231_843_SN45_L1D_SR_MS_14N_426_3594_2_0_1",
+            "20260219_175231_843_SN45_L1D_SR_MS_14N_426_3596_2_0_1"
+          ],
+          "tile_count": 4,
+          "decoded_tile_count": 4,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 1.0,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.006635,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 15893841,
+            "3": 106159
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_over_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_over_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "dffb2354-ef42-4ad9-9b10-fefd3c2f7e13",
+          "datetime": "2026-02-25T17:35:10.012251+00:00",
+          "item_ids": [
+            "20260225_173510_012_SN38_L1D_SR_MS_14N_424_3594_2_0_1",
+            "20260225_173510_012_SN38_L1D_SR_MS_14N_424_3596_2_0_1",
+            "20260225_173510_012_SN38_L1D_SR_MS_14N_426_3594_2_0_1",
+            "20260225_173510_012_SN38_L1D_SR_MS_14N_426_3596_2_0_1"
+          ],
+          "tile_count": 4,
+          "decoded_tile_count": 4,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 1.0,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 1.0,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "3": 16000000
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_over_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_over_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "5aacd6a3-d1fd-413d-86bd-c937b4c5df33",
+          "datetime": "2026-02-28T17:44:18.224677+00:00",
+          "item_ids": [
+            "20260228_174418_224_SN48_L1D_SR_MS_14N_424_3594_2_0_1",
+            "20260228_174418_224_SN48_L1D_SR_MS_14N_424_3596_2_0_1",
+            "20260228_174418_224_SN48_L1D_SR_MS_14N_426_3594_2_0_1",
+            "20260228_174418_224_SN48_L1D_SR_MS_14N_426_3596_2_0_1"
+          ],
+          "tile_count": 4,
+          "decoded_tile_count": 4,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 1.0,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.003516,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 15943748,
+            "3": 56252
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_over_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_over_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "3986bcac-b2d1-4172-b7d1-5f796fb55d0b",
+          "datetime": "2026-09-07T18:47:41.259565+00:00",
+          "item_ids": [
+            "20260907_184741_259_SN46_L1D_SR_MS_14N_424_3596_2_0_1",
+            "20260907_184741_778_SN46_L1D_SR_MS_14N_424_3594_2_0_1",
+            "20260907_184741_778_SN46_L1D_SR_MS_14N_426_3594_2_0_1",
+            "20260907_184741_778_SN46_L1D_SR_MS_14N_426_3596_2_0_1"
+          ],
+          "tile_count": 4,
+          "decoded_tile_count": 4,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 1.0,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.164051,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 13375182,
+            "3": 2624818
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_over_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_over_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        }
+      ],
+      "resolution_m": 0.5,
+      "output_size": [
+        4000,
+        4000
+      ],
+      "focus_size_m": 2000.0,
+      "focus_center": [
+        -99.78560811260724,
+        32.501314051807306
+      ],
+      "focus_bounds_m": [
+        425200.7144414256,
+        3595276.6433975007,
+        427200.7144414256,
+        3597276.6433975007
+      ],
+      "target_crs": "EPSG:32614",
+      "tasking_approved_in_source": false,
+      "quality_policy": {
+        "min_focus_coverage_fraction": 0.9,
+        "focus_size_m": 2000.0,
+        "clear_class": 1,
+        "haze_classes_allowed": [
+          2
+        ],
+        "cloud_classes_rejected": [
+          3
+        ],
+        "known_classes": [
+          1,
+          2,
+          3
+        ],
+        "scope": "fixed square centered on the site pin; class-2 haze is allowed in focus; scene-wide cloud does not reject a frame"
+      },
+      "status": "ready",
+      "video": "animations/openai-stargate-abilene/openai-stargate-abilene.mp4",
+      "poster": "animations/openai-stargate-abilene/poster.png",
+      "html": "animations/openai-stargate-abilene/animation.html",
+      "search_error": null,
+      "latest_capture_datetime": "2026-09-07T18:47:41.778656+00:00",
+      "active_last_14_days": true,
+      "tasking_preview": false
+    },
+    "site-3": {
+      "site_id": "site-3",
+      "site_name": "Colossus 1",
+      "site_label": "Colossus 1 \u00b7 Memphis",
+      "slug": "colossus-1",
+      "collection": "l1d-sr",
+      "archive_window": [
+        "2024-09-09T00:00:00Z",
+        "2026-09-10T23:59:59Z"
+      ],
+      "active_cutoff": "2026-08-27T00:00:00Z",
+      "total_items": 50,
+      "total_outcomes": 50,
+      "frame_count": 0,
+      "rejected_count": 50,
+      "frames": [],
+      "rejected_frames": [
+        {
+          "outcome_id": "adf41d10-80c3-4a7b-87d2-bb8988342f88",
+          "datetime": "2025-08-06T17:02:53.311599+00:00",
+          "item_ids": [
+            "20250806_170253_311_SN50_L1D_SR_MS_15N_756_3880_1_4_0"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.628651,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.0,
+          "unknown_mask_fraction_over_focus": 0.514831,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 4880031,
+            "128": 5178381
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "4181d755-1cb3-4fae-ad63-5157d10c97ab",
+          "datetime": "2025-08-09T17:10:57.093529+00:00",
+          "item_ids": [
+            "20250809_171057_093_SN48_L1D_SR_MS_15N_756_3880_1_4_0"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.628651,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.0,
+          "unknown_mask_fraction_over_focus": 0.194207,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 8105003,
+            "128": 1953409
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "203c07ad-c032-4ef0-85cd-2cfd207e236a",
+          "datetime": "2025-08-12T20:31:59.412158+00:00",
+          "item_ids": [
+            "20250812_203159_412_SN41_L1D_SR_MS_15N_756_3880_1_4_0"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.628651,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.0,
+          "unknown_mask_fraction_over_focus": 0.005694,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 10001137,
+            "128": 57275
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "7fabee00-7738-451a-9dcc-c406c43a16f4",
+          "datetime": "2025-08-15T21:50:27.586838+00:00",
+          "item_ids": [
+            "20250815_215027_586_SN31_L1D_SR_MS_15N_756_3880_1_4_0"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.62766,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.0,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 10042560
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "68c17236-f9a8-4ad3-b8fc-9800386091b7",
+          "datetime": "2025-08-19T20:27:34.236581+00:00",
+          "item_ids": [
+            "20250819_202734_236_SN41_L1D_SR_MS_15N_756_3880_1_4_0"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.62865,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.0,
+          "unknown_mask_fraction_over_focus": 0.007061,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 9987381,
+            "128": 71021
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "91945358-b314-4fe7-be1e-d98af677876c",
+          "datetime": "2025-08-22T20:37:25.775971+00:00",
+          "item_ids": [
+            "20250822_203725_775_SN44_L1D_SR_MS_15N_756_3880_1_4_0"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.628651,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.0,
+          "unknown_mask_fraction_over_focus": 0.009809,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 9959749,
+            "128": 98663
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "ddcb0e0c-0e0c-43a6-9472-cdcd515a0990",
+          "datetime": "2025-08-27T17:04:33.889313+00:00",
+          "item_ids": [
+            "20250827_170433_889_SN48_L1D_SR_MS_15N_756_3880_1_4_0"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.628651,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.0,
+          "unknown_mask_fraction_over_focus": 0.82021,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 1808399,
+            "128": 8250013
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "a506f0ec-88f3-4bb8-a322-f41205fa7595",
+          "datetime": "2025-08-29T16:49:13.020045+00:00",
+          "item_ids": [
+            "20250829_164913_020_SN38_L1D_SR_MS_15N_756_3880_1_4_0"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.62766,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.0,
+          "unknown_mask_fraction_over_focus": 0.000251,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 10040038,
+            "128": 2522
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "dc640019-1f02-4e3e-ac48-9fdf33fa413a",
+          "datetime": "2025-09-02T17:07:27.761680+00:00",
+          "item_ids": [
+            "20250902_170727_761_SN45_L1D_SR_MS_15N_756_3880_1_4_0"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.628651,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.0,
+          "unknown_mask_fraction_over_focus": 1.0,
+          "cloud_mask_class_counts_over_focus": {
+            "128": 10058412
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "bd57e04a-d3aa-4628-8b3b-45633b0b8f6b",
+          "datetime": "2025-09-03T16:51:35.502181+00:00",
+          "item_ids": [
+            "20250903_165135_502_SN38_L1D_SR_MS_15N_756_3880_1_4_0"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.62766,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.0,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 10042560
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "53baf62e-caab-4958-8d0d-96a22f833239",
+          "datetime": "2025-09-07T16:33:41.658506+00:00",
+          "item_ids": [
+            "20250907_163341_658_SN37_L1D_SR_MS_15N_756_3880_1_4_0"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.62766,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.0,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 10042560
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "b7495336-32e4-473a-bff0-b0fedfc0a299",
+          "datetime": "2025-09-11T17:15:05.272455+00:00",
+          "item_ids": [
+            "20250911_171505_272_SN45_L1D_SR_MS_15N_756_3880_1_4_0"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.628849,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.0,
+          "unknown_mask_fraction_over_focus": 0.021529,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 9844967,
+            "128": 216617
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "c3a233dc-2632-4b3d-9a89-5356a522b201",
+          "datetime": "2025-09-12T20:33:48.548776+00:00",
+          "item_ids": [
+            "20250912_203348_548_SN41_L1D_SR_MS_15N_756_3880_1_4_0"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.628651,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.0,
+          "unknown_mask_fraction_over_focus": 0.006016,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 9997904,
+            "128": 60508
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "4fa19ad5-8a5d-41cc-8b04-985a99822c45",
+          "datetime": "2025-09-16T16:54:31.371735+00:00",
+          "item_ids": [
+            "20250916_165431_371_SN38_L1D_SR_MS_15N_756_3880_1_4_0"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.62766,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.0,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 10042560
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "2946c4c5-79f4-4965-b252-12b62e2129dc",
+          "datetime": "2025-09-20T16:31:31.273425+00:00",
+          "item_ids": [
+            "20250920_163131_273_SN37_L1D_SR_MS_15N_756_3880_1_4_0"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.62766,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.0,
+          "unknown_mask_fraction_over_focus": 0.238075,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 7651677,
+            "128": 2390883
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "9a85941c-511d-40e1-84cf-0933de5c0437",
+          "datetime": "2025-09-23T17:03:04.682702+00:00",
+          "item_ids": [
+            "20250923_170304_682_SN26_L1D_SR_MS_15N_756_3880_1_4_0"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.628651,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.0,
+          "unknown_mask_fraction_over_focus": 0.902424,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 981458,
+            "128": 9076954
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "77690304-c36e-40e1-bd49-54ce44242f15",
+          "datetime": "2025-09-25T16:40:12.424705+00:00",
+          "item_ids": [
+            "20250925_164012_424_SN37_L1D_SR_MS_15N_756_3880_1_4_0"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.62766,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.0,
+          "unknown_mask_fraction_over_focus": 0.997273,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 27389,
+            "128": 10015171
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "6396101a-ceae-40d4-bea9-f24548747664",
+          "datetime": "2025-09-26T20:45:45.657977+00:00",
+          "item_ids": [
+            "20250926_204545_657_SN44_L1D_SR_MS_15N_756_3880_1_4_0"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.628651,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.0,
+          "unknown_mask_fraction_over_focus": 0.023969,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 9817322,
+            "128": 241090
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "cda6e009-2568-4757-a9a6-b55a64f1d44e",
+          "datetime": "2025-09-30T16:03:33.119344+00:00",
+          "item_ids": [
+            "20250930_160333_119_SN33_L1D_SR_MS_15N_756_3880_1_4_0"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.627657,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.0,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 10042515
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "ae64ca84-bfef-452a-a12b-f7dcefcd68fe",
+          "datetime": "2025-10-03T16:30:59.396773+00:00",
+          "item_ids": [
+            "20251003_163059_396_SN37_L1D_SR_MS_15N_756_3880_1_4_0"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.62766,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.0,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 10042560
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "4129a1d4-44c0-418d-b7e4-c1fec7eae4f1",
+          "datetime": "2025-10-07T20:30:47.694476+00:00",
+          "item_ids": [
+            "20251007_203047_694_SN40_L1D_SR_MS_15N_756_3880_1_4_0"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.628639,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.0,
+          "unknown_mask_fraction_over_focus": 0.043393,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 9621766,
+            "128": 436459
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "b13a9c10-ab54-46c2-a5f0-6526f2aa4048",
+          "datetime": "2025-10-08T16:33:45.627757+00:00",
+          "item_ids": [
+            "20251008_163345_627_SN37_L1D_SR_MS_15N_756_3880_1_4_0"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.62766,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.0,
+          "unknown_mask_fraction_over_focus": 0.098076,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 9057626,
+            "128": 984934
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "189003bd-3995-4215-9fe8-643491d6891d",
+          "datetime": "2025-10-11T17:10:57.548383+00:00",
+          "item_ids": [
+            "20251011_171057_548_SN50_L1D_SR_MS_15N_756_3880_1_4_0"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.628651,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.0,
+          "unknown_mask_fraction_over_focus": 0.030125,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 9755399,
+            "128": 303013
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "42dffb8f-7c37-4b2c-85fb-681727c782c9",
+          "datetime": "2025-10-15T16:55:24.784859+00:00",
+          "item_ids": [
+            "20251015_165524_784_SN38_L1D_SR_MS_15N_756_3880_1_4_0"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.62766,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.0,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 10042560
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "90f9597e-666e-4517-994c-9b4f31498035",
+          "datetime": "2025-10-18T17:10:37.152004+00:00",
+          "item_ids": [
+            "20251018_171037_152_SN50_L1D_SR_MS_15N_756_3880_1_4_0"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.628651,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.0,
+          "unknown_mask_fraction_over_focus": 0.028269,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 9774069,
+            "128": 284343
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "48fffce5-50f4-471f-be9b-725b39edd9d7",
+          "datetime": "2025-10-22T17:19:32.148796+00:00",
+          "item_ids": [
+            "20251022_171932_148_SN45_L1D_SR_MS_15N_756_3880_1_4_0"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.628849,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.0,
+          "unknown_mask_fraction_over_focus": 0.014538,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 9915312,
+            "128": 146272
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "56363745-00e7-4fb5-8668-6bb032203e8a",
+          "datetime": "2025-10-30T20:51:50.392037+00:00",
+          "item_ids": [
+            "20251030_205150_392_SN44_L1D_SR_MS_15N_756_3880_1_4_0"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.628651,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.0,
+          "unknown_mask_fraction_over_focus": 0.122903,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 8822206,
+            "128": 1236206
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "bb4691dc-1768-4085-aab8-780f29c4e670",
+          "datetime": "2025-11-04T17:01:37.023755+00:00",
+          "item_ids": [
+            "20251104_170137_023_SN38_L1D_SR_MS_15N_756_3880_1_4_0"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.627656,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.0,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 10042489
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "5541a475-fb54-4727-b3e9-f18ae67785dd",
+          "datetime": "2025-11-08T17:00:41.953634+00:00",
+          "item_ids": [
+            "20251108_170041_953_SN50_L1D_SR_MS_15N_756_3880_1_4_0"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.628651,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.0,
+          "unknown_mask_fraction_over_focus": 0.013351,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 9924122,
+            "128": 134290
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "31bfb1f3-9296-4b51-ad63-79dec70897f4",
+          "datetime": "2025-11-12T17:18:38.758531+00:00",
+          "item_ids": [
+            "20251112_171838_758_SN48_L1D_SR_MS_15N_756_3880_1_4_0"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.628651,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.0,
+          "unknown_mask_fraction_over_focus": 0.01442,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 9913370,
+            "128": 145042
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "3b2eb625-0bb9-46c2-922d-589aaa20bc2e",
+          "datetime": "2025-11-18T16:34:32.244175+00:00",
+          "item_ids": [
+            "20251118_163432_244_SN37_L1D_SR_MS_15N_758_3882_2_0_0"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.628254,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 1.0,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "3": 10052070
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "49511491-9ab0-436c-940b-245bb8eee6a8",
+          "datetime": "2025-11-19T16:47:38.406018+00:00",
+          "item_ids": [
+            "20251119_164738_406_SN38_L1D_SR_MS_15N_758_3882_2_0_0"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.628254,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 1.0,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "3": 10052070
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "b905f7c4-5415-412b-8fe9-a85cca3f3978",
+          "datetime": "2025-11-21T17:03:13.393773+00:00",
+          "item_ids": [
+            "20251121_170313_393_SN38_L1D_SR_MS_15N_758_3882_2_0_0"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.628254,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 1.0,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "3": 10052070
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "09daad0b-8a02-4ed5-8a37-4030e8f44830",
+          "datetime": "2025-11-23T15:23:26.025226+00:00",
+          "item_ids": [
+            "20251123_152326_025_SN46_L1D_SR_MS_15N_758_3882_2_0_0"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.583967,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.580474,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 3919828,
+            "3": 5423643
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "07bcc051-8da5-47d1-8afd-12db4df48284",
+          "datetime": "2025-11-23T20:38:02.279463+00:00",
+          "item_ids": [
+            "20251123_203802_279_SN41_L1D_SR_MS_15N_758_3882_2_0_0"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.628254,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.0,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 10052068
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "c6d7d1aa-9174-4db6-9bfb-b7ff88c0839c",
+          "datetime": "2025-11-23T20:55:59.287166+00:00",
+          "item_ids": [
+            "20251123_205559_287_SN44_L1D_SR_MS_15N_758_3882_2_0_0"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.606162,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.0,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 9698590
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "a849fd78-1d9a-4bff-98e7-cfa0b4c2f0b5",
+          "datetime": "2025-11-25T17:17:20.787114+00:00",
+          "item_ids": [
+            "20251125_171720_787_SN48_L1D_SR_MS_15N_758_3882_2_0_0"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 4.2e-05,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 1.0,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "3": 670
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "f4826b0d-8c22-4c10-b52f-e15f600ee37f",
+          "datetime": "2025-11-26T17:19:00.024069+00:00",
+          "item_ids": [
+            "20251126_171900_024_SN45_L1D_SR_MS_15N_758_3882_2_0_1"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.031363,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.0,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 501803
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "4425c82b-2b62-49b8-a0e9-6ce1d190ed46",
+          "datetime": "2025-11-27T20:01:34.194387+00:00",
+          "item_ids": [
+            "20251127_200134_194_SN46_L1D_SR_MS_15N_758_3882_2_0_1"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.110517,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.0,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 1768269
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "a4169c4b-e88e-4544-86dd-d5a37bb578f8",
+          "datetime": "2025-11-28T17:13:53.805442+00:00",
+          "item_ids": [
+            "20251128_171353_805_SN50_L1D_SR_MS_15N_758_3882_2_0_1"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.628452,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.0,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 10055240
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "cec102a8-94c4-4d02-ad87-425c93c80ea0",
+          "datetime": "2025-11-28T19:31:39.080436+00:00",
+          "item_ids": [
+            "20251128_193139_080_SN46_L1D_SR_MS_15N_758_3882_2_0_1"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.408721,
+          "haze_fraction_over_focus": 0.001349,
+          "cloud_fraction_over_focus": 0.0,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 6530709,
+            "2": 8820
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "94e259ce-29f7-4351-9e90-030d36b77e3f",
+          "datetime": "2025-11-29T19:01:45.803996+00:00",
+          "item_ids": [
+            "20251129_190145_803_SN46_L1D_SR_MS_15N_758_3882_2_0_1"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.628254,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 1.0,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "3": 10052070
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "927867d5-3fce-4db0-9e96-d14f7506bf33",
+          "datetime": "2025-11-30T16:49:15.259175+00:00",
+          "item_ids": [
+            "20251130_164915_259_SN37_L1D_SR_MS_15N_758_3882_2_0_1"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.628254,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.0,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 10052070
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "2b2f84ad-8332-43c6-8a66-02e7d6073808",
+          "datetime": "2025-12-03T20:46:12.912511+00:00",
+          "item_ids": [
+            "20251203_204612_912_SN41_L1D_SR_MS_15N_758_3882_2_0_1"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.628254,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 1.0,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "3": 10052070
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "074af251-83ee-4478-8382-f7dff21bb881",
+          "datetime": "2025-12-13T16:56:15.014877+00:00",
+          "item_ids": [
+            "20251213_165615_014_SN38_L1D_SR_MS_15N_758_3882_2_0_1"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.628254,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.0,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 10052070
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "639ea2cf-785a-429b-b4e6-03aee2851336",
+          "datetime": "2025-12-16T17:04:09.163705+00:00",
+          "item_ids": [
+            "20251216_170409_163_SN48_L1D_SR_MS_15N_758_3882_2_0_1"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.628254,
+          "haze_fraction_over_focus": 0.346326,
+          "cloud_fraction_over_focus": 0.644571,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 91504,
+            "2": 3481289,
+            "3": 6479277
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "05bff8d9-c147-4680-8d3d-055d58661731",
+          "datetime": "2025-12-17T16:44:53.243365+00:00",
+          "item_ids": [
+            "20251217_164453_243_SN37_L1D_SR_MS_15N_758_3882_2_0_1"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.628254,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 1.0,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "3": 10052070
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "27fc2dbe-8201-4363-8786-a37a36836430",
+          "datetime": "2025-12-22T17:06:18.259370+00:00",
+          "item_ids": [
+            "20251222_170618_259_SN45_L1D_SR_MS_15N_758_3882_2_0_1"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.628254,
+          "haze_fraction_over_focus": 0.02542,
+          "cloud_fraction_over_focus": 0.97458,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "2": 255528,
+            "3": 9796542
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "a5ffe318-9ef6-4d7a-89ce-e541fd734516",
+          "datetime": "2025-12-25T20:55:32.565578+00:00",
+          "item_ids": [
+            "20251225_205532_565_SN40_L1D_SR_MS_15N_758_3882_2_0_1"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.628452,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.019829,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 9855852,
+            "3": 199388
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "7f9327fe-588d-433d-b525-3a152e6f3ced",
+          "datetime": "2025-12-29T20:50:23.597650+00:00",
+          "item_ids": [
+            "20251229_205023_597_SN40_L1D_SR_MS_15N_758_3882_2_0_1"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.628452,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.0,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 10055240
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        }
+      ],
+      "resolution_m": 0.5,
+      "output_size": [
+        4000,
+        4000
+      ],
+      "focus_size_m": 2000.0,
+      "focus_center": [
+        -90.15546042296336,
+        35.06016616737861
+      ],
+      "focus_bounds_m": [
+        758415.3338941361,
+        3882416.1988435737,
+        760415.3338941361,
+        3884416.1988435737
+      ],
+      "target_crs": "EPSG:32615",
+      "tasking_approved_in_source": false,
+      "quality_policy": {
+        "min_focus_coverage_fraction": 0.9,
+        "focus_size_m": 2000.0,
+        "clear_class": 1,
+        "haze_classes_allowed": [
+          2
+        ],
+        "cloud_classes_rejected": [
+          3
+        ],
+        "known_classes": [
+          1,
+          2,
+          3
+        ],
+        "scope": "fixed square centered on the site pin; class-2 haze is allowed in focus; scene-wide cloud does not reject a frame"
+      },
+      "status": "no_clear_multi_date_sequence",
+      "video": null,
+      "poster": null,
+      "html": null,
+      "search_error": null,
+      "latest_capture_datetime": "2025-12-29T20:50:23.597650+00:00",
+      "active_last_14_days": false,
+      "tasking_preview": true
+    },
+    "site-4": {
+      "site_id": "site-4",
+      "site_name": "OpenAI Stargate Shackelford",
+      "site_label": "Frontier \u00b7 Shackelford County",
+      "slug": "openai-stargate-shackelford",
+      "collection": "l1d-sr",
+      "archive_window": [
+        "2024-09-09T00:00:00Z",
+        "2026-09-10T23:59:59Z"
+      ],
+      "active_cutoff": "2026-08-27T00:00:00Z",
+      "total_items": 0,
+      "total_outcomes": 0,
+      "frame_count": 0,
+      "rejected_count": 0,
+      "frames": [],
+      "rejected_frames": [],
+      "resolution_m": 0.5,
+      "output_size": [
+        4000,
+        4000
+      ],
+      "focus_size_m": 2000.0,
+      "focus_center": [
+        -99.54831401469934,
+        32.5437645
+      ],
+      "focus_bounds_m": [
+        447516.4632906733,
+        3599843.0020301477,
+        449516.4632906733,
+        3601843.0020301477
+      ],
+      "target_crs": "EPSG:32614",
+      "tasking_approved_in_source": false,
+      "quality_policy": {
+        "min_focus_coverage_fraction": 0.9,
+        "focus_size_m": 2000.0,
+        "clear_class": 1,
+        "haze_classes_allowed": [
+          2
+        ],
+        "cloud_classes_rejected": [
+          3
+        ],
+        "known_classes": [
+          1,
+          2,
+          3
+        ],
+        "scope": "fixed square centered on the site pin; class-2 haze is allowed in focus; scene-wide cloud does not reject a frame"
+      },
+      "status": "no_clear_multi_date_sequence",
+      "video": null,
+      "poster": null,
+      "html": null,
+      "search_error": null,
+      "latest_capture_datetime": null,
+      "active_last_14_days": false,
+      "tasking_preview": true
+    },
+    "site-5": {
+      "site_id": "site-5",
+      "site_name": "OpenAI Stargate Lordstown",
+      "site_label": "Lordstown \u00b7 Stargate",
+      "slug": "openai-stargate-lordstown",
+      "collection": "l1d-sr",
+      "archive_window": [
+        "2024-09-09T00:00:00Z",
+        "2026-09-10T23:59:59Z"
+      ],
+      "active_cutoff": "2026-08-27T00:00:00Z",
+      "total_items": 1,
+      "total_outcomes": 1,
+      "frame_count": 0,
+      "rejected_count": 1,
+      "frames": [],
+      "rejected_frames": [
+        {
+          "outcome_id": "fa98be9a-4725-41ea-a18b-748646e77837",
+          "datetime": "2025-06-24T16:34:30.945152+00:00",
+          "item_ids": [
+            "20250624_163430_945_SN48_L1D_SR_MS_17N_508_4552_1_4_0"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.0,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.0,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {},
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        }
+      ],
+      "resolution_m": 0.5,
+      "output_size": [
+        4000,
+        4000
+      ],
+      "focus_size_m": 2000.0,
+      "focus_center": [
+        -80.8812281,
+        41.15311175
+      ],
+      "focus_bounds_m": [
+        508965.7483310642,
+        4554760.942614714,
+        510965.7483310642,
+        4556760.942614714
+      ],
+      "target_crs": "EPSG:32617",
+      "tasking_approved_in_source": false,
+      "quality_policy": {
+        "min_focus_coverage_fraction": 0.9,
+        "focus_size_m": 2000.0,
+        "clear_class": 1,
+        "haze_classes_allowed": [
+          2
+        ],
+        "cloud_classes_rejected": [
+          3
+        ],
+        "known_classes": [
+          1,
+          2,
+          3
+        ],
+        "scope": "fixed square centered on the site pin; class-2 haze is allowed in focus; scene-wide cloud does not reject a frame"
+      },
+      "status": "no_clear_multi_date_sequence",
+      "video": null,
+      "poster": null,
+      "html": null,
+      "search_error": null,
+      "latest_capture_datetime": "2025-06-24T16:34:30.945152+00:00",
+      "active_last_14_days": false,
+      "tasking_preview": true
+    },
+    "site-6": {
+      "site_id": "site-6",
+      "site_name": "OpenAI Stargate New Mexico",
+      "site_label": "Jupiter \u00b7 Santa Teresa",
+      "slug": "openai-stargate-new-mexico",
+      "collection": "l1d-sr",
+      "archive_window": [
+        "2024-09-09T00:00:00Z",
+        "2026-09-10T23:59:59Z"
+      ],
+      "active_cutoff": "2026-08-27T00:00:00Z",
+      "total_items": 3,
+      "total_outcomes": 1,
+      "frame_count": 0,
+      "rejected_count": 1,
+      "frames": [],
+      "rejected_frames": [
+        {
+          "outcome_id": "b5349f6b-d3c4-40e5-9cee-11c7242dd91e",
+          "datetime": "2026-08-20T17:46:49.585344+00:00",
+          "item_ids": [
+            "20260820_174649_585_SN51_L1D_SR_MS_13N_344_3520_2_0_1",
+            "20260820_174649_585_SN51_L1D_SR_MS_13N_344_3522_2_0_1",
+            "20260820_174650_259_SN51_L1D_SR_MS_13N_342_3520_2_0_1"
+          ],
+          "tile_count": 3,
+          "decoded_tile_count": 3,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.0,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.0,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {},
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        }
+      ],
+      "resolution_m": 0.5,
+      "output_size": [
+        4000,
+        4000
+      ],
+      "focus_size_m": 2000.0,
+      "focus_center": [
+        -106.68427010788022,
+        31.820319039816873
+      ],
+      "focus_bounds_m": [
+        339591.9509591567,
+        3520755.2715398674,
+        341591.9509591567,
+        3522755.2715398674
+      ],
+      "target_crs": "EPSG:32613",
+      "tasking_approved_in_source": false,
+      "quality_policy": {
+        "min_focus_coverage_fraction": 0.9,
+        "focus_size_m": 2000.0,
+        "clear_class": 1,
+        "haze_classes_allowed": [
+          2
+        ],
+        "cloud_classes_rejected": [
+          3
+        ],
+        "known_classes": [
+          1,
+          2,
+          3
+        ],
+        "scope": "fixed square centered on the site pin; class-2 haze is allowed in focus; scene-wide cloud does not reject a frame"
+      },
+      "status": "no_clear_multi_date_sequence",
+      "video": null,
+      "poster": null,
+      "html": null,
+      "search_error": null,
+      "latest_capture_datetime": "2026-08-20T17:46:50.259964+00:00",
+      "active_last_14_days": false,
+      "tasking_preview": true
+    },
+    "site-7": {
+      "site_id": "site-7",
+      "site_name": "OpenAI Stargate Wisconsin",
+      "site_label": "Lighthouse \u00b7 Port Washington",
+      "slug": "openai-stargate-wisconsin",
+      "collection": "l1d-sr",
+      "archive_window": [
+        "2024-09-09T00:00:00Z",
+        "2026-09-10T23:59:59Z"
+      ],
+      "active_cutoff": "2026-08-27T00:00:00Z",
+      "total_items": 0,
+      "total_outcomes": 0,
+      "frame_count": 0,
+      "rejected_count": 0,
+      "frames": [],
+      "rejected_frames": [],
+      "resolution_m": 0.5,
+      "output_size": [
+        4000,
+        4000
+      ],
+      "focus_size_m": 2000.0,
+      "focus_center": [
+        -87.85603566454043,
+        43.43040510723768
+      ],
+      "focus_bounds_m": [
+        429714.7883529584,
+        4807968.19357203,
+        431714.7883529584,
+        4809968.19357203
+      ],
+      "target_crs": "EPSG:32616",
+      "tasking_approved_in_source": false,
+      "quality_policy": {
+        "min_focus_coverage_fraction": 0.9,
+        "focus_size_m": 2000.0,
+        "clear_class": 1,
+        "haze_classes_allowed": [
+          2
+        ],
+        "cloud_classes_rejected": [
+          3
+        ],
+        "known_classes": [
+          1,
+          2,
+          3
+        ],
+        "scope": "fixed square centered on the site pin; class-2 haze is allowed in focus; scene-wide cloud does not reject a frame"
+      },
+      "status": "no_clear_multi_date_sequence",
+      "video": null,
+      "poster": null,
+      "html": null,
+      "search_error": null,
+      "latest_capture_datetime": null,
+      "active_last_14_days": false,
+      "tasking_preview": true
+    },
+    "site-8": {
+      "site_id": "site-8",
+      "site_name": "OpenAI Stargate Michigan",
+      "site_label": "The Barn \u00b7 Saline Township",
+      "slug": "openai-stargate-michigan",
+      "collection": "l1d-sr",
+      "archive_window": [
+        "2024-09-09T00:00:00Z",
+        "2026-09-10T23:59:59Z"
+      ],
+      "active_cutoff": "2026-08-27T00:00:00Z",
+      "total_items": 0,
+      "total_outcomes": 0,
+      "frame_count": 0,
+      "rejected_count": 0,
+      "frames": [],
+      "rejected_frames": [],
+      "resolution_m": 0.5,
+      "output_size": [
+        4000,
+        4000
+      ],
+      "focus_size_m": 2000.0,
+      "focus_center": [
+        -83.8841725,
+        42.1212265
+      ],
+      "focus_bounds_m": [
+        260583.32048182152,
+        4666262.513869512,
+        262583.32048182155,
+        4668262.513869512
+      ],
+      "target_crs": "EPSG:32617",
+      "tasking_approved_in_source": false,
+      "quality_policy": {
+        "min_focus_coverage_fraction": 0.9,
+        "focus_size_m": 2000.0,
+        "clear_class": 1,
+        "haze_classes_allowed": [
+          2
+        ],
+        "cloud_classes_rejected": [
+          3
+        ],
+        "known_classes": [
+          1,
+          2,
+          3
+        ],
+        "scope": "fixed square centered on the site pin; class-2 haze is allowed in focus; scene-wide cloud does not reject a frame"
+      },
+      "status": "no_clear_multi_date_sequence",
+      "video": null,
+      "poster": null,
+      "html": null,
+      "search_error": null,
+      "latest_capture_datetime": null,
+      "active_last_14_days": false,
+      "tasking_preview": true
+    },
+    "site-9": {
+      "site_id": "site-9",
+      "site_name": "OpenAI Stargate Milam",
+      "site_label": "Freebird \u00b7 Milam County",
+      "slug": "openai-stargate-milam",
+      "collection": "l1d-sr",
+      "archive_window": [
+        "2024-09-09T00:00:00Z",
+        "2026-09-10T23:59:59Z"
+      ],
+      "active_cutoff": "2026-08-27T00:00:00Z",
+      "total_items": 0,
+      "total_outcomes": 0,
+      "frame_count": 0,
+      "rejected_count": 0,
+      "frames": [],
+      "rejected_frames": [],
+      "resolution_m": 0.5,
+      "output_size": [
+        4000,
+        4000
+      ],
+      "focus_size_m": 2000.0,
+      "focus_center": [
+        -97.0103365,
+        30.996308
+      ],
+      "focus_bounds_m": [
+        688970.7188652945,
+        3429891.8534932877,
+        690970.7188652945,
+        3431891.8534932877
+      ],
+      "target_crs": "EPSG:32614",
+      "tasking_approved_in_source": false,
+      "quality_policy": {
+        "min_focus_coverage_fraction": 0.9,
+        "focus_size_m": 2000.0,
+        "clear_class": 1,
+        "haze_classes_allowed": [
+          2
+        ],
+        "cloud_classes_rejected": [
+          3
+        ],
+        "known_classes": [
+          1,
+          2,
+          3
+        ],
+        "scope": "fixed square centered on the site pin; class-2 haze is allowed in focus; scene-wide cloud does not reject a frame"
+      },
+      "status": "no_clear_multi_date_sequence",
+      "video": null,
+      "poster": null,
+      "html": null,
+      "search_error": null,
+      "latest_capture_datetime": null,
+      "active_last_14_days": false,
+      "tasking_preview": true
+    },
+    "site-10": {
+      "site_id": "site-10",
+      "site_name": "Anthropic Lake Mariner",
+      "site_label": "Lake Mariner \u00b7 candidate",
+      "slug": "anthropic-lake-mariner",
+      "collection": "l1d-sr",
+      "archive_window": [
+        "2024-09-09T00:00:00Z",
+        "2026-09-10T23:59:59Z"
+      ],
+      "active_cutoff": "2026-08-27T00:00:00Z",
+      "total_items": 0,
+      "total_outcomes": 0,
+      "frame_count": 0,
+      "rejected_count": 0,
+      "frames": [],
+      "rejected_frames": [],
+      "resolution_m": 0.5,
+      "output_size": [
+        4000,
+        4000
+      ],
+      "focus_size_m": 2000.0,
+      "focus_center": [
+        -78.60203824717944,
+        43.35642754850562
+      ],
+      "focus_bounds_m": [
+        693323.6980700351,
+        4802189.309592621,
+        695323.6980700351,
+        4804189.309592621
+      ],
+      "target_crs": "EPSG:32617",
+      "tasking_approved_in_source": false,
+      "quality_policy": {
+        "min_focus_coverage_fraction": 0.9,
+        "focus_size_m": 2000.0,
+        "clear_class": 1,
+        "haze_classes_allowed": [
+          2
+        ],
+        "cloud_classes_rejected": [
+          3
+        ],
+        "known_classes": [
+          1,
+          2,
+          3
+        ],
+        "scope": "fixed square centered on the site pin; class-2 haze is allowed in focus; scene-wide cloud does not reject a frame"
+      },
+      "status": "no_clear_multi_date_sequence",
+      "video": null,
+      "poster": null,
+      "html": null,
+      "search_error": null,
+      "latest_capture_datetime": null,
+      "active_last_14_days": false,
+      "tasking_preview": true
+    },
+    "site-11": {
+      "site_id": "site-11",
+      "site_name": "Colossus 2 facility search",
+      "site_label": "Colossus 2 \u00b7 Memphis",
+      "slug": "colossus-2-facility-search",
+      "collection": "l1d-sr",
+      "archive_window": [
+        "2024-09-09T00:00:00Z",
+        "2026-09-10T23:59:59Z"
+      ],
+      "active_cutoff": "2026-08-27T00:00:00Z",
+      "total_items": 16,
+      "total_outcomes": 11,
+      "frame_count": 1,
+      "rejected_count": 10,
+      "frames": [
+        {
+          "outcome_id": "00365ac1-698e-427d-bbbf-910fb2000edc",
+          "datetime": "2025-12-03T20:59:07.948240+00:00",
+          "item_ids": [
+            "20251203_205907_948_SN44_L1D_SR_MS_15N_768_3876_2_0_1",
+            "20251203_205907_948_SN44_L1D_SR_MS_15N_770_3876_2_0_1"
+          ],
+          "tile_count": 2,
+          "decoded_tile_count": 2,
+          "tile_details": [
+            {
+              "item_id": "20251203_205907_948_SN44_L1D_SR_MS_15N_768_3876_2_0_1",
+              "datetime": "2025-12-03T20:59:07.948240+00:00",
+              "crs": "EPSG:32615",
+              "width": 4006,
+              "height": 4006,
+              "visual_bytes": 44908761,
+              "cloud_bytes": 97443,
+              "asset_keys": [
+                "analytic",
+                "cloud",
+                "internal_metrics",
+                "preview",
+                "thumbnail",
+                "toa_factors",
+                "visual"
+              ]
+            },
+            {
+              "item_id": "20251203_205907_948_SN44_L1D_SR_MS_15N_770_3876_2_0_1",
+              "datetime": "2025-12-03T20:59:07.948240+00:00",
+              "crs": "EPSG:32615",
+              "width": 4006,
+              "height": 4006,
+              "visual_bytes": 46835266,
+              "cloud_bytes": 97443,
+              "asset_keys": [
+                "analytic",
+                "cloud",
+                "internal_metrics",
+                "preview",
+                "thumbnail",
+                "toa_factors",
+                "visual"
+              ]
+            }
+          ],
+          "errors": [],
+          "visual_coverage_fraction": 0.99225,
+          "cloud_mask_coverage_fraction": 0.99225,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.0,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 15876000
+          },
+          "decision": "keep",
+          "decision_reason": "clear_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask",
+          "path": "colossus-2-facility-search/frames/20251203_6e43aed9a7.png"
+        }
+      ],
+      "rejected_frames": [
+        {
+          "outcome_id": "ef1b8a30-f6e2-4988-b6ba-29415b4a0c5a",
+          "datetime": "2025-11-22T17:10:10.813726+00:00",
+          "item_ids": [
+            "20251122_171010_813_SN49_L1D_SR_MS_15N_768_3876_2_0_0",
+            "20251122_171010_813_SN49_L1D_SR_MS_15N_770_3876_2_0_0"
+          ],
+          "tile_count": 2,
+          "decoded_tile_count": 2,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.538897,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 1.0,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "3": 8622354
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "25b8c17a-36b1-4673-8f10-d89541687344",
+          "datetime": "2025-11-30T18:31:55.501637+00:00",
+          "item_ids": [
+            "20251130_183155_501_SN46_L1D_SR_MS_15N_768_3876_2_0_1"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.208987,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.0,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 3343798
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "2e93c5a5-aeb4-4a6a-9787-bab660101a9c",
+          "datetime": "2025-12-02T17:15:06.043842+00:00",
+          "item_ids": [
+            "20251202_171506_043_SN49_L1D_SR_MS_15N_768_3876_2_0_1",
+            "20251202_171506_043_SN49_L1D_SR_MS_15N_770_3876_2_0_1"
+          ],
+          "tile_count": 2,
+          "decoded_tile_count": 2,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.992,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 1.0,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "3": 15872000
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_over_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_over_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "44c4aa5b-4269-46f8-ba8b-eabcff9840be",
+          "datetime": "2025-12-02T17:55:04.302569+00:00",
+          "item_ids": [
+            "20251202_175504_302_SN25_L1D_SR_MS_16N_222_3876_2_0_1"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.0,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.0,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {},
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "fcb61c20-a8df-42ac-9602-4cfcc72c1ba9",
+          "datetime": "2025-12-05T16:05:01.079143+00:00",
+          "item_ids": [
+            "20251205_160501_079_SN33_L1D_SR_MS_15N_768_3876_2_0_1",
+            "20251205_160501_079_SN33_L1D_SR_MS_15N_770_3876_2_0_1"
+          ],
+          "tile_count": 2,
+          "decoded_tile_count": 2,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.99175,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.885371,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 1818934,
+            "3": 14049066
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_over_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_over_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "f61ea479-b8fd-45b5-aca5-79a6d3dd5ef2",
+          "datetime": "2025-12-05T16:44:43.830559+00:00",
+          "item_ids": [
+            "20251205_164443_830_SN37_L1D_SR_MS_16N_222_3876_2_0_1"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.177877,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 1.0,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "3": 2846039
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "b6de5cc9-d46f-446f-a935-7b0a90cc9803",
+          "datetime": "2025-12-07T21:11:18.938149+00:00",
+          "item_ids": [
+            "20251207_211118_938_SN28_L1D_SR_MS_15N_768_3876_2_0_1",
+            "20251207_211118_938_SN28_L1D_SR_MS_15N_770_3876_2_0_1"
+          ],
+          "tile_count": 2,
+          "decoded_tile_count": 2,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.96502,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.069133,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 14372881,
+            "3": 1067433
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_over_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_over_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "29155ece-5422-4b77-83ea-084b041fafb4",
+          "datetime": "2025-12-08T17:00:11.535107+00:00",
+          "item_ids": [
+            "20251208_170011_535_SN38_L1D_SR_MS_16N_222_3876_2_0_1"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.042424,
+          "haze_fraction_over_focus": 0.015243,
+          "cloud_fraction_over_focus": 0.90766,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 52332,
+            "2": 10347,
+            "3": 616109
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "d1774d90-a72f-488a-89bf-39f854cd9840",
+          "datetime": "2025-12-09T15:59:32.956871+00:00",
+          "item_ids": [
+            "20251209_155932_956_SN33_L1D_SR_MS_16N_222_3876_2_0_1"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.361365,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.497101,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 2907683,
+            "3": 2874161
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "04d809ec-c36a-4f6b-a9b3-eb58297f3d72",
+          "datetime": "2025-12-10T20:40:03.679849+00:00",
+          "item_ids": [
+            "20251210_204003_679_SN41_L1D_SR_MS_16N_222_3876_2_0_1"
+          ],
+          "tile_count": 1,
+          "decoded_tile_count": 1,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.364933,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.0,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 5838928
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        }
+      ],
+      "resolution_m": 0.5,
+      "output_size": [
+        4000,
+        4000
+      ],
+      "focus_size_m": 2000.0,
+      "focus_center": [
+        -90.042977,
+        34.999489
+      ],
+      "focus_bounds_m": [
+        768876.2272114296,
+        3875982.901669053,
+        770876.2272114296,
+        3877982.901669053
+      ],
+      "target_crs": "EPSG:32615",
+      "tasking_approved_in_source": false,
+      "quality_policy": {
+        "min_focus_coverage_fraction": 0.9,
+        "focus_size_m": 2000.0,
+        "clear_class": 1,
+        "haze_classes_allowed": [
+          2
+        ],
+        "cloud_classes_rejected": [
+          3
+        ],
+        "known_classes": [
+          1,
+          2,
+          3
+        ],
+        "scope": "fixed square centered on the site pin; class-2 haze is allowed in focus; scene-wide cloud does not reject a frame"
+      },
+      "status": "no_clear_multi_date_sequence",
+      "video": null,
+      "poster": null,
+      "html": null,
+      "search_error": null,
+      "latest_capture_datetime": "2025-12-10T20:40:03.679849+00:00",
+      "active_last_14_days": false,
+      "tasking_preview": true
+    },
+    "site-12": {
+      "site_id": "site-12",
+      "site_name": "Colossus 3 Southaven",
+      "site_label": "Colossus 3 \u00b7 Southaven",
+      "slug": "colossus-3-southaven",
+      "collection": "l1d-sr",
+      "archive_window": [
+        "2024-09-09T00:00:00Z",
+        "2026-09-10T23:59:59Z"
+      ],
+      "active_cutoff": "2026-08-27T00:00:00Z",
+      "total_items": 20,
+      "total_outcomes": 10,
+      "frame_count": 0,
+      "rejected_count": 10,
+      "frames": [],
+      "rejected_frames": [
+        {
+          "outcome_id": "ef1b8a30-f6e2-4988-b6ba-29415b4a0c5a",
+          "datetime": "2025-11-22T17:10:10.813726+00:00",
+          "item_ids": [
+            "20251122_171010_813_SN49_L1D_SR_MS_15N_770_3874_2_0_0",
+            "20251122_171010_813_SN49_L1D_SR_MS_15N_770_3876_2_0_0"
+          ],
+          "tile_count": 2,
+          "decoded_tile_count": 2,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.84875,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 1.0,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "3": 13580000
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "2e93c5a5-aeb4-4a6a-9787-bab660101a9c",
+          "datetime": "2025-12-02T17:15:06.043842+00:00",
+          "item_ids": [
+            "20251202_171506_043_SN49_L1D_SR_MS_15N_770_3874_2_0_1",
+            "20251202_171506_043_SN49_L1D_SR_MS_15N_770_3876_2_0_1"
+          ],
+          "tile_count": 2,
+          "decoded_tile_count": 2,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.8485,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 1.0,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "3": 13576000
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "44c4aa5b-4269-46f8-ba8b-eabcff9840be",
+          "datetime": "2025-12-02T17:55:04.302569+00:00",
+          "item_ids": [
+            "20251202_175504_302_SN25_L1D_SR_MS_16N_222_3874_2_0_1",
+            "20251202_175504_302_SN25_L1D_SR_MS_16N_222_3876_2_0_1"
+          ],
+          "tile_count": 2,
+          "decoded_tile_count": 2,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.223436,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 1.0,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "3": 3574969
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "00365ac1-698e-427d-bbbf-910fb2000edc",
+          "datetime": "2025-12-03T20:59:07.948240+00:00",
+          "item_ids": [
+            "20251203_205907_948_SN44_L1D_SR_MS_15N_770_3876_2_0_1",
+            "20251203_205908_585_SN44_L1D_SR_MS_15N_770_3874_2_0_1"
+          ],
+          "tile_count": 2,
+          "decoded_tile_count": 2,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.8485,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.0,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 13576000
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "fcb61c20-a8df-42ac-9602-4cfcc72c1ba9",
+          "datetime": "2025-12-05T16:05:01.079143+00:00",
+          "item_ids": [
+            "20251205_160501_079_SN33_L1D_SR_MS_15N_770_3874_2_0_1",
+            "20251205_160501_079_SN33_L1D_SR_MS_15N_770_3876_2_0_1"
+          ],
+          "tile_count": 2,
+          "decoded_tile_count": 2,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.8485,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.975969,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 326240,
+            "3": 13249760
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "f61ea479-b8fd-45b5-aca5-79a6d3dd5ef2",
+          "datetime": "2025-12-05T16:44:43.830559+00:00",
+          "item_ids": [
+            "20251205_164443_830_SN37_L1D_SR_MS_16N_222_3874_2_0_1",
+            "20251205_164443_830_SN37_L1D_SR_MS_16N_222_3876_2_0_1"
+          ],
+          "tile_count": 2,
+          "decoded_tile_count": 2,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.573692,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 1.0,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "3": 9179079
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "b6de5cc9-d46f-446f-a935-7b0a90cc9803",
+          "datetime": "2025-12-07T21:11:18.938149+00:00",
+          "item_ids": [
+            "20251207_211118_938_SN28_L1D_SR_MS_15N_770_3876_2_0_1",
+            "20251207_211119_445_SN28_L1D_SR_MS_15N_770_3874_2_0_1"
+          ],
+          "tile_count": 2,
+          "decoded_tile_count": 2,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.826998,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.105598,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 11834693,
+            "3": 1397270
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "29155ece-5422-4b77-83ea-084b041fafb4",
+          "datetime": "2025-12-08T17:00:11.535107+00:00",
+          "item_ids": [
+            "20251208_170011_535_SN38_L1D_SR_MS_16N_222_3874_2_0_1",
+            "20251208_170011_535_SN38_L1D_SR_MS_16N_222_3876_2_0_1"
+          ],
+          "tile_count": 2,
+          "decoded_tile_count": 2,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.417167,
+          "haze_fraction_over_focus": 0.057425,
+          "cloud_fraction_over_focus": 0.93283,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 65043,
+            "2": 383294,
+            "3": 6226341
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "d1774d90-a72f-488a-89bf-39f854cd9840",
+          "datetime": "2025-12-09T15:59:32.956871+00:00",
+          "item_ids": [
+            "20251209_155932_956_SN33_L1D_SR_MS_16N_222_3876_2_0_1",
+            "20251209_155933_590_SN33_L1D_SR_MS_16N_222_3874_2_0_1"
+          ],
+          "tile_count": 2,
+          "decoded_tile_count": 2,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.773856,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.42158,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 7161822,
+            "3": 5219870
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        },
+        {
+          "outcome_id": "04d809ec-c36a-4f6b-a9b3-eb58297f3d72",
+          "datetime": "2025-12-10T20:40:03.679849+00:00",
+          "item_ids": [
+            "20251210_204003_679_SN41_L1D_SR_MS_16N_222_3876_2_0_1",
+            "20251210_204004_523_SN41_L1D_SR_MS_16N_222_3874_2_0_1"
+          ],
+          "tile_count": 2,
+          "decoded_tile_count": 2,
+          "tile_details": [],
+          "errors": [],
+          "visual_coverage_fraction": null,
+          "cloud_mask_coverage_fraction": 0.779085,
+          "haze_fraction_over_focus": 0.0,
+          "cloud_fraction_over_focus": 0.0,
+          "unknown_mask_fraction_over_focus": 0.0,
+          "cloud_mask_class_counts_over_focus": {
+            "1": 12465363
+          },
+          "cloud_mask_decision": "reject",
+          "cloud_mask_decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_errors": [],
+          "decision": "reject",
+          "decision_reason": "cloud_mask_does_not_cover_focus",
+          "cloud_mask_rule": "class 1 clear; class 2 haze allowed; class 3 cloud rejects; class 0/nodata ignored outside valid mask"
+        }
+      ],
+      "resolution_m": 0.5,
+      "output_size": [
+        4000,
+        4000
+      ],
+      "focus_size_m": 2000.0,
+      "focus_center": [
+        -90.034277800904,
+        34.991861641286
+      ],
+      "focus_bounds_m": [
+        769695.5579906371,
+        3875160.2315571145,
+        771695.5579906371,
+        3877160.2315571145
+      ],
+      "target_crs": "EPSG:32615",
+      "tasking_approved_in_source": false,
+      "quality_policy": {
+        "min_focus_coverage_fraction": 0.9,
+        "focus_size_m": 2000.0,
+        "clear_class": 1,
+        "haze_classes_allowed": [
+          2
+        ],
+        "cloud_classes_rejected": [
+          3
+        ],
+        "known_classes": [
+          1,
+          2,
+          3
+        ],
+        "scope": "fixed square centered on the site pin; class-2 haze is allowed in focus; scene-wide cloud does not reject a frame"
+      },
+      "status": "no_clear_multi_date_sequence",
+      "video": null,
+      "poster": null,
+      "html": null,
+      "search_error": null,
+      "latest_capture_datetime": "2025-12-10T20:40:04.523644+00:00",
+      "active_last_14_days": false,
+      "tasking_preview": true
+    },
+    "site-13": {
+      "site_id": "site-13",
+      "site_name": "River Bend provisional neighborhood",
+      "site_label": "River Bend \u00b7 provisional location",
+      "slug": "river-bend-provisional-neighborhood",
+      "collection": "l1d-sr",
+      "archive_window": [
+        "2024-09-09T00:00:00Z",
+        "2026-09-10T23:59:59Z"
+      ],
+      "active_cutoff": "2026-08-27T00:00:00Z",
+      "total_items": 0,
+      "total_outcomes": 0,
+      "frame_count": 0,
+      "rejected_count": 0,
+      "frames": [],
+      "rejected_frames": [],
+      "resolution_m": 0.5,
+      "output_size": [
+        4000,
+        4000
+      ],
+      "focus_size_m": 2000.0,
+      "focus_center": [
+        -91.309069280972,
+        30.716339672268
+      ],
+      "focus_bounds_m": [
+        660913.674501229,
+        3398386.54349238,
+        662913.674501229,
+        3400386.54349238
+      ],
+      "target_crs": "EPSG:32615",
+      "tasking_approved_in_source": false,
+      "quality_policy": {
+        "min_focus_coverage_fraction": 0.9,
+        "focus_size_m": 2000.0,
+        "clear_class": 1,
+        "haze_classes_allowed": [
+          2
+        ],
+        "cloud_classes_rejected": [
+          3
+        ],
+        "known_classes": [
+          1,
+          2,
+          3
+        ],
+        "scope": "fixed square centered on the site pin; class-2 haze is allowed in focus; scene-wide cloud does not reject a frame"
+      },
+      "status": "no_clear_multi_date_sequence",
+      "video": null,
+      "poster": null,
+      "html": null,
+      "search_error": null,
+      "latest_capture_datetime": null,
+      "active_last_14_days": false,
+      "tasking_preview": true
+    }
+  },
+  "tasking_preview_count": 12,
+  "tasking_preview_path": "data-center-tasking-previews-2026-09-10.geojson",
+  "submission_status": "no taskings submitted; preview only"
+}
