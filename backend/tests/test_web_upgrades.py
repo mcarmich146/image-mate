@@ -79,7 +79,7 @@ class WebUpgradeApiTests(unittest.TestCase):
         with patch.object(main.client, "create_order") as create_order:
             response = self.api.post("/api/tasking/orders/preview", json=payload)
         self.assertEqual(response.status_code, 200, response.text)
-        self.assertEqual(response.json()["feature"]["properties"]["order_name"], "preview-order")
+        self.assertEqual(response.json()["feature"]["properties"]["order_name"], "Mark - preview-order")
         create_order.assert_not_called()
 
     def test_confirmed_tasking_is_verified_by_follow_up_get(self):
@@ -92,14 +92,14 @@ class WebUpgradeApiTests(unittest.TestCase):
             "start_date": "2026-09-01T00:00:00Z",
             "end_date": "2026-09-04T00:00:00Z",
             "contract_id": "contract-123",
-            "confirmation": "confirmed-order",
+            "confirmation": "Mark - confirmed-order",
         }
         created = {
             "id": "remote-1",
             "type": "Feature",
             "geometry": copy.deepcopy(POINT_GEOMETRY),
             "properties": {
-                "order_name": "confirmed-order",
+                "order_name": "Mark - confirmed-order",
                 "project_name": "web-test",
                 "sku": "TSKPOI-M",
                 "status": "received",
@@ -127,14 +127,14 @@ class WebUpgradeApiTests(unittest.TestCase):
             "start_date": "2026-09-01T00:00:00Z",
             "end_date": "2026-09-04T00:00:00Z",
             "contract_id": "contract-123",
-            "confirmation": "ambiguous-order",
+            "confirmation": "Mark - ambiguous-order",
         }
         remote = {
             "id": "remote-timeout-1",
             "type": "Feature",
             "geometry": copy.deepcopy(POINT_GEOMETRY),
             "properties": {
-                "order_name": "ambiguous-order",
+                "order_name": "Mark - ambiguous-order",
                 "project_name": "web-test",
                 "sku": "TSKPOI-M",
                 "status": "received",

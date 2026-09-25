@@ -111,6 +111,7 @@ from .grid_plan_store import GridPlanStore
 from .recollection_monitor import refresh_recollection_monitor
 from .merlin_sentinel2_client import MerlinSentinel2Client
 from .satellogic_client import SatellogicClient
+from .tasking_names import normalize_tasking_name
 from .source_manager import DEFAULT_SOURCE_ID, SOURCE_MERLIN_S2, SOURCE_SATELLOGIC, SourceManager
 from .services import (
     make_animation_gif,
@@ -961,8 +962,12 @@ def _build_tasking_feature(request: TaskingOrderCreateRequest) -> dict[str, Any]
     for key, value in (request.additional_parameters or {}).items():
         if value is not None:
             parameters[str(key)] = value
+    try:
+        final_order_name = normalize_tasking_name(request.order_name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     properties: dict[str, Any] = {
-        "order_name": request.order_name.strip(),
+        "order_name": final_order_name,
         "sku": sku,
         "parameters": parameters,
     }
@@ -1775,17 +1780,18 @@ def tasking_orders_preview(request: TaskingOrderCreateRequest):
         "read_only": True,
         "feature": feature,
         "contract_id": request.contract_id,
-        "confirmation_required": request.order_name.strip(),
+        "confirmation_required": feature["properties"]["order_name"],
     }
 
 
 @app.post("/api/tasking/orders")
 def tasking_orders_create(request: TaskingOrderCreateRequest):
     feature = _build_tasking_feature(request)
-    if (request.confirmation or "").strip() != request.order_name.strip():
+    final_order_name = feature["properties"]["order_name"]
+    if (request.confirmation or "").strip() != final_order_name:
         raise HTTPException(
             status_code=400,
-            detail="Explicit confirmation is required; set confirmation to the exact order name",
+            detail="Explicit confirmation is required; set confirmation to the final Mark-prefixed order name",
         )
     contract_id = request.contract_id or client.contract_id or settings.satellogic_contract_id
     try:
@@ -1919,7 +1925,7 @@ def _create_grid_plan(request: GridPlanRequest) -> dict[str, Any]:
     features: list[dict[str, Any]] = []
     order_payloads: list[dict[str, Any]] = []
     for cell in result.cells:
-        order_name = f"{order_prefix}r{cell.row:03d}_c{cell.col:03d}"
+        order_name = normalize_tasking_name(f"{order_prefix}r{cell.row:03d}_c{cell.col:03d}")
         payload = build_order_feature(cell, params, request.project_name.strip(), order_name)
         order_payloads.append(payload)
         features.append(
@@ -5281,6 +5287,24 @@ def monitoring_projects_get(project_id: str):
     if not row:
         raise HTTPException(status_code=404, detail="Monitoring project not found")
     return row
+
+
+@app.get("/api/monitoring/projects/{project_id}/sites")
+def monitoring_project_sites(project_id: str, active_only: bool = Query(default=False)):
+    if not app.state.monitoring_store.get_project(project_id):
+        raise HTTPException(status_code=404, detail="Monitoring project not found")
+    sites_rows = app.state.monitoring_store.list_project_sites(project_id, active_only=active_only)
+    return {"count": len(sites_rows), "sites": sites_rows}
+
+
+@app.get("/api/monitoring/projects/{project_id}/context")
+def monitoring_project_context(project_id: str, history: bool = Query(default=False)):
+    if not app.state.monitoring_store.get_project(project_id):
+        raise HTTPException(status_code=404, detail="Monitoring project not found")
+    payload = {"current": app.state.monitoring_store.get_project_context(project_id)}
+    if history:
+        payload["history"] = app.state.monitoring_store.list_project_context_history(project_id)
+    return payload
 
 
 @app.patch("/api/monitoring/projects/{project_id}")

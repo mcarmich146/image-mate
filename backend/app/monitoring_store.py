@@ -218,6 +218,64 @@ class MonitoringStore:
                     )
                     """
                 )
+                try:
+                    conn.execute(
+                        "ALTER TABLE monitoring_projects ADD COLUMN lifecycle_status TEXT NOT NULL DEFAULT 'draft'"
+                    )
+                except sqlite3.OperationalError as exc:
+                    if "duplicate column name" not in str(exc).lower():
+                        raise
+                conn.execute(
+                    """
+                    UPDATE monitoring_projects
+                    SET lifecycle_status = CASE WHEN enabled = 1 THEN 'active' ELSE 'draft' END
+                    WHERE lifecycle_status IS NULL OR lifecycle_status = ''
+                    """
+                )
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS monitoring_project_sites (
+                        project_id TEXT NOT NULL,
+                        site_id TEXT NOT NULL,
+                        name TEXT NOT NULL,
+                        latitude REAL NOT NULL,
+                        longitude REAL NOT NULL,
+                        footprint_m REAL NOT NULL,
+                        geometry_json TEXT NOT NULL,
+                        provenance_json TEXT NOT NULL,
+                        active INTEGER NOT NULL,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        PRIMARY KEY (project_id, site_id)
+                    )
+                    """
+                )
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_monitoring_project_sites_project ON monitoring_project_sites (project_id, active)"
+                )
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS monitoring_project_context (
+                        project_id TEXT PRIMARY KEY,
+                        version INTEGER NOT NULL,
+                        text TEXT NOT NULL,
+                        sources_json TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    )
+                    """
+                )
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS monitoring_project_context_history (
+                        project_id TEXT NOT NULL,
+                        version INTEGER NOT NULL,
+                        text TEXT NOT NULL,
+                        sources_json TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        PRIMARY KEY (project_id, version)
+                    )
+                    """
+                )
                 conn.commit()
 
     def create_subscription(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -632,6 +690,12 @@ class MonitoringStore:
     def create_project(self, payload: dict[str, Any]) -> dict[str, Any]:
         now = utc_now_iso()
         project_id = str(payload.get("project_id") or f"mproj.{uuid.uuid4()}")
+        enabled = bool(payload.get("enabled", True))
+        lifecycle_status = str(
+            payload.get("lifecycle_status")
+            or payload.get("status")
+            or ("active" if enabled else "draft")
+        ).strip().lower()
         row = {
             "project_id": project_id, "name": str(payload.get("name") or "Monitoring project").strip(),
             "geometry_json": json.dumps(payload.get("geometry") or {}, ensure_ascii=True),
@@ -641,21 +705,22 @@ class MonitoringStore:
             "analysis_recipe_id": payload.get("analysis_recipe_id"),
             "alert_policy_json": json.dumps(payload.get("alert_policy") or {}, ensure_ascii=True),
             "actions_json": json.dumps(payload.get("actions") or {}, ensure_ascii=True),
-            "enabled": 1 if bool(payload.get("enabled", True)) else 0,
+            "enabled": 1 if enabled else 0,
             "owner": str(payload.get("owner") or "local-operator"), "health": "unknown",
             "created_at": now, "updated_at": now, "last_ingest_at": None, "last_analysis_at": None,
+            "lifecycle_status": lifecycle_status,
         }
         with self._lock, self._connect() as conn:
             conn.execute(
                 """INSERT INTO monitoring_projects (
                     project_id,name,geometry_json,sources_json,cadence_seconds,quality_filters_json,
                     analysis_recipe_id,alert_policy_json,actions_json,enabled,owner,health,created_at,
-                    updated_at,last_ingest_at,last_analysis_at
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    updated_at,last_ingest_at,last_analysis_at,lifecycle_status
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 tuple(row.values()),
             )
             conn.commit()
-        self.add_project_activity(project_id, "project.created", {"name": row["name"]})
+        self.add_project_activity(project_id, "project.created", {"name": row["name"], "status": lifecycle_status})
         return self.get_project(project_id) or {}
 
     @staticmethod
@@ -665,9 +730,140 @@ class MonitoringStore:
         except (TypeError, ValueError):
             return default
 
-    def _deserialize_project(self, row: dict[str, Any]) -> dict[str, Any]:
+    def list_project_sites(self, project_id: str, active_only: bool = False) -> list[dict[str, Any]]:
+        query = "SELECT * FROM monitoring_project_sites WHERE project_id = ?"
+        params: list[Any] = [project_id]
+        if active_only:
+            query += " AND active = 1"
+        query += " ORDER BY rowid"
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(query, tuple(params)).fetchall()
+        return [
+            {
+                "project_id": row["project_id"],
+                "site_id": row["site_id"],
+                "name": row["name"],
+                "latitude": float(row["latitude"]),
+                "longitude": float(row["longitude"]),
+                "footprint_m": float(row["footprint_m"]),
+                "geometry": self._decode_field(row["geometry_json"], {}),
+                "provenance": self._decode_field(row["provenance_json"], {}),
+                "active": bool(row["active"]),
+                "created_at": row["created_at"],
+                "updated_at": row["updated_at"],
+            }
+            for row in rows
+        ]
+
+    def replace_project_sites(self, project_id: str, sites: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        now = utc_now_iso()
+        normalized: list[dict[str, Any]] = []
+        for site in sites:
+            normalized.append(
+                {
+                    "project_id": project_id,
+                    "site_id": str(site["site_id"]).strip(),
+                    "name": str(site.get("name") or site["site_id"]).strip(),
+                    "latitude": float(site["latitude"]),
+                    "longitude": float(site["longitude"]),
+                    "footprint_m": float(site.get("footprint_m") or 2000.0),
+                    "geometry_json": json.dumps(site.get("geometry") or {}, ensure_ascii=True),
+                    "provenance_json": json.dumps(site.get("provenance") or {}, ensure_ascii=True),
+                    "active": 1 if bool(site.get("active", True)) else 0,
+                    "created_at": str(site.get("created_at") or now),
+                    "updated_at": now,
+                }
+            )
+        with self._lock, self._connect() as conn:
+            conn.execute("DELETE FROM monitoring_project_sites WHERE project_id = ?", (project_id,))
+            conn.executemany(
+                """INSERT INTO monitoring_project_sites (
+                    project_id,site_id,name,latitude,longitude,footprint_m,geometry_json,provenance_json,
+                    active,created_at,updated_at
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                [tuple(row.values()) for row in normalized],
+            )
+            conn.execute("UPDATE monitoring_projects SET updated_at = ? WHERE project_id = ?", (now, project_id))
+            conn.commit()
+        self.add_project_activity(project_id, "project.sites_replaced", {"site_count": len(normalized)})
+        return self.list_project_sites(project_id)
+
+    def get_project_context(self, project_id: str) -> dict[str, Any] | None:
+        with self._lock, self._connect() as conn:
+            row = conn.execute("SELECT * FROM monitoring_project_context WHERE project_id = ?", (project_id,)).fetchone()
+        if not row:
+            return None
         return {
-            "project_id": row.get("project_id"), "name": row.get("name"),
+            "project_id": row["project_id"],
+            "version": int(row["version"]),
+            "text": row["text"],
+            "sources": self._decode_field(row["sources_json"], []),
+            "updated_at": row["updated_at"],
+        }
+
+    def get_project_context_summary(self, project_id: str) -> dict[str, Any]:
+        context = self.get_project_context(project_id)
+        if not context:
+            return {"version": 0, "source_count": 0, "has_text": False, "updated_at": None}
+        return {
+            "version": context["version"],
+            "source_count": len(context.get("sources") or []),
+            "has_text": bool(str(context.get("text") or "").strip()),
+            "updated_at": context.get("updated_at"),
+        }
+
+    def upsert_project_context(self, project_id: str, text: str, sources: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+        content = str(text or "").strip()
+        if not content:
+            raise ValueError("Project context text cannot be empty")
+        now = utc_now_iso()
+        source_rows = sources if isinstance(sources, list) else []
+        with self._lock, self._connect() as conn:
+            current = conn.execute(
+                "SELECT version FROM monitoring_project_context WHERE project_id = ?", (project_id,)
+            ).fetchone()
+            version = int(current["version"] or 0) + 1 if current else 1
+            sources_json = json.dumps(source_rows, ensure_ascii=True)
+            conn.execute(
+                """INSERT INTO monitoring_project_context (project_id,version,text,sources_json,updated_at)
+                   VALUES (?,?,?,?,?)
+                   ON CONFLICT(project_id) DO UPDATE SET version=excluded.version,text=excluded.text,
+                   sources_json=excluded.sources_json,updated_at=excluded.updated_at""",
+                (project_id, version, content, sources_json, now),
+            )
+            conn.execute(
+                """INSERT INTO monitoring_project_context_history (project_id,version,text,sources_json,created_at)
+                   VALUES (?,?,?,?,?)""",
+                (project_id, version, content, sources_json, now),
+            )
+            conn.execute("UPDATE monitoring_projects SET updated_at = ? WHERE project_id = ?", (now, project_id))
+            conn.commit()
+        self.add_project_activity(project_id, "project.context_updated", {"version": version, "source_count": len(source_rows)})
+        return self.get_project_context(project_id) or {}
+
+    def list_project_context_history(self, project_id: str, limit: int = 100) -> list[dict[str, Any]]:
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM monitoring_project_context_history WHERE project_id = ? ORDER BY version DESC LIMIT ?",
+                (project_id, max(1, min(int(limit), 500))),
+            ).fetchall()
+        return [
+            {
+                "project_id": row["project_id"],
+                "version": int(row["version"]),
+                "text": row["text"],
+                "sources": self._decode_field(row["sources_json"], []),
+                "created_at": row["created_at"],
+            }
+            for row in rows
+        ]
+
+    def _deserialize_project(self, row: dict[str, Any]) -> dict[str, Any]:
+        project_id = row.get("project_id")
+        sites = self.list_project_sites(project_id) if project_id else []
+        context_summary = self.get_project_context_summary(project_id) if project_id else {"version": 0, "source_count": 0, "has_text": False, "updated_at": None}
+        return {
+            "project_id": project_id, "name": row.get("name"),
             "geometry": self._decode_field(row.get("geometry_json"), {}),
             "sources": self._decode_field(row.get("sources_json"), []),
             "cadence_seconds": int(row.get("cadence_seconds") or 3600),
@@ -675,9 +871,12 @@ class MonitoringStore:
             "analysis_recipe_id": row.get("analysis_recipe_id"),
             "alert_policy": self._decode_field(row.get("alert_policy_json"), {}),
             "actions": self._decode_field(row.get("actions_json"), {}),
-            "enabled": bool(row.get("enabled")), "owner": row.get("owner"), "health": row.get("health"),
+            "enabled": bool(row.get("enabled")), "status": row.get("lifecycle_status") or ("active" if row.get("enabled") else "draft"),
+            "owner": row.get("owner"), "health": row.get("health"),
             "created_at": row.get("created_at"), "updated_at": row.get("updated_at"),
             "last_ingest_at": row.get("last_ingest_at"), "last_analysis_at": row.get("last_analysis_at"),
+            "site_count": len(sites), "context": context_summary,
+            "sites": sites,
         }
 
     def get_project(self, project_id: str) -> dict[str, Any] | None:
@@ -697,7 +896,7 @@ class MonitoringStore:
     def update_project(self, project_id: str, updates: dict[str, Any]) -> dict[str, Any] | None:
         columns = {
             "name": "name", "cadence_seconds": "cadence_seconds", "analysis_recipe_id": "analysis_recipe_id",
-            "enabled": "enabled", "health": "health", "last_ingest_at": "last_ingest_at",
+            "status": "lifecycle_status", "lifecycle_status": "lifecycle_status", "enabled": "enabled", "health": "health", "last_ingest_at": "last_ingest_at",
             "last_analysis_at": "last_analysis_at", "sources": "sources_json", "quality_filters": "quality_filters_json",
             "alert_policy": "alert_policy_json", "actions": "actions_json",
         }

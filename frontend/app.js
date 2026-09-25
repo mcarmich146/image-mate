@@ -784,6 +784,15 @@ function defaultCollectionForSource(sourceId) {
   return normalizeSourceId(sourceId) === "merlin-s2" ? "sentinel-2-l2a" : "quickview-visual";
 }
 
+function selectedSatellogicCollectionId() {
+  const selected = collectionForSource("satellogic", { allowNone: true });
+  return normalizeCollectionId(selected || defaultCollectionForSource("satellogic"));
+}
+
+function isSatellogicDetailItem(item) {
+  return isSatellogicItem(item) && normalizeCollectionId(item?.collection) === selectedSatellogicCollectionId();
+}
+
 function syncEnabledSourcesFromLayerControl() {
   state.enabledSources = {
     ...state.enabledSources,
@@ -886,6 +895,10 @@ function sourceIdForItem(item) {
 
 function isSatellogicItem(item) {
   return sourceIdForItem(item) === "satellogic";
+}
+
+function isSatellogicL1dSrItem(item) {
+  return isSatellogicItem(item) && normalizeCollectionId(item?.collection) === "l1d-sr";
 }
 
 function isSentinelItem(item) {
@@ -2338,13 +2351,19 @@ function collectionGsdForOverviewItem(overviewItem) {
 }
 
 function formatCarouselMeta(item) {
-  const captureDate = formatCaptureDate(item?.datetime);
-  const gsd = collectionGsdForOverviewItem(item);
+  const visualItem = item?.__carouselQuickviewVisual || item;
+  const captureDate = formatCaptureDate(visualItem?.datetime || item?.datetime);
+  const gsd = collectionGsdForOverviewItem(visualItem) ?? collectionGsdForOverviewItem(item);
   const gsdText = formatGsdMeters(gsd);
-  const generation = item?.sensor_generation && item.sensor_generation !== "unknown"
-    ? `, ${item.sensor_generation === "mark-v" ? "Mark V" : "Mark IV"}`
+  const generation = visualItem?.sensor_generation && visualItem.sensor_generation !== "unknown"
+    ? `, ${visualItem.sensor_generation === "mark-v" ? "Mark V" : "Mark IV"}`
     : "";
-  return `${captureDate}, GSD=${gsdText === "n/a" ? gsdText : `${gsdText}m`}${generation}`;
+  const satelliteName = (
+    visualItem?.satellite_name
+    || item?.satellite_name
+    || (isSatellogicItem(item) ? "NewSat" : timelineSensorName(sourceIdForItem(item)))
+  ).toString().trim() || "unknown satellite";
+  return `${captureDate}, ${satelliteName}, GSD=${gsdText === "n/a" ? gsdText : `${gsdText}m`}${generation}`;
 }
 
 function assetProxyUrl(rawUrl, options = {}) {
@@ -3479,11 +3498,12 @@ function renderAnalysisRecipesList() {
 }
 
 async function loadMonitoringProjects() {
-  const data = await apiJson("/api/monitoring/projects?enabled_only=true");
+  const data = await apiJson("/api/monitoring/projects");
   state.monitoringProjects = Array.isArray(data.projects) ? data.projects : [];
   if (taskingMonitoringProjectEl) {
     const selected = taskingMonitoringProjectEl.value;
-    taskingMonitoringProjectEl.innerHTML = `<option value="">No linked project</option>${state.monitoringProjects.map((project) => `<option value="${escapeHtml(project.project_id)}">${escapeHtml(project.name)}</option>`).join("")}`;
+    const taskingProjects = state.monitoringProjects.filter((project) => project.enabled && project.status !== "archived");
+    taskingMonitoringProjectEl.innerHTML = `<option value="">No linked project</option>${taskingProjects.map((project) => `<option value="${escapeHtml(project.project_id)}">${escapeHtml(project.name)}</option>`).join("")}`;
     taskingMonitoringProjectEl.value = selected;
   }
   renderMonitoringProjectList();
@@ -3492,10 +3512,14 @@ async function loadMonitoringProjects() {
 function renderMonitoringProjectList() {
   if (!monitoringProjectListEl) return;
   const rows = state.monitoringProjects || [];
-  monitoringProjectListEl.innerHTML = rows.length ? rows.map((project) => `
+  monitoringProjectListEl.innerHTML = rows.length ? rows.map((project) => {
+    const context = project.context || {};
+    const stateLabel = `${project.status || (project.enabled ? "active" : "draft")} · ${project.site_count || 0} site(s) · context v${context.version || 0}`;
+    return `
     <button type="button" class="monitoring-row ${project.project_id === state.monitoringProjectId ? "active" : ""}" data-monitoring-project-id="${escapeHtml(project.project_id)}">
-      <strong>${escapeHtml(project.name)}</strong><span>${escapeHtml(project.health || "unknown")} · ${escapeHtml(project.analysis_recipe_id || "no recipe")}</span>
-    </button>`).join("") : `<p class="meta">No projects yet.</p>`;
+      <strong>${escapeHtml(project.name)}</strong><span>${escapeHtml(stateLabel)} · ${escapeHtml(project.health || "unknown")}</span>
+    </button>`;
+  }).join("") : `<p class="meta">No projects yet.</p>`;
   monitoringProjectListEl.querySelectorAll("[data-monitoring-project-id]").forEach((button) => button.addEventListener("click", async () => {
     state.monitoringProjectId = button.dataset.monitoringProjectId;
     renderMonitoringProjectList();
@@ -3547,11 +3571,18 @@ async function refreshTaskingPanel() {
   ]);
 }
 
+function normalizeTaskingOrderName(value) {
+  let raw = (value || "").trim();
+  while (/^mark\s*(?:-|—|:)\s*/i.test(raw)) raw = raw.replace(/^mark\s*(?:-|—|:)\s*/i, "").trim();
+  return raw ? `Mark - ${raw}` : "";
+}
+
 function currentTaskingPayload(includeConfirmation = true) {
   if (!state.taskingTargetGeometry || !state.taskingTargetType) {
     throw new Error("Select a target geometry first.");
   }
-  const orderName = (taskingOrderNameEl?.value || "").trim();
+  const orderName = normalizeTaskingOrderName(taskingOrderNameEl?.value || "");
+  if (taskingOrderNameEl && orderName) taskingOrderNameEl.value = orderName;
   const projectName = (taskingProjectNameEl?.value || "").trim();
   const sku = (taskingProductEl?.value || "").trim();
   const startDate = toUtcIsoFromLocalInput(taskingStartEl?.value || "");
@@ -4351,7 +4382,7 @@ function updateSearchResultsHeader(visibleCount, totalCount = null) {
     return;
   }
   const quickviewTotal = Math.max(0, Number(state.carouselQuickviewCount || 0));
-  searchResultsFilterMetaEl.textContent = `Viewport filter active: showing ${visibleCount} of ${total}. Quickviews backed by l1d-sr: ${visibleCount} of ${quickviewTotal}.`;
+  searchResultsFilterMetaEl.textContent = `Viewport filter active: showing ${visibleCount} of ${total}. Quickview-Visual matches: ${visibleCount} of ${quickviewTotal}.`;
   searchResultsFilterMetaEl.style.display = "block";
 }
 
@@ -4361,13 +4392,17 @@ function resetCarouselLazyState() {
 }
 
 function makeCarouselCard(item, idx) {
-  const thumb = archivePreviewUrl(item, "thumbnail");
+  const isNewSat = isSatellogicItem(item);
+  // NewSat carousel imagery is sourced from the stack-discovery
+  // quickview-visual-thumb record. The matching Quickview-Visual L1B record
+  // is used for metadata only.
+  const imageUrl = archivePreviewUrl(item, "thumbnail");
   const card = document.createElement("button");
   card.className = "carousel-card";
   card.type = "button";
   card.dataset.itemId = item.id;
-  const imageMarkup = thumb
-    ? `<img data-src="${thumb}" loading="lazy" alt="thumbnail ${idx + 1}" />`
+  const imageMarkup = imageUrl
+    ? `<img data-src="${imageUrl}" loading="lazy" alt="${escapeHtml(isNewSat ? "Quickview-Visual-Thumb" : "image")} ${idx + 1}" />`
     : `<div class="thumb-missing">No preview available</div>`;
   card.innerHTML = `
     <div class="carousel-card-head">
@@ -4483,6 +4518,26 @@ function overviewItemsForCarousel() {
   return dedupeById(state.overviewItems.length ? state.overviewItems : state.items);
 }
 
+function carouselVisualItem(item) {
+  if (!isSatellogicItem(item)) return item;
+  const matched = item?.__carouselQuickviewVisual || matchQuickviewVisualItem(item);
+  if (!matched) return null;
+  if (normalizeCollectionId(matched.collection) !== "quickview-visual") return null;
+  // The card image remains the thumb record; this matching L1B record exists
+  // to supply the card description and satellite metadata.
+  return matched;
+}
+
+function carouselItemsForDisplay(items) {
+  return (Array.isArray(items) ? items : [])
+    .map((item) => {
+      if (!isSatellogicItem(item)) return item;
+      const visualItem = carouselVisualItem(item);
+      return visualItem ? { ...item, __carouselQuickviewVisual: visualItem } : null;
+    })
+    .filter(Boolean);
+}
+
 function viewportFilteredCarouselItems(bounds = map.getBounds()) {
   const source = overviewItemsForCarousel();
   if (!source.length) return [];
@@ -4491,8 +4546,8 @@ function viewportFilteredCarouselItems(bounds = map.getBounds()) {
 
 function renderTimeCarouselForViewport(bounds = map.getBounds()) {
   if (!["explore", "analytics", "lab", "mosaic", "tasking", "monitoring"].includes(state.activeTab)) return;
-  const total = overviewItemsForCarousel().length;
-  const visible = viewportFilteredCarouselItems(bounds);
+  const total = carouselItemsForDisplay(overviewItemsForCarousel()).length;
+  const visible = carouselItemsForDisplay(viewportFilteredCarouselItems(bounds));
   renderTimeCarousel(visible, total);
   refreshMapTimebarData();
 }
@@ -4624,19 +4679,23 @@ function captureKey(item) {
 
 function tilesForOverviewItem(source, overviewItem, allowNearest = true) {
   if (!overviewItem || !source?.length) return [];
+  const usableSource = isSatellogicItem(overviewItem)
+    ? source.filter((item) => !isSatellogicItem(item) || isSatellogicDetailItem(item))
+    : source;
+  if (!usableSource.length) return [];
   if (overviewItem.outcome_id) {
-    const sameOutcome = source.filter((item) => item.outcome_id && item.outcome_id === overviewItem.outcome_id);
+    const sameOutcome = usableSource.filter((item) => item.outcome_id && item.outcome_id === overviewItem.outcome_id);
     if (sameOutcome.length) return sameOutcome;
   }
 
   const key = captureKey(overviewItem);
   if (key) {
-    const sameCapture = source.filter((item) => captureKey(item) === key);
+    const sameCapture = usableSource.filter((item) => captureKey(item) === key);
     if (sameCapture.length) return sameCapture;
   }
 
   if (!allowNearest) return [];
-  return nearestCaptureTiles(source, overviewItem.datetime);
+  return nearestCaptureTiles(usableSource, overviewItem.datetime);
 }
 
 function normalizeCollectionId(value) {
@@ -4906,6 +4965,7 @@ function previewUrl(item) {
 }
 
 function detailVisualUrl(item) {
+  if (isSatellogicItem(item) && !isSatellogicDetailItem(item)) return "";
   return item.assets?.visual_fullres || item.assets?.visual || item.assets?.preview || item.assets?.thumbnail || "";
 }
 
@@ -4915,6 +4975,7 @@ function detailCloudMaskUrl(item) {
 
 function detailCogAssetUrl(item, mode = state.detailLayerMode) {
   const layerMode = normalizeDetailLayerMode(mode);
+  if (isSatellogicItem(item) && !isSatellogicDetailItem(item)) return "";
   if (layerMode === "cloud_mask") {
     return detailCloudMaskUrl(item) || item.assets?.visual || "";
   }
@@ -5196,9 +5257,10 @@ function drawResults(items, mode = "overview", fitToBounds = false, options = {}
   }
   const shouldRenderOverlayForItem = (item) => {
     if (isSatellogicItem(item)) {
-      // Never render Satellogic thumbnail/preview overlays on map.
-      // Satellogic map imagery must come from COG tiles in detail mode.
-      return mode === "detail";
+      // Never render a NewSat record from a different collection over the
+      // selected detail image. The tools-bar collection controls the detail
+      // source, so Quickview-Visual remains the default instead of L1D-SR.
+      return mode === "detail" && isSatellogicDetailItem(item);
     }
     if (!isSentinelItem(item)) return true;
     if (!state.layerControl.sentinelStacOverlayEnabled) return false;
@@ -5207,7 +5269,7 @@ function drawResults(items, mode = "overview", fitToBounds = false, options = {}
   const withThumbnailsRaw = overlaySourceItems.filter((item) => (
     item.geometry
     && shouldRenderOverlayForItem(item)
-    && (mode === "detail" ? (previewUrl(item) || detailVisualUrl(item)) : modeSourceUrl(item, mode))
+    && (mode === "detail" ? Boolean(detailVisualUrl(item)) : modeSourceUrl(item, mode))
   ));
   const withThumbnails = mode === "detail"
     ? [...withThumbnailsRaw].sort((a, b) => {
@@ -5561,7 +5623,7 @@ async function focusFromCarousel(overviewItem, options = {}) {
   const sourceId = sourceIdForItem(overviewItem);
   const isSatellogicFocus = sourceId === "satellogic";
   const targetSatellogicCollection = isSatellogicFocus
-    ? ((collectionForSource("satellogic") || "l1d-sr").toString().trim() || "l1d-sr")
+    ? (collectionForSource("satellogic", { allowNone: true }) || defaultCollectionForSource("satellogic"))
     : "";
   const targetSatellogicCollectionNorm = normalizeCollectionId(targetSatellogicCollection);
   if (isSatellogicFocus) {
@@ -5962,7 +6024,7 @@ async function refreshMapMode(force = false, options = {}) {
     const paddedBounds = viewportBounds.pad(DETAIL_FETCH_PADDING);
     const detailSourceId = normalizeSourceId(state.searchParams?.source_id || selectedSourceId());
     const detailCollectionId = detailSourceId === "satellogic"
-      ? "l1d-sr"
+      ? (collectionForSource("satellogic", { allowNone: true }) || defaultCollectionForSource("satellogic"))
       : ((state.searchParams?.collection_id || state.layerControl.sentinelBaseCollectionId || "sentinel-2-l2a").toString().trim() || "sentinel-2-l2a");
     const detailPayload = {
       ...state.searchParams,
@@ -6036,9 +6098,15 @@ async function refreshMapMode(force = false, options = {}) {
     state.mapMode = "detail";
     let detailCandidates = dedupeById([...(state.detailItems || []), ...(state.items || [])]);
     if (!detailCandidates.length) detailCandidates = latestCaptureTiles(state.items);
-    let detailVisible = filterItemsToViewport(detailCandidates, viewportBounds);
+    // Keep overview/discovery records available for outlines and matching, but
+    // never allow a NewSat record from a different collection to participate
+    // in detail image rendering. The tools-bar selection is authoritative.
+    const detailImageCandidates = detailCandidates.filter((item) => (
+      !isSatellogicItem(item) || isSatellogicDetailItem(item)
+    ));
+    let detailVisible = filterItemsToViewport(detailImageCandidates, viewportBounds);
     if (!detailVisible.length) {
-      detailVisible = filterItemsToViewport(detailCandidates, viewportBounds.pad(DETAIL_TILE_BUFFER_PAD));
+      detailVisible = filterItemsToViewport(detailImageCandidates, viewportBounds.pad(DETAIL_TILE_BUFFER_PAD));
     }
     let overlayItems = latestVisibleStripMosaicPerSource(detailVisible);
     const selectedOverviews = selectedOverviewItems();
@@ -6261,11 +6329,10 @@ async function searchArchive() {
           );
           const quickviews = await runLayerSearch("Satellogic quickview", overviewPayload);
           if (quickviews.length) {
-            overviewItems = filterOverviewItemsByPrimaryAvailability(
-              quickviews,
-              items,
-              primarySatellogicCollection,
-            );
+            // The carousel is a Quickview-Visual-Thumb discovery surface and
+            // must not lose captures merely because the selected detail
+            // collection (for example L1D-SR) has not processed them.
+            overviewItems = quickviews;
           }
         }
         state.layerSearchResults.satellogicOverlay = {

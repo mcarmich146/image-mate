@@ -40,6 +40,22 @@ The new analyst-facing persistence layer is available through the versioned loca
 
 Existing archive-watch, recollection-monitor, schedule, workflow, run, tasking, and mosaic-job routes remain available during migration. Provider-signed URLs are not persisted; integrations use item-identity proxy routes.
 
+## Backend-independent agent services
+
+The local agent service can manage durable analyst projects without starting the Image-Mate backend or UI. It writes to the shared monitoring SQLite store; the UI reads the same state when started later.
+
+```bash
+cd /Users/mark/.hermes/projects/image-mate
+.venv/bin/python backend/scripts/image_mate_agent.py project list
+.venv/bin/python backend/scripts/image_mate_agent.py project show --project-id <project_id> --include-context
+.venv/bin/python backend/scripts/image_mate_agent.py project sites --project-id <project_id>
+.venv/bin/python backend/scripts/image_mate_agent.py project context show --project-id <project_id> --history
+```
+
+Phase 1 supports project/site/context creation, synchronization, validation, and version history. New agent projects default to `draft` and disabled; provider tasking remains a later, confirmation-gated adapter. The tasking layer canonicalizes provider-facing order names as `Mark - <original name>` across individual, grid, successor, retask, extension, and remaining-AOI orders.
+
+All archive search paths now use Satellogic Aleph V2. Pagination reposts the provider’s v2 cursor body to `/v2/archive/search`; deprecated `/archive/stac` v1 links are never followed.
+
 ## Repo hygiene
 
 - `.env` is ignored in `.gitignore`

@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -75,10 +76,12 @@ class RecollectionMonitoringApiTests(unittest.TestCase):
         self.assertEqual(create.status_code, 200, create.text)
         monitor_id = create.json()["monitor_id"]
 
+        recent_capture_at = (datetime.now(timezone.utc) - timedelta(days=1)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        older_capture_at = (datetime.now(timezone.utc) - timedelta(days=2)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
         features = [
-            _item("tile-a", "outcome-a", "2026-08-10T18:00:00Z"),
-            _item("tile-a-duplicate", "outcome-a", "2026-08-10T18:01:00Z"),
-            _item("tile-b", "outcome-b", "2026-08-01T18:00:00Z", cloud=42.0),
+            _item("tile-a", "outcome-a", recent_capture_at),
+            _item("tile-a-duplicate", "outcome-a", recent_capture_at),
+            _item("tile-b", "outcome-b", older_capture_at, cloud=42.0),
         ]
         with patch.object(main.sources, "search", return_value=features) as search:
             refreshed = self.api.post(f"/api/recollection-monitors/{monitor_id}/refresh", json={})
@@ -101,7 +104,7 @@ class RecollectionMonitoringApiTests(unittest.TestCase):
         self.assertEqual(listed.status_code, 200, listed.text)
         row = next(item for item in listed.json()["monitors"] if item["monitor_id"] == monitor_id)
         self.assertEqual(row["summary"]["observations_count"], 2)
-        self.assertEqual(row["summary"]["latest_capture_at"], "2026-08-10T18:00:00Z")
+        self.assertEqual(row["summary"]["latest_capture_at"], recent_capture_at)
 
     def test_recollection_monitor_rejects_unknown_source(self):
         response = self.api.post(

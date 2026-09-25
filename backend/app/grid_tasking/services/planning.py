@@ -7,6 +7,7 @@ from shapely.ops import transform as shp_transform
 from shapely.ops import unary_union
 
 from ..domain.schemas import CampaignParameters
+from ...tasking_names import normalize_tasking_name
 
 
 @dataclass
@@ -148,11 +149,12 @@ def build_grid(aoi, params: CampaignParameters, progress_callback=None) -> PlanR
 def build_order_feature(
     cell: PlannedCell, params: CampaignParameters, project_name: str, order_name: str
 ) -> dict:
+    final_order_name = normalize_tasking_name(order_name)
     return {
         "type": "Feature",
         "geometry": mapping(cell.geometry),
         "properties": {
-            "order_name": order_name,
+            "order_name": final_order_name,
             "project_name": project_name,
             "sku": params.sku,
             "parameters": params.api_parameters(),

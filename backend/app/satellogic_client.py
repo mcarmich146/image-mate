@@ -452,7 +452,7 @@ class SatellogicClient:
         max_gsd: float | None = None,
         sensor_generation: str | None = None,
     ) -> list[dict[str, Any]]:
-        url = f"{self.stac_url}/search"
+        url = f"{self.api_base_url}/v2/archive/search"
         normalized_geometry = _normalize_geometry_longitudes(geometry)
         def stac_datetime(value: str, *, end: bool = False) -> str:
             raw = str(value or "").strip()
@@ -474,7 +474,7 @@ class SatellogicClient:
         next_url: str | None = url
         next_body: dict[str, Any] | None = body
         pages = 0
-        while next_url and pages < 20 and len(features) < max(1, limit):
+        while next_url and next_body and pages < 20 and len(features) < max(1, limit):
             response = requests.post(
                 next_url,
                 headers=self.auth_headers(contract_id=contract_id),
@@ -483,7 +483,7 @@ class SatellogicClient:
             )
             if not response.ok:
                 logger.warning(
-                    "Satellogic STAC search failed status=%s collection=%s detail=%s",
+                    "Satellogic v2 archive search failed status=%s collection=%s detail=%s",
                     response.status_code,
                     collection_id,
                     response.text[:1000],
@@ -493,16 +493,13 @@ class SatellogicClient:
             page_features = payload.get("features", []) if isinstance(payload, dict) else []
             if isinstance(page_features, list):
                 features.extend(row for row in page_features if isinstance(row, dict))
-            links = payload.get("links", []) if isinstance(payload, dict) else []
-            next_href = next(
-                (str(link.get("href")) for link in links if isinstance(link, dict) and link.get("rel") == "next" and link.get("href")),
-                None,
-            )
-            next_url = next_href
             next_body = None
+            for link in payload.get("links", []) if isinstance(payload, dict) else []:
+                if isinstance(link, dict) and link.get("rel") == "next" and isinstance(link.get("body"), dict):
+                    next_body = link["body"]
+                    break
+            next_url = url if next_body else None
             pages += 1
-            if not page_features:
-                break
         return self._filter_features(
             features[: max(1, limit)],
             collection_id=collection_id,
@@ -519,8 +516,8 @@ class SatellogicClient:
         contract_id: str | None = None,
         collection_id: str | None = None,
     ) -> dict[str, Any] | None:
-        # STAC core supports searching by explicit IDs.
-        url = f"{self.stac_url}/search"
+        # V2 archive lookup; do not use the deprecated Aleph v1 STAC search path.
+        url = f"{self.api_base_url}/v2/archive/search"
         body = {
             "collections": [collection_id or settings.satellogic_collection_id],
             "ids": [item_id],

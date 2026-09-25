@@ -260,3 +260,33 @@ Add background/hard-negative labels and at least one additional L1D-SR scene bef
 - The project-check endpoint currently creates durable “new imagery” evidence/alerts from newly indexed archive items; model execution on delivered products and automatic email/workflow dispatch are the next adapter layer.
 - Proposed action approval records the analyst decision and keeps operational submission behind the existing explicit tasking safeguards; provider-specific product generation remains an execution adapter.
 - Browser rendering against private localhost remains unverified in this environment; use the host macOS browser for visual QA.
+
+## Agentic Services Phase 1
+
+### Design confirmation
+
+- **Confirmed:** existing SQLite monitoring persistence can be shared by a backend-independent local service and the optional FastAPI/UI projection.
+- **Confirmed:** Phase 1 is limited to project, site, and context management; provider search, opportunity analysis, and tasking remain later adapters.
+- **Confirmed:** new agent projects are draft/disabled by default; user confirmation remains required immediately before provider tasking.
+- **Implemented design artifact:** `docs/implementation/agentic-services-design.md`.
+
+### Requirements and verification targets
+
+- `R-AGENT-001`: local agent service operates without importing `backend.app.main` or starting Uvicorn.
+- `R-AGENT-002`: shared monitoring SQLite stores project sites and versioned context/history.
+- `R-AGENT-003`: existing API/UI reads expose draft/disabled agent-created projects and site/context summaries.
+- `R-AGENT-004`: tasking order names are idempotently normalized to `Mark - <name>` across individual/grid/successor paths.
+- `R-AGENT-005`: migrations are additive, tests cover persistence and naming, and no provider call occurs in Phase 1.
+
+### Current implementation state
+
+- Implemented and verified: backend-independent project/site/context service, additive SQLite migrations, UI projection of draft/disabled projects, and canonical `Mark -` tasking naming.
+- Verified: `image-mate-agent` CLI can create/sync project state while FastAPI/Uvicorn is stopped.
+- Verified: live API read-back returned the existing AI Data Centers project with 13 sites and context version 1/6 sources.
+
+## Archive Workflow V2 Migration
+
+- Replaced archive point-sweep pagination that followed deprecated `/archive/stac` links with v2 cursor-body reposts to `/v2/archive/search`.
+- Updated Image-Mate `SatellogicClient.search` and explicit item lookup to use V2 archive endpoints.
+- Added `archive_global_filter.py` for regional/global bbox searches with CQL2 platform/GSD/cloud filters, checkpointing, and outcome deduplication.
+- Verified archive/client regression tests and full backend suite: **113 passed, 9 subtests passed**.

@@ -74,7 +74,7 @@ class TaskingApiTests(unittest.TestCase):
             "end_date": "2026-02-16T18:20:00Z",
             "revisit_period": "P1D",
             "contract_id": "contract-123",
-            "confirmation": "point_task_test",
+            "confirmation": "Mark - point_task_test",
         }
 
         with patch.object(main.client, "create_order", side_effect=fake_create_order) as mocked_create, \
@@ -86,6 +86,7 @@ class TaskingApiTests(unittest.TestCase):
             self.assertTrue(bool(create_body.get("accepted")))
             self.assertEqual(create_body.get("order", {}).get("id"), "ord-001")
             self.assertEqual(create_body.get("order", {}).get("status"), "programming")
+            self.assertEqual(create_body.get("order", {}).get("order_name"), "Mark - point_task_test")
             self.assertEqual(create_body.get("order", {}).get("project_name"), "project-alpha")
 
             first_list = self.api.get("/api/tasking/orders?limit=20&contract_id=contract-123")

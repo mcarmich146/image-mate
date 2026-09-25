@@ -18,6 +18,7 @@ from app.services.cell_actions import create_successor
 from app.services.coverage import polygon_parts, remaining_cell_geometry
 from app.services.planning import PlannedCell, build_order_feature
 from app.services.satellogic import SatellogicClient, SatellogicError
+from app.tasking_names import normalize_tasking_name
 
 
 def _remote_id(body: dict) -> str | None:
@@ -83,12 +84,13 @@ def _geometry_order(
         type("Geometry", (), {"__geo_interface__": geometry.__geo_interface__})(),
         0,
     )
-    payload = build_order_feature(planned, params, campaign.project_name, order_name)
+    final_order_name = normalize_tasking_name(order_name)
+    payload = build_order_feature(planned, params, campaign.project_name, final_order_name)
     return CellOrder(
         cycle=cycle,
         action_type=action_type,
         parent_order_id=parent_order_id,
-        order_name=order_name,
+        order_name=final_order_name,
         payload=payload,
         parameters=payload["properties"]["parameters"],
         start=payload["properties"]["parameters"]["start"],
@@ -99,11 +101,11 @@ def _geometry_order(
 def _next_remaining_name(cell: GridCell, index: int) -> str:
     existing = {order.order_name for order in cell.orders}
     if not existing and index == 0:
-        return cell.base_order_name
+        return normalize_tasking_name(cell.base_order_name)
     suffix = index + 1
-    while f"{cell.base_order_name}_rem{suffix:02d}" in existing:
+    while normalize_tasking_name(f"{cell.base_order_name}_rem{suffix:02d}") in existing:
         suffix += 1
-    return f"{cell.base_order_name}_rem{suffix:02d}"
+    return normalize_tasking_name(f"{cell.base_order_name}_rem{suffix:02d}")
 
 
 def prepare_remaining_task_orders(db, campaign: Campaign, cell: GridCell) -> list[CellOrder]:

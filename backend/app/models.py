@@ -510,6 +510,7 @@ class MonitoringProjectCreateRequest(BaseModel):
     analysis_recipe_id: str | None = Field(default=None, max_length=120)
     alert_policy: dict[str, Any] = Field(default_factory=dict)
     actions: dict[str, Any] = Field(default_factory=dict)
+    status: Literal["draft", "approved", "active", "paused", "archived"] = "active"
     enabled: bool = True
 
 
@@ -521,6 +522,7 @@ class MonitoringProjectPatchRequest(BaseModel):
     analysis_recipe_id: str | None = Field(default=None, max_length=120)
     alert_policy: dict[str, Any] | None = None
     actions: dict[str, Any] | None = None
+    status: Literal["draft", "approved", "active", "paused", "archived"] | None = None
     enabled: bool | None = None
 
 

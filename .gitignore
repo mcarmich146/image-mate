@@ -18,10 +18,26 @@ htmlcov/
 *.cmd
 .tmp*.py
 *.db
-.env
-.env copy
-.env.local
-.env.*.local
+.env*
+!.env-template
+!.env.example
+!.env.sample
+!.env.template
+*.pem
+*.p8
+*.p12
+*.pfx
+*.key
+*.jks
+*.keystore
+*.token
+*_token.json
+token.json
+*credentials*.json
+*client_secret*.json
+*service-account*.json
+**/secrets/**
+**/.secrets/**
 backend/data/annotations.json
 backend/output/
 output/
@@ -30,6 +46,7 @@ output/
 artifacts/
 datasets/
 runs/
+stream_gap_items_cache.json
 *.sqlite3
 *.log
 

@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from ..db.models import AuditEvent, CellDisposition, CellOrder, GridCell
 from ..domain.status import MANUAL_STAGE_DISPOSITIONS
+from ...tasking_names import normalize_tasking_name
 
 
 def set_disposition(db: Session, cell: GridCell, disposition: str, reason: str) -> CellDisposition:
@@ -61,7 +62,7 @@ def create_successor(
     if end <= start:
         raise ValueError("Successor end must be after start")
     number = 1 + sum(1 for order in cell.orders if order.action_type == action_type)
-    order_name = f"{cell.base_order_name}_{suffix}{number:02d}"
+    order_name = normalize_tasking_name(f"{cell.base_order_name}_{suffix}{number:02d}")
     payload = {
         **parent.payload,
         "properties": {
